@@ -3,47 +3,55 @@ from firebase_admin import credentials, auth
 import os
 from dotenv import load_dotenv
 import json
+import streamlit as st
 
 # Load environment variables
 load_dotenv()
 
-# Get Firebase credentials from environment variables
-FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
-FIREBASE_PRIVATE_KEY = os.getenv("FIREBASE_PRIVATE_KEY")
-FIREBASE_CLIENT_EMAIL = os.getenv("FIREBASE_CLIENT_EMAIL")
+def get_secret_or_env(key, env_key):
+    """Get value from Streamlit secrets or environment variables."""
+    try:
+        return st.secrets[key]
+    except:
+        return os.getenv(env_key)
+
+# Get Firebase credentials from environment variables or Streamlit secrets
+FIREBASE_PROJECT_ID = get_secret_or_env("firebase_project_id", "FIREBASE_PROJECT_ID")
+FIREBASE_PRIVATE_KEY = get_secret_or_env("firebase_private_key", "FIREBASE_PRIVATE_KEY")
+FIREBASE_CLIENT_EMAIL = get_secret_or_env("firebase_client_email", "FIREBASE_CLIENT_EMAIL")
 
 # Client-side Firebase config
 FIREBASE_CONFIG = {
-    "apiKey": os.getenv("FIREBASE_API_KEY"),
-    "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN"),
+    "apiKey": get_secret_or_env("firebase_api_key", "FIREBASE_API_KEY"),
+    "authDomain": get_secret_or_env("firebase_auth_domain", "FIREBASE_AUTH_DOMAIN"),
     "projectId": FIREBASE_PROJECT_ID,
-    "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET"),
-    "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID"),
-    "appId": os.getenv("FIREBASE_APP_ID"),
-    "measurementId": os.getenv("FIREBASE_MEASUREMENT_ID"),
+    "storageBucket": get_secret_or_env("firebase_storage_bucket", "FIREBASE_STORAGE_BUCKET"),
+    "messagingSenderId": get_secret_or_env("firebase_messaging_sender_id", "FIREBASE_MESSAGING_SENDER_ID"),
+    "appId": get_secret_or_env("firebase_app_id", "FIREBASE_APP_ID"),
+    "measurementId": get_secret_or_env("firebase_measurement_id", "FIREBASE_MEASUREMENT_ID"),
 }
 
 # Initialize Firebase Admin SDK
 try:
     # Check if Firebase is already initialized
     if not firebase_admin._apps:
-        # Create credentials from environment variables
+        # Create credentials from environment variables or secrets
         cred_dict = {
             "type": "service_account",
             "project_id": FIREBASE_PROJECT_ID,
             "private_key": FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
             "client_email": FIREBASE_CLIENT_EMAIL,
-            "client_id": os.getenv("FIREBASE_CLIENT_ID"),
+            "client_id": get_secret_or_env("firebase_client_id", "FIREBASE_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_CERT_URL")
+            "client_x509_cert_url": get_secret_or_env("firebase_client_cert_url", "FIREBASE_CLIENT_CERT_URL")
         }
         
         # Initialize with credentials
         cred = credentials.Certificate(cred_dict)
         app = firebase_admin.initialize_app(cred)
-        print("Firebase initialized successfully with environment credentials")
+        print("Firebase initialized successfully with credentials")
     else:
         app = firebase_admin.get_app()
         print("Using existing Firebase app")
