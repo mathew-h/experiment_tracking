@@ -126,3 +126,6 @@ docker-compose.yml
 firebase-debug.log
 firebase-debug.*.log
 *firebase-adminsdk*.json
+
+# EXCEPTION: Allow specific PNG file
+streamlit\static\Addis_Avatar_SandColor_NoBackground.png
