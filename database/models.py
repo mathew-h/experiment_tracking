@@ -115,6 +115,7 @@ class SampleInfo(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     description = Column(Text)
+    photo_path = Column(String)  # Path to stored photo
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 

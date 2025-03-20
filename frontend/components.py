@@ -212,8 +212,28 @@ def render_new_experiment():
                     options=['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED'],
                     index=0
                 )
+                
+                particle_size = st.text_input(
+                    "Particle Size (um)",
+                    value=st.session_state.experiment_data['conditions'].get('particle_size', ''),
+                    help="Enter the particle size specification"
+                )
+                
+                catalyst = st.text_input(
+                    "Catalyst",
+                    value=st.session_state.experiment_data['conditions'].get('catalyst', ''),
+                    help="Enter the catalyst used"
+                )
+                
+                
+                buffer_system = st.text_input(
+                    "Buffer System",
+                    value=st.session_state.experiment_data['conditions'].get('buffer_system', ''),
+                    help="Enter the buffer system used"
+                )
             
             with col2:
+                
                 water_to_rock_ratio = st.number_input(
                     "Water to Rock Ratio", 
                     min_value=0.0, 
@@ -238,6 +258,34 @@ def render_new_experiment():
                     step=1.0,
                     format="%.1f"
                 )
+                
+                pressure = st.number_input(
+                    "Pressure (bar)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('pressure', 1.0)),
+                    step=0.1,
+                    format="%.1f",
+                    help="Enter the pressure in bar"
+                )
+                
+                flow_rate = st.number_input(
+                    "Flow Rate (mL/min)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('flow_rate', 0.0)),
+                    step=0.1,
+                    format="%.1f",
+                    help="Enter the flow rate in mL/min"
+                )
+
+                catalyst_percentage = st.number_input(
+                    "Catalyst Percentage (Elemental % of Rock)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('catalyst_percentage', 0.0)),
+                    step=0.1,
+                    format="%.1f",
+                    help="Enter the percentage of catalyst used"
+                )
             
             # Add Notes Section
             st.markdown("### Initial Lab Notes")
@@ -248,7 +296,7 @@ def render_new_experiment():
                 help="Add any initial lab notes for this experiment. You can add more notes later."
             )
             
-                    # Update session state with form values
+            # Update session state with form values
             st.session_state.experiment_data.update({
                 'experiment_id': experiment_id,
                         'sample_id': sample_id,
@@ -373,6 +421,11 @@ def render_view_experiments():
             }
         </style>
     """, unsafe_allow_html=True)
+
+    # Check if experiment was updated and trigger rerun
+    if st.session_state.get('experiment_updated', False):
+        st.session_state.experiment_updated = False
+        st.rerun()
 
     st.header("View Experiments")
     
@@ -547,7 +600,7 @@ def render_view_experiments():
                         st.session_state.edit_mode = False
             
             # Display experiment info
-            st.subheader(f"Experiment: {experiment['sample_id']}")
+            st.subheader(f"Experiment: {experiment['experiment_id']}")
             
             if not st.session_state.edit_mode:
                 # View mode - just display info
@@ -594,9 +647,11 @@ def get_experiment_by_id(experiment_id):
         if experiment is None:
             return None
         
-        # Get related conditions and notes
+        # Get related conditions, notes, and experimental data
         conditions = experiment.conditions
         notes = experiment.notes
+        modifications = experiment.modifications
+        experimental_data = experiment.experimental_data  # Get experimental data
         
         # Convert to dictionary for display
         exp_dict = {
@@ -610,7 +665,9 @@ def get_experiment_by_id(experiment_id):
             'created_at': experiment.created_at,
             'updated_at': experiment.updated_at,
             'conditions': {},
-            'notes': []
+            'notes': [],
+            'modifications': [],
+            'experimental_data': []  # Add experimental data list
         }
         
         # Add conditions if they exist
@@ -639,6 +696,38 @@ def get_experiment_by_id(experiment_id):
                 for note in notes
             ]
         
+        # Add modifications if they exist
+        if modifications:
+            exp_dict['modifications'] = [
+                {
+                    'id': mod.id,
+                    'modified_by': mod.modified_by,
+                    'modification_type': mod.modification_type,
+                    'modified_table': mod.modified_table,
+                    'old_values': mod.old_values,
+                    'new_values': mod.new_values,
+                    'created_at': mod.created_at
+                }
+                for mod in modifications
+            ]
+        
+        # Add experimental data if they exist
+        if experimental_data:
+            exp_dict['experimental_data'] = [
+                {
+                    'id': data.id,
+                    'data_type': data.data_type,
+                    'file_path': data.file_path,
+                    'file_name': data.file_name,
+                    'file_type': data.file_type,
+                    'data_values': data.data_values,
+                    'description': data.description,
+                    'created_at': data.created_at,
+                    'updated_at': data.updated_at
+                }
+                for data in experimental_data
+            ]
+        
         return exp_dict
     except Exception as e:
         st.error(f"Error retrieving experiment: {str(e)}")
@@ -651,178 +740,19 @@ def display_experiment_details(experiment):
     # Basic Info
     st.markdown("### Basic Information")
     basic_info = {
-        "Experiment Number": experiment['experiment_number'],
-        "Experiment ID": experiment['experiment_id'],
-        "Sample ID": experiment['sample_id'],
-        "Researcher": experiment['researcher'],
-        "Status": experiment['status'],
-        "Date": experiment['date'].strftime("%Y-%m-%d %H:%M") if isinstance(experiment['date'], datetime.datetime) else experiment['date'],
-        "Created": experiment['created_at'].strftime("%Y-%m-%d %H:%M") if experiment['created_at'] else "N/A",
-        "Last Updated": experiment['updated_at'].strftime("%Y-%m-%d %H:%M") if experiment['updated_at'] else "N/A"
+        "Experiment Number": str(experiment['experiment_number']),
+        "Experiment ID": str(experiment['experiment_id']),
+        "Sample ID": str(experiment['sample_id']),
+        "Researcher": str(experiment['researcher']),
+        "Status": str(experiment['status']),
+        "Date Created": experiment['date'].strftime("%Y-%m-%d %H:%M") if isinstance(experiment['date'], datetime.datetime) else str(experiment['date']),
+        "Date Updated": experiment['updated_at'].strftime("%Y-%m-%d %H:%M") if experiment['updated_at'] else "N/A"
     }
-    st.table(pd.DataFrame([basic_info]).T.rename(columns={0: "Value"}))
     
-    # Sample Information Section
-    st.markdown("### Sample Information")
-    sample_info = get_sample_info(experiment['sample_id'])
-    
-    if sample_info:
-        # Display existing sample info
-        sample_info_df = pd.DataFrame([{
-            "Rock Classification": sample_info['rock_classification'],
-            "Location": f"{sample_info['state']}, {sample_info['country']}",
-            "Coordinates": f"{sample_info['latitude']}, {sample_info['longitude']}",
-            "Description": sample_info['description']
-        }]).T.rename(columns={0: "Value"})
-        st.table(sample_info_df)
-        
-        # External Analyses
-        st.markdown("#### External Analyses")
-        external_analyses = get_external_analyses(experiment['sample_id'])
-        
-        if external_analyses:
-            for analysis in external_analyses:
-                with st.expander(f"{analysis['analysis_type']} Analysis - {analysis['analysis_date'].strftime('%Y-%m-%d')}"):
-                    st.write(f"Laboratory: {analysis['laboratory']}")
-                    st.write(f"Analyst: {analysis['analyst']}")
-                    if analysis['description']:
-                        st.write("Description:")
-                        st.write(analysis['description'])
-                    
-                    if analysis['report_file_path']:
-                        st.download_button(
-                            f"Download {analysis['report_file_name']}",
-                            open(analysis['report_file_path'], 'rb').read(),
-                            file_name=analysis['report_file_name'],
-                            mime=analysis['report_file_type']
-                        )
-                    
-                    if analysis['analysis_metadata']:
-                        st.write("Additional Data:")
-                        st.json(analysis['analysis_metadata'])
-                    
-                    # Delete button
-                    if st.button("Delete Analysis", key=f"delete_analysis_{analysis['id']}"):
-                        delete_external_analysis(analysis['id'])
-        else:
-            st.info("No external analyses recorded for this sample.")
-    else:
-        st.info("No sample information recorded.")
-    
-    # Add Sample Info Button
-    if st.button("Add/Edit Sample Information"):
-        st.session_state.editing_sample_info = True
-        st.session_state.current_sample_id = experiment['sample_id']
-    
-    # Sample Info Form
-    if st.session_state.get('editing_sample_info', False) and st.session_state.get('current_sample_id') == experiment['sample_id']:
-        with st.form("sample_info_form"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                rock_classification = st.text_input(
-                    "Rock Classification",
-                    value=sample_info['rock_classification'] if sample_info else ""
-                )
-                state = st.text_input(
-                    "State/Province",
-                    value=sample_info['state'] if sample_info else ""
-                )
-                country = st.text_input(
-                    "Country",
-                    value=sample_info['country'] if sample_info else ""
-                )
-            
-            with col2:
-                latitude = st.number_input(
-                    "Latitude",
-                    min_value=-90.0,
-                    max_value=90.0,
-                    value=float(sample_info['latitude']) if sample_info and sample_info['latitude'] else 0.0,
-                    step=0.000001,
-                    format="%.6f"
-                )
-                longitude = st.number_input(
-                    "Longitude",
-                    min_value=-180.0,
-                    max_value=180.0,
-                    value=float(sample_info['longitude']) if sample_info and sample_info['longitude'] else 0.0,
-                    step=0.000001,
-                    format="%.6f"
-                )
-            
-            description = st.text_area(
-                "Sample Description",
-                value=sample_info['description'] if sample_info else "",
-                height=100
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.form_submit_button("Save Sample Info"):
-                    save_sample_info(
-                        experiment['sample_id'],
-                        rock_classification,
-                        state,
-                        country,
-                        latitude,
-                        longitude,
-                        description
-                    )
-                    st.session_state.editing_sample_info = False
-            
-            with col2:
-                if st.form_submit_button("Cancel"):
-                    st.session_state.editing_sample_info = False
-    
-    # Add External Analysis Button
-    if st.button("Add External Analysis"):
-        st.session_state.adding_external_analysis = True
-        st.session_state.current_sample_id = experiment['sample_id']
-    
-    # External Analysis Form
-    if st.session_state.get('adding_external_analysis', False) and st.session_state.get('current_sample_id') == experiment['sample_id']:
-        with st.form("external_analysis_form"):
-            analysis_type = st.selectbox(
-                "Analysis Type",
-                options=['XRD', 'SEM', 'Elemental', 'Other']
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                laboratory = st.text_input("Laboratory")
-                analyst = st.text_input("Analyst")
-                analysis_date = st.date_input("Analysis Date")
-            
-            with col2:
-                report_file = st.file_uploader(
-                    "Upload Report",
-                    type=['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'png']
-                )
-            
-            description = st.text_area(
-                "Description",
-                help="Add a description of the analysis"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.form_submit_button("Save Analysis"):
-                    if report_file:
-                        save_external_analysis(
-                            experiment['sample_id'],
-                            analysis_type,
-                            report_file,
-                            laboratory,
-                            analyst,
-                            analysis_date,
-                            description
-                        )
-                        st.session_state.adding_external_analysis = False
-            
-            with col2:
-                if st.form_submit_button("Cancel"):
-                    st.session_state.adding_external_analysis = False
+    # Convert to DataFrame and ensure all values are strings
+    df = pd.DataFrame([basic_info]).T.rename(columns={0: "Value"})
+    df['Value'] = df['Value'].astype(str)  # Convert all values to strings
+    st.table(df)
     
     # Conditions
     st.markdown("### Experimental Conditions")
@@ -934,6 +864,102 @@ def display_experiment_details(experiment):
                 if st.form_submit_button("Cancel"):
                     st.session_state.experimental_data_state['adding_data'] = False
     
+    # Sample Information Section
+    st.markdown("### Sample Information")
+    sample_info = get_sample_info(experiment['sample_id'])
+    
+    if sample_info:
+        # Display existing sample info
+        sample_info_df = pd.DataFrame([{
+            "Rock Classification": sample_info['rock_classification'],
+            "Location": f"{sample_info['state']}, {sample_info['country']}",
+            "Coordinates": f"{sample_info['latitude']}, {sample_info['longitude']}",
+            "Description": sample_info['description']
+        }]).T.rename(columns={0: "Value"})
+        st.table(sample_info_df)
+        
+        # External Analyses
+        st.markdown("#### External Analyses")
+        external_analyses = get_external_analyses(experiment['sample_id'])
+        
+        if external_analyses:
+            for analysis in external_analyses:
+                with st.expander(f"{analysis['analysis_type']} Analysis - {analysis['analysis_date'].strftime('%Y-%m-%d')}"):
+                    st.write(f"Laboratory: {analysis['laboratory']}")
+                    st.write(f"Analyst: {analysis['analyst']}")
+                    if analysis['description']:
+                        st.write("Description:")
+                        st.write(analysis['description'])
+                    
+                    if analysis['report_file_path']:
+                        st.download_button(
+                            f"Download {analysis['report_file_name']}",
+                            open(analysis['report_file_path'], 'rb').read(),
+                            file_name=analysis['report_file_name'],
+                            mime=analysis['report_file_type']
+                        )
+                    
+                    if analysis['analysis_metadata']:
+                        st.write("Additional Data:")
+                        st.json(analysis['analysis_metadata'])
+                    
+                    # Delete button
+                    if st.button("Delete Analysis", key=f"delete_analysis_{analysis['id']}"):
+                        delete_external_analysis(analysis['id'])
+        else:
+            st.info("No external analyses recorded for this sample.")
+    else:
+        st.info("No sample information recorded.")
+    
+    # Add External Analysis Button
+    if st.button("Add External Analysis"):
+        st.session_state.adding_external_analysis = True
+        st.session_state.current_sample_id = experiment['sample_id']
+    
+    # External Analysis Form
+    if st.session_state.get('adding_external_analysis', False) and st.session_state.get('current_sample_id') == experiment['sample_id']:
+        with st.form("external_analysis_form"):
+            analysis_type = st.selectbox(
+                "Analysis Type",
+                options=['XRD', 'SEM', 'Elemental', 'Other']
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                laboratory = st.text_input("Laboratory")
+                analyst = st.text_input("Analyst")
+                analysis_date = st.date_input("Analysis Date")
+            
+            with col2:
+                report_file = st.file_uploader(
+                    "Upload Report",
+                    type=['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'png']
+                )
+            
+            description = st.text_area(
+                "Description",
+                help="Add a description of the analysis"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("Save Analysis"):
+                    if report_file:
+                        save_external_analysis(
+                            experiment['sample_id'],
+                            analysis_type,
+                            report_file,
+                            laboratory,
+                            analyst,
+                            analysis_date,
+                            description
+                        )
+                        st.session_state.adding_external_analysis = False
+            
+            with col2:
+                if st.form_submit_button("Cancel"):
+                    st.session_state.adding_external_analysis = False
+    
     # Notes Section
     st.markdown("### Lab Notes")
     
@@ -942,10 +968,32 @@ def display_experiment_details(experiment):
         st.session_state.note_form_state = {
             'adding_note': False,
             'editing_note_id': None,
-            'current_note': '',
             'note_to_delete': None
         }
     
+    # Add Note Button
+    if st.button("Add Note"):
+        st.session_state.note_form_state['adding_note'] = True
+    
+    # Note Form
+    if st.session_state.note_form_state['adding_note']:
+        with st.form("note_form"):
+            note_text = st.text_area(
+                "Note Text",
+                height=200,
+                help="Enter your lab note here."
+            )
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("Save Note"):
+                    if note_text:
+                        save_note(experiment['id'], note_text)
+                        st.session_state.note_form_state['adding_note'] = False
+            with col2:
+                if st.form_submit_button("Cancel"):
+                    st.session_state.note_form_state['adding_note'] = False
+    
+    # Display existing notes
     if 'notes' in experiment and experiment['notes']:
         for note in experiment['notes']:
             with st.expander(f"Note from {note['created_at'].strftime('%Y-%m-%d %H:%M')}"):
@@ -984,58 +1032,6 @@ def display_experiment_details(experiment):
                             st.session_state.note_form_state['note_to_delete'] = note['id']
     else:
         st.info("No lab notes recorded for this experiment.")
-    
-    # Handle note deletion if requested
-    if st.session_state.note_form_state['note_to_delete']:
-        if st.warning("Are you sure you want to delete this note?"):
-            delete_note(st.session_state.note_form_state['note_to_delete'])
-            st.session_state.note_form_state['note_to_delete'] = None
-    
-    # Add Note Button
-    if st.button("Add Lab Note"):
-        st.session_state.note_form_state['adding_note'] = True
-        st.session_state.note_form_state['current_note'] = ""
-    
-    # Note Form
-    if st.session_state.note_form_state['adding_note']:
-        with st.form("note_form"):
-            note_text = st.text_area(
-                "Lab Note",
-                value=st.session_state.note_form_state['current_note'],
-                height=200,
-                help="Enter your lab note here. Notes should be clear and concise."
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.form_submit_button(
-                    "Save Note",
-                    on_click=submit_note,
-                    args=(experiment['id'], note_text)
-                )
-            
-            with col2:
-                if st.form_submit_button("Cancel"):
-                    st.session_state.note_form_state['adding_note'] = False
-                    st.session_state.note_form_state['current_note'] = ""
-    
-    # Modification History Section
-    st.markdown("### Modification History")
-    if 'modifications' in experiment and experiment['modifications']:
-        for mod in experiment['modifications']:
-            with st.expander(f"Modified by {mod['modified_by']} on {mod['created_at'].strftime('%Y-%m-%d %H:%M')}"):
-                st.write(f"Type: {mod['modification_type']}")
-                st.write(f"Table: {mod['modified_table']}")
-                
-                if mod['old_values']:
-                    st.write("Previous Values:")
-                    st.json(mod['old_values'])
-                
-                if mod['new_values']:
-                    st.write("New Values:")
-                    st.json(mod['new_values'])
-    else:
-        st.info("No modification history recorded for this experiment.")
 
 def get_sample_info(sample_id):
     """Get sample information from the database."""
@@ -1178,10 +1174,14 @@ def save_external_analysis(sample_id, analysis_type, file, laboratory, analyst, 
         # Add the analysis to the session
         db.add(analysis)
         
+        # Get user information for the modification log
+        user = st.session_state.get('user', {})
+        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
+        
         # Create a modification log entry
         modification = ModificationsLog(
             experiment_id=None,  # This is sample-level modification
-            modified_by=st.session_state.get('user', 'Unknown User'),
+            modified_by=user_identifier,  # Use email as identifier
             modification_type="add",
             modified_table="external_analyses",
             new_values={
@@ -1223,10 +1223,14 @@ def delete_external_analysis(analysis_id):
         if analysis.report_file_path and os.path.exists(analysis.report_file_path):
             os.remove(analysis.report_file_path)
         
+        # Get user information for the modification log
+        user = st.session_state.get('user', {})
+        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
+        
         # Create a modification log entry
         modification = ModificationsLog(
             experiment_id=None,  # This is sample-level modification
-            modified_by=st.session_state.get('user', 'Unknown User'),
+            modified_by=user_identifier,  # Use email as identifier
             modification_type="delete",
             modified_table="external_analyses",
             old_values={
@@ -1286,10 +1290,14 @@ def save_experimental_data(experiment_id, data_type, file=None, description=None
         # Add the data to the session
         db.add(experimental_data)
         
+        # Get user information for the modification log
+        user = st.session_state.get('user', {})
+        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
+        
         # Create a modification log entry
         modification = ModificationsLog(
             experiment_id=experiment_id,
-            modified_by=st.session_state.get('user', 'Unknown User'),
+            modified_by=user_identifier,  # Use email as identifier
             modification_type="add",
             modified_table="experimental_data",
             new_values={
@@ -1546,9 +1554,10 @@ def update_experiment(experiment_id, data):
         experiment.status = getattr(ExperimentStatus, data['status'])
         experiment.date = data['date']
         
-        # Update conditions if they exist
+        # Update or create conditions
         conditions = experiment.conditions
         if conditions:
+            # Update existing conditions
             conditions.water_to_rock_ratio = data['conditions']['water_to_rock_ratio']
             conditions.ph = data['conditions']['ph']
             conditions.catalyst = data['conditions']['catalyst']
@@ -1557,11 +1566,10 @@ def update_experiment(experiment_id, data):
             conditions.buffer_system = data['conditions']['buffer_system']
             conditions.pressure = data['conditions']['pressure']
             conditions.flow_rate = data['conditions']['flow_rate']
-            # Add particle_size if attribute exists
             if hasattr(conditions, 'particle_size'):
                 conditions.particle_size = data['conditions']['particle_size']
         else:
-            # Create conditions if they don't exist
+            # Create new conditions
             conditions = ExperimentalConditions(
                 experiment_id=experiment.id,
                 water_to_rock_ratio=data['conditions']['water_to_rock_ratio'],
@@ -1573,6 +1581,8 @@ def update_experiment(experiment_id, data):
                 pressure=data['conditions']['pressure'],
                 flow_rate=data['conditions']['flow_rate']
             )
+            if hasattr(conditions, 'particle_size'):
+                conditions.particle_size = data['conditions']['particle_size']
             db.add(conditions)
         
         # Create a modification log entry
@@ -1580,7 +1590,8 @@ def update_experiment(experiment_id, data):
             'sample_id': data['sample_id'],
             'researcher': data['researcher'],
             'status': data['status'],
-            'date': data['date'].isoformat() if data['date'] else None
+            'date': data['date'].isoformat() if data['date'] else None,
+            'conditions': data['conditions']
         }
         
         modification = ModificationsLog(
@@ -1595,6 +1606,9 @@ def update_experiment(experiment_id, data):
         
         # Commit the changes
         db.commit()
+        
+        # Set a flag in session state to trigger a rerun
+        st.session_state.experiment_updated = True
         
         st.success("Experiment updated successfully!")
         return True
@@ -1786,7 +1800,7 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
             latitude=latitude,
             longitude=longitude,
             description=description,
-            photo_path=photo_path
+            photo_path=photo_path  # This will be None if no photo was uploaded
         )
         
         db.add(sample)
@@ -1802,6 +1816,10 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
 
 def render_sample_inventory():
     st.header("Rock Sample Inventory")
+    
+    # Initialize session state for viewing sample details if not exists
+    if 'view_sample_id' not in st.session_state:
+        st.session_state.view_sample_id = None
     
     # Add search and filter options
     col1, col2 = st.columns(2)
@@ -1850,6 +1868,213 @@ def render_sample_inventory():
                 st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
     else:
         st.info("No samples found matching the selected criteria.")
+    
+    # Display sample details if a sample is selected
+    if st.session_state.view_sample_id:
+        display_sample_details(st.session_state.view_sample_id)
+
+def display_sample_details(sample_id):
+    """Display detailed information about a specific sample."""
+    try:
+        db = SessionLocal()
+        sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
+        
+        if sample is None:
+            st.error(f"Sample with ID {sample_id} not found.")
+            if st.button("Back to Sample List"):
+                st.session_state.view_sample_id = None
+                st.rerun()
+            return
+        
+        # Add back button
+        if st.button("← Back to Sample List"):
+            st.session_state.view_sample_id = None
+            st.rerun()
+        
+        # Display sample information
+        st.subheader(f"Sample Details: {sample.sample_id}")
+        
+        # Create columns for layout
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Basic Information
+            st.markdown("### Basic Information")
+            info_data = {
+                "Sample ID": sample.sample_id,
+                "Rock Classification": sample.rock_classification,
+                "Location": f"{sample.state}, {sample.country}",
+                "Coordinates": f"({sample.latitude:.6f}, {sample.longitude:.6f})",
+                "Description": sample.description or "No description provided",
+                "Created": sample.created_at.strftime("%Y-%m-%d %H:%M") if sample.created_at else "N/A",
+                "Last Updated": sample.updated_at.strftime("%Y-%m-%d %H:%M") if sample.updated_at else "N/A"
+            }
+            st.table(pd.DataFrame([info_data]).T.rename(columns={0: "Value"}))
+            
+            # External Analyses
+            st.markdown("### External Analyses")
+            analyses = sample.external_analyses
+            if analyses:
+                for analysis in analyses:
+                    with st.expander(f"{analysis.analysis_type} Analysis - {analysis.analysis_date.strftime('%Y-%m-%d')}"):
+                        st.write(f"Laboratory: {analysis.laboratory}")
+                        st.write(f"Analyst: {analysis.analyst}")
+                        if analysis.description:
+                            st.write("Description:")
+                            st.write(analysis.description)
+                        
+                        if analysis.report_file_path:
+                            st.download_button(
+                                f"Download {analysis.report_file_name}",
+                                open(analysis.report_file_path, 'rb').read(),
+                                file_name=analysis.report_file_name,
+                                mime=analysis.report_file_type
+                            )
+                        
+                        if analysis.analysis_metadata:
+                            st.write("Additional Data:")
+                            st.json(analysis.analysis_metadata)
+            else:
+                st.info("No external analyses recorded for this sample.")
+        
+        with col2:
+            # Sample Photo
+            st.markdown("### Sample Photo")
+            if sample.photo_path and os.path.exists(sample.photo_path):
+                st.image(sample.photo_path, caption=f"Photo of {sample.sample_id}")
+            else:
+                st.info("No photo available for this sample.")
+            
+            # Add Photo Button
+            if st.button("Add/Update Photo"):
+                st.session_state.adding_photo = True
+                st.session_state.current_sample_id = sample_id
+            
+            # Photo Upload Form
+            if st.session_state.get('adding_photo', False) and st.session_state.get('current_sample_id') == sample_id:
+                with st.form("photo_upload_form"):
+                    photo = st.file_uploader(
+                        "Upload Sample Photo",
+                        type=['jpg', 'jpeg', 'png'],
+                        help="Upload a photo of the rock sample"
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("Save Photo"):
+                            if photo:
+                                update_sample_photo(sample_id, photo)
+                                st.session_state.adding_photo = False
+                                st.rerun()
+                    
+                    with col2:
+                        if st.form_submit_button("Cancel"):
+                            st.session_state.adding_photo = False
+            
+            # Add External Analysis Button
+            if st.button("Add External Analysis"):
+                st.session_state.adding_analysis = True
+                st.session_state.current_sample_id = sample_id
+            
+            # External Analysis Form
+            if st.session_state.get('adding_analysis', False) and st.session_state.get('current_sample_id') == sample_id:
+                with st.form("external_analysis_form"):
+                    analysis_type = st.selectbox(
+                        "Analysis Type",
+                        options=['XRD', 'SEM', 'Elemental', 'Other']
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        laboratory = st.text_input("Laboratory")
+                        analyst = st.text_input("Analyst")
+                        analysis_date = st.date_input("Analysis Date")
+                    
+                    with col2:
+                        report_file = st.file_uploader(
+                            "Upload Report",
+                            type=['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'jpg', 'png']
+                        )
+                    
+                    description = st.text_area(
+                        "Description",
+                        help="Add a description of the analysis"
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("Save Analysis"):
+                            if report_file:
+                                save_external_analysis(
+                                    sample_id,
+                                    analysis_type,
+                                    report_file,
+                                    laboratory,
+                                    analyst,
+                                    analysis_date,
+                                    description
+                                )
+                                st.session_state.adding_analysis = False
+                                st.rerun()
+                    
+                    with col2:
+                        if st.form_submit_button("Cancel"):
+                            st.session_state.adding_analysis = False
+        
+    except Exception as e:
+        st.error(f"Error displaying sample details: {str(e)}")
+    finally:
+        db.close()
+
+def update_sample_photo(sample_id, photo):
+    """Update the photo for a sample."""
+    try:
+        db = SessionLocal()
+        sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
+        
+        if sample is None:
+            st.error(f"Sample with ID {sample_id} not found.")
+            return
+        
+        # Create uploads directory if it doesn't exist
+        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'sample_photos')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Delete old photo if it exists
+        if sample.photo_path and os.path.exists(sample.photo_path):
+            os.remove(sample.photo_path)
+        
+        # Save new photo
+        photo_path = os.path.join(upload_dir, f"{sample_id}_{photo.name}")
+        with open(photo_path, 'wb') as f:
+            f.write(photo.getvalue())
+        
+        # Update sample with new photo path
+        sample.photo_path = photo_path
+        
+        # Create a modification log entry
+        modification = ModificationsLog(
+            experiment_id=None,  # This is sample-level modification
+            modified_by=st.session_state.get('user', 'Unknown User'),
+            modification_type="update",
+            modified_table="sample_info",
+            new_values={
+                'sample_id': sample_id,
+                'photo_path': photo_path
+            }
+        )
+        db.add(modification)
+        
+        # Commit the changes
+        db.commit()
+        
+        st.success("Sample photo updated successfully!")
+        
+    except Exception as e:
+        db.rollback()
+        st.error(f"Error updating sample photo: {str(e)}")
+    finally:
+        db.close()
 
 def get_all_samples():
     """Get all rock samples from the database."""
