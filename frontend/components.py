@@ -32,7 +32,7 @@ def render_header():
         )
     
     with col2:
-        st.title(st.session_state.current_page)
+        st.title("Addis Energy Research")
     
     # Add custom CSS for the banner
     st.markdown("""
