@@ -3,8 +3,6 @@
 .env.*
 !.env.example
 
-#auth
-auth/firebase_config.py
 
 # Python
 __pycache__/
@@ -84,6 +82,7 @@ external_analyses/
 *.xlsx
 
 # Environment variables
+*.env
 .env
 .env.local
 .env.*.local
