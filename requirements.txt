@@ -1,0 +1,10 @@
+meson-python==0.17.1
+psycopg2-binary==2.9.10
+streamlit==1.43.2
+sqlalchemy==2.0.39
+python-dotenv==1.0.1
+pandas==2.2.3
+numpy==2.2.4
+alembic>=1.11.0
+firebase-admin>=4.0.1
+dotenv=

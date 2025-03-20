@@ -1,0 +1,81 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+#auth
+auth/firebase_config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.python-version
+venv/
+env/
+ENV/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+log/
+
+# Local development
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+*firebase-adminsdk*.json
+
+# Uploads and media
+uploads/
+media/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
