@@ -11,6 +11,7 @@ from frontend.components import (
     render_sample_inventory
 )
 from frontend.auth_components import init_auth_state, render_login_page, render_logout_button
+import os
 
 # Initialize session state for current page if not exists
 if 'current_page' not in st.session_state:
@@ -19,10 +20,13 @@ if 'current_page' not in st.session_state:
 # Initialize authentication state
 init_auth_state()
 
+# Get the absolute path to the icon file
+icon_path = os.path.join(os.path.dirname(__file__), "frontend", "static", "Addis_Avatar_SandColor_NoBackground.png")
+
 # Streamlit app configuration
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon="🧪",  # Using emoji as fallback
+    page_icon=icon_path,  # Using custom icon
     layout=APP_LAYOUT,
     initial_sidebar_state="expanded"
 )

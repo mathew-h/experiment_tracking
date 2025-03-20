@@ -3,64 +3,19 @@ import firebase_admin
 from firebase_admin import auth
 from auth.firebase_config import verify_token, get_firebase_config
 from auth.user_management import create_pending_user_request
-import json
-import base64
 
 def validate_email_domain(email):
     """Validate that the email ends with @addisenergy.com"""
     return email.lower().endswith('@addisenergy.com')
 
 def init_auth_state():
-    """Initialize authentication state in session and check for persistent login."""
+    """Initialize authentication state in session."""
     if 'user' not in st.session_state:
         st.session_state.user = None
     if 'auth_token' not in st.session_state:
         st.session_state.auth_token = None
     if 'firebase_config' not in st.session_state:
         st.session_state.firebase_config = get_firebase_config()
-    
-    # Check for persistent login cookie
-    if not st.session_state.user:
-        try:
-            # Get the persistent login cookie
-            if 'persistent_login' in st.cookies:
-                login_data = json.loads(base64.b64decode(st.cookies['persistent_login']).decode('utf-8'))
-                user_data = login_data.get('user')
-                token = login_data.get('token')
-                
-                # Verify the token
-                if token and verify_token(token):
-                    st.session_state.user = user_data
-                    st.session_state.auth_token = token
-                    return True
-                else:
-                    # Clear invalid cookie
-                    st.cookies['persistent_login'] = ''
-        except Exception as e:
-            print(f"Error checking persistent login: {str(e)}")
-            st.cookies['persistent_login'] = ''
-    
-    return False
-
-def save_persistent_login(user_data, token):
-    """Save login data to persistent cookie."""
-    try:
-        login_data = {
-            'user': user_data,
-            'token': token
-        }
-        # Encode the data to avoid special characters
-        encoded_data = base64.b64encode(json.dumps(login_data).encode('utf-8')).decode('utf-8')
-        # Set cookie with 30-day expiration
-        st.cookies['persistent_login'] = encoded_data
-        return True
-    except Exception as e:
-        print(f"Error saving persistent login: {str(e)}")
-        return False
-
-def clear_persistent_login():
-    """Clear the persistent login cookie."""
-    st.cookies['persistent_login'] = ''
 
 def render_login_page():
     """Render the login page."""
@@ -73,7 +28,6 @@ def render_login_page():
         with st.form("login_form"):
             email = st.text_input("Email")
             password = st.text_input("Password", type="password")
-            remember_me = st.checkbox("Remember me", value=True)
             
             if st.form_submit_button("Login"):
                 try:
@@ -94,20 +48,12 @@ def render_login_page():
                         custom_token = auth.create_custom_token(user.uid)
                         token = custom_token.decode('utf-8')
                         
-                        user_data = {
+                        st.session_state.user = {
                             'uid': user.uid,
                             'email': user.email,
                             'display_name': user.display_name or user.email
                         }
-                        
-                        # Set session state
-                        st.session_state.user = user_data
                         st.session_state.auth_token = token
-                        
-                        # Save to persistent login if requested
-                        if remember_me:
-                            save_persistent_login(user_data, token)
-                        
                         st.success("Login successful!")
                         st.rerun()
                     else:
@@ -168,7 +114,6 @@ def require_auth(func):
                 st.error("Session expired. Please log in again.")
                 st.session_state.user = None
                 st.session_state.auth_token = None
-                clear_persistent_login()
                 render_login_page()
                 return
                 
@@ -181,5 +126,4 @@ def render_logout_button():
         if st.sidebar.button("Logout"):
             st.session_state.user = None
             st.session_state.auth_token = None
-            clear_persistent_login()
             st.rerun() 

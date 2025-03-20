@@ -9,7 +9,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///experiments.db")
 
 # Application configuration
 APP_NAME = "Addis Energy Research"
-APP_ICON = "🧪"  # Using an emoji as fallback icon
+APP_ICON = "frontend/static/Addis_Avatar_SandColor_NoBackground.png"  # Relative path to the icon
 APP_LAYOUT = "wide" 
 
 # Database connection arguments

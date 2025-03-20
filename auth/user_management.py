@@ -203,4 +203,24 @@ def delete_request_by_email(email: str) -> bool:
     for request in requests:
         request.reference.delete()
     
-    return True 
+    return True
+
+def set_user_claims(uid: str, role: str = "user") -> Dict:
+    """Set custom claims for an existing user."""
+    try:
+        # Set custom claims for the user
+        auth.set_custom_user_claims(uid, {
+            'approved': True,
+            'role': role
+        })
+        
+        # Get the updated user
+        user = auth.get_user(uid)
+        return {
+            'uid': user.uid,
+            'email': user.email,
+            'display_name': user.display_name,
+            'custom_claims': user.custom_claims
+        }
+    except Exception as e:
+        raise Exception(f"Failed to set user claims: {str(e)}") 

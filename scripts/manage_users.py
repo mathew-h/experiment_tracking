@@ -15,7 +15,8 @@ from auth.user_management import (
     list_pending_users,
     approve_user,
     reject_user,
-    delete_request_by_email
+    delete_request_by_email,
+    set_user_claims
 )
 
 def main():
@@ -54,6 +55,11 @@ def main():
     # Delete request by email command
     delete_request_parser = subparsers.add_parser('delete-request', help='Delete any existing requests for an email')
     delete_request_parser.add_argument('email', help='Email address to delete requests for')
+
+    # Set claims command
+    set_claims_parser = subparsers.add_parser('set-claims', help='Set custom claims for an existing user')
+    set_claims_parser.add_argument('uid', help='User UID')
+    set_claims_parser.add_argument('--role', default='user', help='User role (default: user)')
 
     args = parser.parse_args()
 
@@ -102,6 +108,11 @@ def main():
                 print(f"Deleted all requests for email: {args.email}")
             else:
                 print(f"No requests found for email: {args.email}")
+        
+        elif args.command == 'set-claims':
+            user = set_user_claims(args.uid, args.role)
+            print(f"Set claims for user: {user['email']} (UID: {user['uid']})")
+            print(f"Custom claims: {user['custom_claims']}")
         
         else:
             parser.print_help()
