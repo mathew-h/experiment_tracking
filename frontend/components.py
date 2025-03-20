@@ -15,12 +15,25 @@ def render_sidebar():
         st.title("Navigation")
         page = st.radio(
             "Go to",
-            ["Dashboard", "New Experiment", "View Experiments", 
+            ["New Experiment", "View Experiments", 
              "New Rock Sample", "View Sample Inventory", "Settings"]
         )
         return page
 
 def render_header():
+    """Render the header with the current page title and Addis Energy Research icon."""
+    col1, col2 = st.columns([1, 4])
+    
+    with col1:
+        # Display the Addis Energy Research icon
+        st.image(
+            os.path.join(os.path.dirname(__file__), "..", ".streamlit", "static", "Addis_Avatar_SandColor_NoBackground.png"),
+            width=100
+        )
+    
+    with col2:
+        st.title(st.session_state.current_page)
+    
     # Add custom CSS for the banner
     st.markdown("""
         <style>

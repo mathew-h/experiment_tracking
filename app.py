@@ -14,24 +14,13 @@ from frontend.auth_components import init_auth_state, render_login_page, render_
 import os
 import logging
 
-# Get the absolute path to the icon file
-icon_path = os.path.join(os.path.dirname(__file__), "frontend", "static", "Addis_Avatar_SandColor_NoBackground.png")
-
-# Streamlit page configuration MUST be the first st.* command
-st.set_page_config(
-    page_title=APP_NAME,
-    page_icon=icon_path,
-    layout=APP_LAYOUT,
-    initial_sidebar_state="expanded"
-)
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize session state for current page if not exists
 if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Dashboard"
+    st.session_state.current_page = "New Experiment"
 
 # Initialize authentication state with error handling
 try:
@@ -41,6 +30,17 @@ except Exception as e:
     logger.error(f"Error initializing authentication state: {str(e)}")
     st.error("Failed to initialize authentication. Please check your configuration.")
     st.stop()
+
+# Get the absolute path to the icon file
+icon_path = os.path.join(os.path.dirname(__file__), ".streamlit", "static", "Addis_Avatar_SandColor_NoBackground.png")
+
+# Streamlit app configuration
+st.set_page_config(
+    page_title=APP_NAME,
+    page_icon=icon_path,  # Using custom icon
+    layout=APP_LAYOUT,
+    initial_sidebar_state="expanded"
+)
 
 def main():
     try:
@@ -59,9 +59,7 @@ def main():
         # Render header after setting the current page
         render_header()
         
-        if page == "Dashboard":
-            render_dashboard()
-        elif page == "New Experiment":
+        if page == "New Experiment":
             render_new_experiment()
         elif page == "View Experiments":
             render_view_experiments()
