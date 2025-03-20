@@ -11,24 +11,24 @@ load_dotenv()
 def get_secret_or_env(key, env_key):
     """Get value from Streamlit secrets or environment variables."""
     try:
-        return st.secrets[key]
+        return st.secrets["FIREBASE"][key]
     except:
         return os.getenv(env_key)
 
 # Get Firebase credentials from environment variables or Streamlit secrets
-FIREBASE_PROJECT_ID = get_secret_or_env("firebase_project_id", "FIREBASE_PROJECT_ID")
-FIREBASE_PRIVATE_KEY = get_secret_or_env("firebase_private_key", "FIREBASE_PRIVATE_KEY")
-FIREBASE_CLIENT_EMAIL = get_secret_or_env("firebase_client_email", "FIREBASE_CLIENT_EMAIL")
+FIREBASE_PROJECT_ID = get_secret_or_env("PROJECT_ID", "FIREBASE_PROJECT_ID")
+FIREBASE_PRIVATE_KEY = get_secret_or_env("PRIVATE_KEY", "FIREBASE_PRIVATE_KEY")
+FIREBASE_CLIENT_EMAIL = get_secret_or_env("CLIENT_EMAIL", "FIREBASE_CLIENT_EMAIL")
 
 # Client-side Firebase config
 FIREBASE_CONFIG = {
-    "apiKey": get_secret_or_env("firebase_api_key", "FIREBASE_API_KEY"),
-    "authDomain": get_secret_or_env("firebase_auth_domain", "FIREBASE_AUTH_DOMAIN"),
+    "apiKey": get_secret_or_env("API_KEY", "FIREBASE_API_KEY"),
+    "authDomain": get_secret_or_env("AUTH_DOMAIN", "FIREBASE_AUTH_DOMAIN"),
     "projectId": FIREBASE_PROJECT_ID,
-    "storageBucket": get_secret_or_env("firebase_storage_bucket", "FIREBASE_STORAGE_BUCKET"),
-    "messagingSenderId": get_secret_or_env("firebase_messaging_sender_id", "FIREBASE_MESSAGING_SENDER_ID"),
-    "appId": get_secret_or_env("firebase_app_id", "FIREBASE_APP_ID"),
-    "measurementId": get_secret_or_env("firebase_measurement_id", "FIREBASE_MEASUREMENT_ID"),
+    "storageBucket": get_secret_or_env("STORAGE_BUCKET", "FIREBASE_STORAGE_BUCKET"),
+    "messagingSenderId": get_secret_or_env("MESSAGING_SENDER_ID", "FIREBASE_MESSAGING_SENDER_ID"),
+    "appId": get_secret_or_env("APP_ID", "FIREBASE_APP_ID"),
+    "measurementId": get_secret_or_env("MEASUREMENT_ID", "FIREBASE_MEASUREMENT_ID"),
 }
 
 # Initialize Firebase Admin SDK
@@ -41,11 +41,11 @@ try:
             "project_id": FIREBASE_PROJECT_ID,
             "private_key": FIREBASE_PRIVATE_KEY.replace('\\n', '\n'),
             "client_email": FIREBASE_CLIENT_EMAIL,
-            "client_id": get_secret_or_env("firebase_client_id", "FIREBASE_CLIENT_ID"),
+            "client_id": get_secret_or_env("CLIENT_ID", "FIREBASE_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": get_secret_or_env("firebase_client_cert_url", "FIREBASE_CLIENT_CERT_URL")
+            "client_x509_cert_url": get_secret_or_env("CLIENT_CERT_URL", "FIREBASE_CLIENT_CERT_URL")
         }
         
         # Initialize with credentials
