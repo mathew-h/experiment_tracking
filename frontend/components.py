@@ -68,6 +68,33 @@ def get_image_base64(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode()
 
+def nav_page(page_name, timeout_secs=3):
+    """Navigate to another page using JavaScript."""
+    from streamlit.components.v1 import html
+    nav_script = """
+        <script type="text/javascript">
+            function attempt_nav_page(page_name, start_time, timeout_secs) {
+                var links = window.parent.document.getElementsByTagName("a");
+                for (var i = 0; i < links.length; i++) {
+                    if (links[i].href.toLowerCase().endsWith("/" + page_name.toLowerCase())) {
+                        links[i].click();
+                        return;
+                    }
+                }
+                var elasped = new Date() - start_time;
+                if (elasped < timeout_secs * 1000) {
+                    setTimeout(attempt_nav_page, 100, page_name, start_time, timeout_secs);
+                } else {
+                    alert("Unable to navigate to page '" + page_name + "' after " + timeout_secs + " second(s).");
+                }
+            }
+            window.addEventListener("load", function() {
+                attempt_nav_page("%s", new Date(), %d);
+            });
+        </script>
+    """ % (page_name, timeout_secs)
+    html(nav_script)
+
 def render_dashboard():
     st.header("Dashboard")
     
@@ -79,27 +106,32 @@ def render_dashboard():
         {
             "title": "New Experiment",
             "description": "Create a new experiment with detailed parameters, conditions, and initial notes.",
-            "icon": "🧪"
+            "icon": "🧪",
+            "page": "new_experiment"
         },
         {
             "title": "View Experiments",
             "description": "Browse, search, and filter all experiments. View detailed information, add notes, and track modifications.",
-            "icon": "📊"
+            "icon": "📊",
+            "page": "view_experiments"
         },
         {
             "title": "New Rock Sample",
             "description": "Add a new rock sample to the inventory with classification, location, and photo documentation.",
-            "icon": "🪨"
+            "icon": "🪨",
+            "page": "new_rock_sample"
         },
         {
             "title": "View Sample Inventory",
             "description": "Access the complete rock sample inventory, search by classification, and view sample details.",
-            "icon": "📚"
+            "icon": "📚",
+            "page": "view_sample_inventory"
         },
         {
             "title": "Settings",
             "description": "Configure application settings and preferences.",
-            "icon": "⚙️"
+            "icon": "⚙️",
+            "page": "settings"
         }
     ]
     
@@ -115,8 +147,7 @@ def render_dashboard():
                 st.markdown(f"#### {section['title']}")
                 st.markdown(section['description'])
                 if st.button(f"Go to {section['title']}", key=f"nav_{section['title']}"):
-                    st.session_state.current_page = section['title']
-                    st.rerun()
+                    nav_page(section['page'])
             
             st.markdown("---")
     

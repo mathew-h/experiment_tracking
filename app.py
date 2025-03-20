@@ -38,12 +38,14 @@ def main():
         return
 
     # Show main app content if user is authenticated
-    render_header()
     page = render_sidebar()
     st.session_state.current_page = page
     
     # Add logout button to sidebar
     render_logout_button()
+    
+    # Render header after setting the current page
+    render_header()
     
     if page == "Dashboard":
         render_dashboard()
@@ -56,7 +58,7 @@ def main():
     elif page == "View Sample Inventory":
         render_sample_inventory()
     elif page == "Settings":
-        render_settings() 
+        render_settings()
 
 if __name__ == "__main__":
     main()
