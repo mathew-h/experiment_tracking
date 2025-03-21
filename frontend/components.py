@@ -273,7 +273,7 @@ def render_new_experiment():
                 buffer_system = st.text_input(
                     "Buffer System",
                     value=st.session_state.experiment_data['conditions'].get('buffer_system', ''),
-                    help="Enter the buffer system used"
+                    help="Enter the buffer system used (optional)"
                 )
             
             with col2:
@@ -332,7 +332,7 @@ def render_new_experiment():
                 )
             
             # Add Notes Section
-            st.markdown("### Initial Lab Notes")
+            st.markdown("### Initial Notes")
             note_text = st.text_area(
                 "Lab Note",
                 value="",
@@ -418,7 +418,7 @@ def save_experiment():
             catalyst=st.session_state.experiment_data['conditions']['catalyst'],
             catalyst_percentage=st.session_state.experiment_data['conditions']['catalyst_percentage'],
             temperature=st.session_state.experiment_data['conditions']['temperature'],
-            buffer_system=st.session_state.experiment_data['conditions']['buffer_system'],
+            buffer_system=st.session_state.experiment_data['conditions']['buffer_system'] if st.session_state.experiment_data['conditions']['buffer_system'].strip() else None,
             pressure=st.session_state.experiment_data['conditions']['pressure'],
             flow_rate=st.session_state.experiment_data['conditions']['flow_rate']
         )
@@ -1535,7 +1535,8 @@ def edit_experiment(experiment):
             
             buffer_system = st.text_input(
                 "Buffer System",
-                value=conditions.get('buffer_system', '')
+                value=conditions.get('buffer_system', ''),
+                help="Enter the buffer system used (optional)"
             )
             
             flow_rate = st.number_input(
@@ -1621,7 +1622,7 @@ def update_experiment(experiment_id, data):
                 catalyst=data['conditions']['catalyst'],
                 catalyst_percentage=data['conditions']['catalyst_percentage'],
                 temperature=data['conditions']['temperature'],
-                buffer_system=data['conditions']['buffer_system'],
+                buffer_system=data['conditions']['buffer_system'] if st.session_state.experiment_data['conditions']['buffer_system'].strip() else None,
                 pressure=data['conditions']['pressure'],
                 flow_rate=data['conditions']['flow_rate']
             )
