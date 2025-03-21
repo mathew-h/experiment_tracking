@@ -36,14 +36,24 @@ class ExperimentalConditions(Base):
     id = Column(Integer, primary_key=True, index=True)
     experiment_id = Column(Integer, ForeignKey("experiments.id"))
     particle_size = Column(String)
-    water_to_rock_ratio = Column(Float)
-    ph = Column(Float)
+    water_to_rock_ratio = Column(Float, nullable=True)
+    initial_ph = Column(Float)
     catalyst = Column(String)
+    catalyst_mass = Column(Float)
     catalyst_percentage = Column(Float)
     temperature = Column(Float)
-    buffer_system = Column(String)
-    pressure = Column(Float)
-    flow_rate = Column(Float)
+    buffer_system = Column(String, nullable=True)
+    buffer_concentration = Column(Float)  # in mM
+    pressure = Column(Float)  # in psi instead of bar
+    flow_rate = Column(Float, nullable=True)
+    experiment_type = Column(String)  # Serum, Autoclave, HPHT, Core Flood
+    initial_nitrate_concentration = Column(Float)  # in mM, optional
+    dissolved_oxygen = Column(Float)  # in ppm, optional
+    surfactant_type = Column(String)  # optional
+    surfactant_concentration = Column(Float)  # optional
+    co2_partial_pressure = Column(Float)  # in psi, optional
+    confining_pressure = Column(Float)  # optional
+    pore_pressure = Column(Float)  # optional
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
@@ -57,6 +67,8 @@ class Results(Base):
     nmr_data = Column(JSON)  # Store NMR data as JSON
     gc_data = Column(JSON)   # Store GC data as JSON
     yield_value = Column(Float)  # in percentage
+    final_ph = Column(Float)  # Optional result field
+    final_nitrate_concentration = Column(Float)  # in mM, optional result field
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

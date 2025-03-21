@@ -6,7 +6,7 @@ import os
 
 # Add parent directory to path for database imports
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from database.models import Experiment, ExperimentalConditions, ExperimentStatus, ExperimentNotes, ModificationsLog, ExperimentalData, SampleInfo, ExternalAnalysis
+from database.models import Experiment, ExperimentalConditions, ExperimentStatus, ExperimentNotes, ModificationsLog, ExperimentalData, SampleInfo, ExternalAnalysis, Results
 from database.database import SessionLocal
 import pandas as pd
 
@@ -206,6 +206,7 @@ def render_new_experiment():
         st.session_state.step = 1
     
     if 'experiment_data' not in st.session_state:
+        # Create a complete default structure with all fields initialized
         st.session_state.experiment_data = {
             'experiment_id': '',
             'sample_id': '',
@@ -213,24 +214,63 @@ def render_new_experiment():
             'status': 'PLANNED',
             'conditions': {
                 'particle_size': '',
-                'water_to_rock_ratio': 0.0,
-                'ph': 7.0,
+                'water_to_rock_ratio': None,  # Made optional
+                'initial_ph': 7.0,
                 'catalyst': '',
+                'catalyst_mass': 0.0,  # Added as required field
                 'catalyst_percentage': 0.0,
                 'temperature': 25.0,
-                'buffer_system': '',
-                'pressure': 1.0,
-                'flow_rate': 0.0
+                'buffer_system': None,  # Made optional
+                'buffer_concentration': 0.0,
+                'pressure': 14.6959,
+                'flow_rate': None,  # Made optional
+                'experiment_type': 'Serum',
+                'initial_nitrate_concentration': 0.0,
+                'dissolved_oxygen': 0.0,
+                'surfactant_type': '',
+                'surfactant_concentration': 0.0,
+                'co2_partial_pressure': 0.0,
+                'confining_pressure': 0.0,
+                'pore_pressure': 0.0
             },
             'notes': []
         }
+    # Make sure all fields exist in the conditions
+    else:
+        # Ensure all fields exist in conditions with default values
+        conditions = st.session_state.experiment_data['conditions']
+        default_values = {
+            'particle_size': '',
+            'water_to_rock_ratio': None,  # Made optional
+            'initial_ph': 7.0,
+            'catalyst': '',
+            'catalyst_mass': 0.0,  # Added as required field
+            'catalyst_percentage': 0.0,
+            'temperature': 25.0,
+            'buffer_system': None,  # Made optional
+            'buffer_concentration': 0.0,
+            'pressure': 14.6959,
+            'flow_rate': None,  # Made optional
+            'experiment_type': 'Serum',
+            'initial_nitrate_concentration': 0.0,
+            'dissolved_oxygen': 0.0,
+            'surfactant_type': '',
+            'surfactant_concentration': 0.0,
+            'co2_partial_pressure': 0.0,
+            'confining_pressure': 0.0,
+            'pore_pressure': 0.0
+        }
+        
+        for field, default_value in default_values.items():
+            if field not in conditions or conditions[field] is None:
+                conditions[field] = default_value
     
     # Step 1: Collect experiment data
     if st.session_state.step == 1:
         st.subheader("Experiment Details")
         
         # Create a form for experiment data
-        with st.form("experiment_form"):
+        with st.form(key="experiment_form"):
             col1, col2 = st.columns(2)
             
             with col1:
@@ -269,28 +309,27 @@ def render_new_experiment():
                     help="Enter the catalyst used"
                 )
                 
-                
-                buffer_system = st.text_input(
-                    "Buffer System",
-                    value=st.session_state.experiment_data['conditions'].get('buffer_system', ''),
-                    help="Enter the buffer system used (optional)"
-                )
-            
-            with col2:
-                
-                water_to_rock_ratio = st.number_input(
-                    "Water to Rock Ratio", 
-                    min_value=0.0, 
-                    value=float(st.session_state.experiment_data['conditions']['water_to_rock_ratio'] or 0.0),
-                    step=0.1,
-                    format="%.2f"
+                catalyst_mass = st.number_input(
+                    "Catalyst Mass (g)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('catalyst_mass', 0.0)),
+                    step=0.000001,  # 6 significant figures
+                    format="%.6f",
+                    help="Enter the mass of catalyst in grams"
                 )
                 
-                ph = st.number_input(
-                    "pH", 
+                experiment_type = st.selectbox(
+                    "Experiment Type",
+                    options=['Serum', 'Autoclave', 'HPHT', 'Core Flood'],
+                    index=0,
+                    help="Select the type of experiment"
+                )
+                
+                initial_ph = st.number_input(
+                    "Initial pH", 
                     min_value=0.0, 
                     max_value=14.0, 
-                    value=float(st.session_state.experiment_data['conditions']['ph'] or 7.0),
+                    value=float(st.session_state.experiment_data['conditions']['initial_ph'] or 7.0),
                     step=0.1,
                     format="%.1f"
                 )
@@ -304,23 +343,41 @@ def render_new_experiment():
                 )
                 
                 pressure = st.number_input(
-                    "Pressure (bar)",
+                    "Pressure (psi)",
                     min_value=0.0,
-                    value=float(st.session_state.experiment_data['conditions'].get('pressure', 1.0)),
+                    value=float(st.session_state.experiment_data['conditions'].get('pressure', 14.6959)),
                     step=0.1,
-                    format="%.1f",
-                    help="Enter the pressure in bar"
+                    format="%.2f",
+                    help="Enter the pressure in psi"
+                )
+            
+            with col2:
+                st.markdown("### Optional Parameters")
+                
+                buffer_system = st.text_input(
+                    "Buffer System (Optional)",
+                    value=st.session_state.experiment_data['conditions'].get('buffer_system', ''),
+                    help="Enter the buffer system used (optional)"
+                )
+                
+                water_to_rock_ratio = st.number_input(
+                    "Water to Rock Ratio (Optional)", 
+                    min_value=0.0, 
+                    value=float(st.session_state.experiment_data['conditions'].get('water_to_rock_ratio', 0.0) or 0.0),
+                    step=0.1,
+                    format="%.2f",
+                    help="Enter the water to rock ratio (optional)"
                 )
                 
                 flow_rate = st.number_input(
-                    "Flow Rate (mL/min)",
+                    "Flow Rate (mL/min) (Optional)",
                     min_value=0.0,
-                    value=float(st.session_state.experiment_data['conditions'].get('flow_rate', 0.0)),
+                    value=float(st.session_state.experiment_data['conditions'].get('flow_rate', 0.0) or 0.0),
                     step=0.1,
                     format="%.1f",
-                    help="Enter the flow rate in mL/min"
+                    help="Enter the flow rate in mL/min (optional)"
                 )
-
+                
                 catalyst_percentage = st.number_input(
                     "Catalyst Percentage (Elemental % of Rock)",
                     min_value=0.0,
@@ -329,6 +386,75 @@ def render_new_experiment():
                     step=0.1,
                     format="%.1f",
                     help="Enter the percentage of catalyst used"
+                )
+                
+                buffer_concentration = st.number_input(
+                    "Buffer Concentration (mM)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('buffer_concentration', 0.0)),
+                    step=0.1,
+                    format="%.1f",
+                    help="Enter the buffer concentration in mM"
+                )
+                
+                initial_nitrate_concentration = st.number_input(
+                    "Initial Nitrate Concentration (mM)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('initial_nitrate_concentration', 0.0)),
+                    step=0.1,
+                    format="%.1f",
+                    help="Enter the initial nitrate concentration in mM"
+                )
+                
+                dissolved_oxygen = st.number_input(
+                    "Dissolved Oxygen (ppm)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('dissolved_oxygen', 0.0)),
+                    step=0.1,
+                    format="%.1f",
+                    help="Enter the dissolved oxygen in ppm"
+                )
+                
+                surfactant_type = st.text_input(
+                    "Surfactant Type",
+                    value=st.session_state.experiment_data['conditions'].get('surfactant_type', ''),
+                    help="Enter the surfactant type used (optional)"
+                )
+                
+                surfactant_concentration = st.number_input(
+                    "Surfactant Concentration",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('surfactant_concentration', 0.0)),
+                    step=0.1,
+                    format="%.2f",
+                    help="Enter the surfactant concentration"
+                )
+                
+                co2_partial_pressure = st.number_input(
+                    "CO2 Partial Pressure (psi)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('co2_partial_pressure', 0.0)),
+                    step=0.1,
+                    format="%.2f",
+                    help="Enter the CO2 partial pressure in psi"
+                )
+                
+                confining_pressure = st.number_input(
+                    "Confining Pressure (psi)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('confining_pressure', 0.0)),
+                    step=0.1,
+                    format="%.2f",
+                    help="Enter the confining pressure in psi"
+                )
+                
+                pore_pressure = st.number_input(
+                    "Pore Pressure (psi)",
+                    min_value=0.0,
+                    value=float(st.session_state.experiment_data['conditions'].get('pore_pressure', 0.0)),
+                    step=0.1,
+                    format="%.2f",
+                    help="Enter the pore pressure in psi"
                 )
             
             # Add Notes Section
@@ -340,30 +466,48 @@ def render_new_experiment():
                 help="Add any initial lab notes for this experiment. You can add more notes later."
             )
             
-            # Update session state with form values
-            st.session_state.experiment_data.update({
-                'experiment_id': experiment_id,
-                        'sample_id': sample_id,
-                        'researcher': researcher,
-                        'status': status,
-                        'conditions': {
-                            'water_to_rock_ratio': water_to_rock_ratio,
-                            'ph': ph,
-                        'temperature': temperature
-                }
-            })
+            # Update form data on submit
+            submit_button = st.form_submit_button("Save Experiment")
             
-            # Handle notes in form submission
-            if note_text.strip():
-                if 'notes' not in st.session_state.experiment_data:
-                    st.session_state.experiment_data['notes'] = []
-                st.session_state.experiment_data['notes'].append({
-                    'note_text': note_text.strip(),
-                    'created_at': datetime.datetime.now()
+            if submit_button:
+                # Update session state with form values
+                st.session_state.experiment_data.update({
+                    'experiment_id': experiment_id,
+                    'sample_id': sample_id,
+                    'researcher': researcher,
+                    'status': status,
+                    'conditions': {
+                        'particle_size': particle_size,
+                        'water_to_rock_ratio': water_to_rock_ratio if water_to_rock_ratio > 0 else None,
+                        'initial_ph': initial_ph,
+                        'catalyst': catalyst,
+                        'catalyst_mass': catalyst_mass,
+                        'catalyst_percentage': catalyst_percentage,
+                        'temperature': temperature,
+                        'buffer_system': buffer_system if buffer_system.strip() else None,
+                        'buffer_concentration': buffer_concentration,
+                        'pressure': pressure,
+                        'flow_rate': flow_rate if flow_rate > 0 else None,
+                        'experiment_type': experiment_type,
+                        'initial_nitrate_concentration': initial_nitrate_concentration,
+                        'dissolved_oxygen': dissolved_oxygen,
+                        'surfactant_type': surfactant_type,
+                        'surfactant_concentration': surfactant_concentration,
+                        'co2_partial_pressure': co2_partial_pressure,
+                        'confining_pressure': confining_pressure,
+                        'pore_pressure': pore_pressure
+                    }
                 })
-            
-            # Submit button
-            if st.form_submit_button("Save Experiment"):
+                
+                # Handle notes in form submission
+                if note_text.strip():
+                    if 'notes' not in st.session_state.experiment_data:
+                        st.session_state.experiment_data['notes'] = []
+                    st.session_state.experiment_data['notes'].append({
+                        'note_text': note_text.strip(),
+                        'created_at': datetime.datetime.now()
+                    })
+                
                 save_experiment()
                 st.success("Experiment saved successfully!")
                 st.session_state.step = 2
@@ -379,9 +523,25 @@ def render_new_experiment():
                 'researcher': '',
                 'status': 'PLANNED',
                 'conditions': {
-                    'water_to_rock_ratio': 0.0,
-                    'ph': 7.0,
-                    'temperature': 25.0
+                    'particle_size': '',
+                    'water_to_rock_ratio': None,  # Made optional
+                    'initial_ph': 7.0,
+                    'catalyst': '',
+                    'catalyst_mass': 0.0,  # Added as required field
+                    'catalyst_percentage': 0.0,
+                    'temperature': 25.0,
+                    'buffer_system': None,  # Made optional
+                    'buffer_concentration': 0.0,
+                    'pressure': 14.6959,
+                    'flow_rate': None,  # Made optional
+                    'experiment_type': 'Serum',
+                    'initial_nitrate_concentration': 0.0,
+                    'dissolved_oxygen': 0.0,
+                    'surfactant_type': '',
+                    'surfactant_concentration': 0.0,
+                    'co2_partial_pressure': 0.0,
+                    'confining_pressure': 0.0,
+                    'pore_pressure': 0.0
                 },
                 'notes': []
             }
@@ -395,6 +555,33 @@ def save_experiment():
         # Get the next experiment number
         last_experiment = db.query(Experiment).order_by(Experiment.experiment_number.desc()).first()
         next_experiment_number = 1 if last_experiment is None else last_experiment.experiment_number + 1
+        
+        # Ensure all required fields exist and have defaults
+        conditions = st.session_state.experiment_data['conditions']
+        for field in ['particle_size', 'water_to_rock_ratio', 'initial_ph', 'catalyst', 
+                     'catalyst_mass', 'catalyst_percentage', 'temperature', 'buffer_system', 'pressure', 
+                     'flow_rate', 'experiment_type', 'initial_nitrate_concentration', 
+                     'dissolved_oxygen', 'surfactant_type', 'surfactant_concentration', 
+                     'buffer_concentration', 'co2_partial_pressure', 'confining_pressure', 'pore_pressure']:
+            if field not in conditions or conditions[field] is None:
+                if field in ['water_to_rock_ratio', 'catalyst_percentage', 'initial_nitrate_concentration', 
+                           'dissolved_oxygen', 'surfactant_concentration', 'buffer_concentration', 
+                           'co2_partial_pressure', 'confining_pressure', 'pore_pressure', 'flow_rate']:
+                    conditions[field] = None  # These are optional fields
+                elif field == 'initial_ph':
+                    conditions[field] = 7.0
+                elif field == 'catalyst_mass':
+                    conditions[field] = 0.0
+                elif field == 'temperature':
+                    conditions[field] = 25.0
+                elif field == 'pressure':
+                    conditions[field] = 14.6959
+                elif field == 'experiment_type':
+                    conditions[field] = 'Serum'
+                elif field == 'buffer_system':
+                    conditions[field] = None  # Optional field
+                else:
+                    conditions[field] = ''
         
         # Create a new experiment
         experiment = Experiment(
@@ -413,14 +600,25 @@ def save_experiment():
         # Create experimental conditions
         conditions = ExperimentalConditions(
             experiment_id=experiment.id,
+            particle_size=st.session_state.experiment_data['conditions']['particle_size'],
             water_to_rock_ratio=st.session_state.experiment_data['conditions']['water_to_rock_ratio'],
-            ph=st.session_state.experiment_data['conditions']['ph'],
+            initial_ph=st.session_state.experiment_data['conditions']['initial_ph'],
             catalyst=st.session_state.experiment_data['conditions']['catalyst'],
+            catalyst_mass=st.session_state.experiment_data['conditions']['catalyst_mass'],
             catalyst_percentage=st.session_state.experiment_data['conditions']['catalyst_percentage'],
             temperature=st.session_state.experiment_data['conditions']['temperature'],
-            buffer_system=st.session_state.experiment_data['conditions']['buffer_system'] if st.session_state.experiment_data['conditions']['buffer_system'].strip() else None,
+            buffer_system=st.session_state.experiment_data['conditions']['buffer_system'],
+            buffer_concentration=st.session_state.experiment_data['conditions']['buffer_concentration'],
             pressure=st.session_state.experiment_data['conditions']['pressure'],
-            flow_rate=st.session_state.experiment_data['conditions']['flow_rate']
+            flow_rate=st.session_state.experiment_data['conditions']['flow_rate'],
+            experiment_type=st.session_state.experiment_data['conditions']['experiment_type'],
+            initial_nitrate_concentration=st.session_state.experiment_data['conditions']['initial_nitrate_concentration'],
+            dissolved_oxygen=st.session_state.experiment_data['conditions']['dissolved_oxygen'],
+            surfactant_type=st.session_state.experiment_data['conditions']['surfactant_type'],
+            surfactant_concentration=st.session_state.experiment_data['conditions']['surfactant_concentration'],
+            co2_partial_pressure=st.session_state.experiment_data['conditions']['co2_partial_pressure'],
+            confining_pressure=st.session_state.experiment_data['conditions']['confining_pressure'],
+            pore_pressure=st.session_state.experiment_data['conditions']['pore_pressure']
         )
         
         # Add the conditions to the session
@@ -575,11 +773,11 @@ def render_view_experiments():
             
             if min_ph is not None:
                 detailed_experiments = [exp for exp in detailed_experiments if 
-                                      exp['conditions'].get('ph', 0) >= min_ph]
+                                      exp['conditions'].get('initial_ph', 0) >= min_ph]
             
             if max_ph is not None:
                 detailed_experiments = [exp for exp in detailed_experiments if 
-                                      exp['conditions'].get('ph', 0) <= max_ph]
+                                      exp['conditions'].get('initial_ph', 0) <= max_ph]
             
             # Display experiments in a table
             exp_df = pd.DataFrame(detailed_experiments)
@@ -714,19 +912,86 @@ def get_experiment_by_id(experiment_id):
             'experimental_data': []  # Add experimental data list
         }
         
-        # Add conditions if they exist
+        # Add conditions if they exist with default values for missing fields
         if conditions:
-            exp_dict['conditions'] = {
-                'particle_size': conditions.particle_size if hasattr(conditions, 'particle_size') else '',
-                'water_to_rock_ratio': conditions.water_to_rock_ratio,
-                'ph': conditions.ph,
-                'catalyst': conditions.catalyst,
-                'catalyst_percentage': conditions.catalyst_percentage,
-                'temperature': conditions.temperature,
-                'buffer_system': conditions.buffer_system,
-                'pressure': conditions.pressure,
-                'flow_rate': conditions.flow_rate
+            # Initialize with default values
+            condition_dict = {
+                'particle_size': '',
+                'water_to_rock_ratio': 0.0,
+                'initial_ph': 7.0,
+                'catalyst': '',
+                'catalyst_percentage': 0.0,
+                'temperature': 25.0,
+                'buffer_system': '',
+                'buffer_concentration': 0.0,
+                'pressure': 14.6959,
+                'flow_rate': 0.0,
+                'experiment_type': 'Serum',
+                'initial_nitrate_concentration': 0.0,
+                'dissolved_oxygen': 0.0,
+                'surfactant_type': '',
+                'surfactant_concentration': 0.0,
+                'co2_partial_pressure': 0.0,
+                'confining_pressure': 0.0,
+                'pore_pressure': 0.0
             }
+            
+            # Update with actual values where they exist
+            if hasattr(conditions, 'particle_size') and conditions.particle_size is not None:
+                condition_dict['particle_size'] = conditions.particle_size
+            
+            if hasattr(conditions, 'water_to_rock_ratio') and conditions.water_to_rock_ratio is not None:
+                condition_dict['water_to_rock_ratio'] = conditions.water_to_rock_ratio
+                
+            if hasattr(conditions, 'initial_ph') and conditions.initial_ph is not None:
+                condition_dict['initial_ph'] = conditions.initial_ph
+                
+            if hasattr(conditions, 'catalyst') and conditions.catalyst is not None:
+                condition_dict['catalyst'] = conditions.catalyst
+                
+            if hasattr(conditions, 'catalyst_percentage') and conditions.catalyst_percentage is not None:
+                condition_dict['catalyst_percentage'] = conditions.catalyst_percentage
+                
+            if hasattr(conditions, 'temperature') and conditions.temperature is not None:
+                condition_dict['temperature'] = conditions.temperature
+                
+            if hasattr(conditions, 'buffer_system') and conditions.buffer_system is not None:
+                condition_dict['buffer_system'] = conditions.buffer_system
+                
+            if hasattr(conditions, 'buffer_concentration') and conditions.buffer_concentration is not None:
+                condition_dict['buffer_concentration'] = conditions.buffer_concentration
+                
+            if hasattr(conditions, 'pressure') and conditions.pressure is not None:
+                condition_dict['pressure'] = conditions.pressure
+                
+            if hasattr(conditions, 'flow_rate') and conditions.flow_rate is not None:
+                condition_dict['flow_rate'] = conditions.flow_rate
+                
+            if hasattr(conditions, 'experiment_type') and conditions.experiment_type is not None:
+                condition_dict['experiment_type'] = conditions.experiment_type
+                
+            if hasattr(conditions, 'initial_nitrate_concentration') and conditions.initial_nitrate_concentration is not None:
+                condition_dict['initial_nitrate_concentration'] = conditions.initial_nitrate_concentration
+                
+            if hasattr(conditions, 'dissolved_oxygen') and conditions.dissolved_oxygen is not None:
+                condition_dict['dissolved_oxygen'] = conditions.dissolved_oxygen
+                
+            if hasattr(conditions, 'surfactant_type') and conditions.surfactant_type is not None:
+                condition_dict['surfactant_type'] = conditions.surfactant_type
+                
+            if hasattr(conditions, 'surfactant_concentration') and conditions.surfactant_concentration is not None:
+                condition_dict['surfactant_concentration'] = conditions.surfactant_concentration
+                
+            if hasattr(conditions, 'co2_partial_pressure') and conditions.co2_partial_pressure is not None:
+                condition_dict['co2_partial_pressure'] = conditions.co2_partial_pressure
+                
+            if hasattr(conditions, 'confining_pressure') and conditions.confining_pressure is not None:
+                condition_dict['confining_pressure'] = conditions.confining_pressure
+                
+            if hasattr(conditions, 'pore_pressure') and conditions.pore_pressure is not None:
+                condition_dict['pore_pressure'] = conditions.pore_pressure
+            
+            exp_dict['conditions'] = condition_dict
         
         # Add notes if they exist
         if notes:
@@ -801,10 +1066,144 @@ def display_experiment_details(experiment):
     # Conditions
     st.markdown("### Experimental Conditions")
     if experiment['conditions']:
-        conditions_df = pd.DataFrame([experiment['conditions']]).T.rename(columns={0: "Value"})
-        st.table(conditions_df)
+        # Split conditions into two columns: required and optional
+        required_conditions = {
+            "Experiment Type": experiment['conditions'].get('experiment_type', 'N/A'),
+            "Particle Size": experiment['conditions'].get('particle_size', 'N/A'),
+            "Water to Rock Ratio": experiment['conditions'].get('water_to_rock_ratio', 'N/A'),
+            "Initial pH": experiment['conditions'].get('initial_ph', 'N/A'),
+            "Temperature (°C)": experiment['conditions'].get('temperature', 'N/A'),
+            "Pressure (psi)": experiment['conditions'].get('pressure', 'N/A'),
+            "Flow Rate (mL/min)": experiment['conditions'].get('flow_rate', 'N/A'),
+            "Catalyst": experiment['conditions'].get('catalyst', 'N/A'),
+            "Buffer System": experiment['conditions'].get('buffer_system', 'N/A')
+        }
+        
+        optional_conditions = {
+            "Catalyst Percentage (%)": experiment['conditions'].get('catalyst_percentage', 'N/A'),
+            "Buffer Concentration (mM)": experiment['conditions'].get('buffer_concentration', 'N/A'),
+            "Initial Nitrate Concentration (mM)": experiment['conditions'].get('initial_nitrate_concentration', 'N/A'),
+            "Dissolved Oxygen (ppm)": experiment['conditions'].get('dissolved_oxygen', 'N/A'),
+            "Surfactant Type": experiment['conditions'].get('surfactant_type', 'N/A'),
+            "Surfactant Concentration": experiment['conditions'].get('surfactant_concentration', 'N/A'),
+            "CO2 Partial Pressure (psi)": experiment['conditions'].get('co2_partial_pressure', 'N/A'),
+            "Confining Pressure (psi)": experiment['conditions'].get('confining_pressure', 'N/A'),
+            "Pore Pressure (psi)": experiment['conditions'].get('pore_pressure', 'N/A')
+        }
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Required Parameters")
+            req_df = pd.DataFrame([required_conditions]).T.rename(columns={0: "Value"})
+            st.table(req_df)
+        
+        with col2:
+            st.markdown("#### Optional Parameters")
+            opt_df = pd.DataFrame([optional_conditions]).T.rename(columns={0: "Value"})
+            st.table(opt_df)
     else:
         st.info("No experimental conditions recorded for this experiment.")
+    
+    # Results Section
+    st.markdown("### Results")
+    
+    # Try to get results data
+    db = SessionLocal()
+    result = db.query(Results).filter(Results.experiment_id == experiment['id']).first()
+    db.close()
+    
+    if result:
+        results_data = {
+            "Final pH": result.final_ph if result.final_ph else "Not recorded",
+            "Final Nitrate Concentration (mM)": result.final_nitrate_concentration if result.final_nitrate_concentration else "Not recorded",
+            "Yield Value (%)": result.yield_value if result.yield_value else "Not recorded"
+        }
+        
+        results_df = pd.DataFrame([results_data]).T.rename(columns={0: "Value"})
+        st.table(results_df)
+        
+        # Add an option to edit results
+        if st.button("Edit Results"):
+            st.session_state.edit_results = True
+            st.session_state.current_experiment_id = experiment['id']
+    else:
+        st.info("No results recorded for this experiment.")
+        
+        # Add an option to add results
+        if st.button("Add Results"):
+            st.session_state.edit_results = True
+            st.session_state.current_experiment_id = experiment['id']
+    
+    # Results Edit Form
+    if st.session_state.get('edit_results', False) and st.session_state.get('current_experiment_id') == experiment['id']:
+        with st.form("results_form"):
+            st.markdown("#### Edit Results")
+            
+            # Pre-populate with existing data if available
+            if result:
+                final_ph = st.number_input(
+                    "Final pH",
+                    min_value=0.0,
+                    max_value=14.0,
+                    value=float(result.final_ph) if result.final_ph else 7.0,
+                    step=0.1,
+                    format="%.1f"
+                )
+                
+                final_nitrate = st.number_input(
+                    "Final Nitrate Concentration (mM)",
+                    min_value=0.0,
+                    value=float(result.final_nitrate_concentration) if result.final_nitrate_concentration else 0.0,
+                    step=0.1,
+                    format="%.1f"
+                )
+                
+                yield_value = st.number_input(
+                    "Yield Value (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(result.yield_value) if result.yield_value else 0.0,
+                    step=0.1,
+                    format="%.1f"
+                )
+            else:
+                final_ph = st.number_input(
+                    "Final pH",
+                    min_value=0.0,
+                    max_value=14.0,
+                    value=7.0,
+                    step=0.1,
+                    format="%.1f"
+                )
+                
+                final_nitrate = st.number_input(
+                    "Final Nitrate Concentration (mM)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.1,
+                    format="%.1f"
+                )
+                
+                yield_value = st.number_input(
+                    "Yield Value (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=0.0,
+                    step=0.1,
+                    format="%.1f"
+                )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("Save Results"):
+                    save_results(experiment['id'], final_ph, final_nitrate, yield_value)
+                    st.session_state.edit_results = False
+                    st.session_state.experiment_updated = True
+            
+            with col2:
+                if st.form_submit_button("Cancel"):
+                    st.session_state.edit_results = False
     
     # Experimental Data Section
     st.markdown("### Experimental Data")
@@ -1455,7 +1854,7 @@ def submit_experiment_edit(experiment_id, data):
 
 def edit_experiment(experiment):
     """Edit an existing experiment."""
-    with st.form("edit_experiment_form"):
+    with st.form(key="edit_experiment_form"):
         st.markdown("### Basic Information")
         col1, col2 = st.columns(2)
         
@@ -1480,49 +1879,49 @@ def edit_experiment(experiment):
         conditions = experiment.get('conditions', {})
         
         with col3:
+            st.markdown("#### Required Parameters")
+            
+            experiment_type = st.selectbox(
+                "Experiment Type",
+                options=['Serum', 'Autoclave', 'HPHT', 'Core Flood'],
+                index=['Serum', 'Autoclave', 'HPHT', 'Core Flood'].index(conditions.get('experiment_type', 'Serum')) if conditions.get('experiment_type') in ['Serum', 'Autoclave', 'HPHT', 'Core Flood'] else 0
+            )
+            
             particle_size = st.text_input(
                 "Particle Size (μm)",
                 value=conditions.get('particle_size', '')
             )
             
             water_to_rock_ratio = st.number_input(
-                "Water to Rock Ratio",
+                "Water to Rock Ratio (Optional)",
                 min_value=0.0,
                 value=float(conditions.get('water_to_rock_ratio', 0.0) or 0.0),
                 step=0.1,
-                format="%.2f"
+                format="%.2f",
+                help="Enter the water to rock ratio (optional)"
             )
             
-            ph = st.number_input(
-                "pH",
+            initial_ph = st.number_input(
+                "Initial pH",
                 min_value=0.0,
                 max_value=14.0,
-                value=float(conditions.get('ph', 7.0) or 7.0),
+                value=float(conditions.get('initial_ph', 7.0) or 7.0),
                 step=0.1,
                 format="%.1f"
             )
             
-            pressure = st.number_input(
-                "Pressure (bar)",
-                min_value=0.0,
-                value=float(conditions.get('pressure', 1.0) or 1.0),
-                step=1.0,
-                format="%.1f"
-            )
-        
-        with col4:
             catalyst = st.text_input(
-                "Catalyst Type",
+                "Catalyst",
                 value=conditions.get('catalyst', '')
             )
             
-            catalyst_percentage = st.number_input(
-                "Catalyst %",
+            catalyst_mass = st.number_input(
+                "Catalyst Mass (g)",
                 min_value=0.0,
-                max_value=100.0,
-                value=float(conditions.get('catalyst_percentage', 0.0) or 0.0),
-                step=0.1,
-                format="%.1f"
+                value=float(conditions.get('catalyst_mass', 0.0) or 0.0),
+                step=0.000001,  # 6 significant figures
+                format="%.6f",
+                help="Enter the mass of catalyst in grams"
             )
             
             temperature = st.number_input(
@@ -1533,45 +1932,136 @@ def edit_experiment(experiment):
                 format="%.1f"
             )
             
-            buffer_system = st.text_input(
-                "Buffer System",
-                value=conditions.get('buffer_system', ''),
-                help="Enter the buffer system used (optional)"
+            pressure = st.number_input(
+                "Pressure (psi)",
+                min_value=0.0,
+                value=float(conditions.get('pressure', 14.6959) or 14.6959),
+                step=0.1,
+                format="%.2f",
+                help="Enter the pressure in psi"
             )
             
             flow_rate = st.number_input(
-                "Flow Rate (mL/min)",
+                "Flow Rate (mL/min) (Optional)",
                 min_value=0.0,
                 value=float(conditions.get('flow_rate', 0.0) or 0.0),
                 step=0.1,
+                format="%.1f",
+                help="Enter the flow rate in mL/min (optional)"
+            )
+            
+            buffer_system = st.text_input(
+                "Buffer System (Optional)",
+                value=conditions.get('buffer_system', ''),
+                help="Enter the buffer system used (optional)"
+            )
+        
+        with col4:
+            st.markdown("#### Optional Parameters")
+            
+            catalyst_percentage = st.number_input(
+                "Catalyst %",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(conditions.get('catalyst_percentage', 0.0) or 0.0),
+                step=0.1,
                 format="%.1f"
+            )
+            
+            buffer_concentration = st.number_input(
+                "Buffer Concentration (mM)",
+                min_value=0.0,
+                value=float(conditions.get('buffer_concentration', 0.0) or 0.0),
+                step=0.1,
+                format="%.1f"
+            )
+            
+            initial_nitrate_concentration = st.number_input(
+                "Initial Nitrate Concentration (mM)",
+                min_value=0.0,
+                value=float(conditions.get('initial_nitrate_concentration', 0.0) or 0.0),
+                step=0.1,
+                format="%.1f"
+            )
+            
+            dissolved_oxygen = st.number_input(
+                "Dissolved Oxygen (ppm)",
+                min_value=0.0,
+                value=float(conditions.get('dissolved_oxygen', 0.0) or 0.0),
+                step=0.1,
+                format="%.1f"
+            )
+            
+            surfactant_type = st.text_input(
+                "Surfactant Type",
+                value=conditions.get('surfactant_type', '')
+            )
+            
+            surfactant_concentration = st.number_input(
+                "Surfactant Concentration",
+                min_value=0.0,
+                value=float(conditions.get('surfactant_concentration', 0.0) or 0.0),
+                step=0.1,
+                format="%.2f"
+            )
+            
+            co2_partial_pressure = st.number_input(
+                "CO2 Partial Pressure (psi)",
+                min_value=0.0,
+                value=float(conditions.get('co2_partial_pressure', 0.0) or 0.0),
+                step=0.1,
+                format="%.2f"
+            )
+            
+            confining_pressure = st.number_input(
+                "Confining Pressure (psi)",
+                min_value=0.0,
+                value=float(conditions.get('confining_pressure', 0.0) or 0.0),
+                step=0.1,
+                format="%.2f"
+            )
+            
+            pore_pressure = st.number_input(
+                "Pore Pressure (psi)",
+                min_value=0.0,
+                value=float(conditions.get('pore_pressure', 0.0) or 0.0),
+                step=0.1,
+                format="%.2f"
             )
         
         # Prepare data for submission
         form_data = {
-                    'sample_id': sample_id,
-                    'researcher': researcher,
-                    'status': status,
-                    'date': datetime.datetime.combine(exp_date, datetime.datetime.now().time()),
-                    'conditions': {
-                        'particle_size': particle_size,
-                        'water_to_rock_ratio': water_to_rock_ratio,
-                        'ph': ph,
-                        'catalyst': catalyst,
-                        'catalyst_percentage': catalyst_percentage,
-                        'temperature': temperature,
-                        'buffer_system': buffer_system,
-                        'pressure': pressure,
-                        'flow_rate': flow_rate
-                    }
-                }
+            'sample_id': sample_id,
+            'researcher': researcher,
+            'status': status,
+            'date': datetime.datetime.combine(exp_date, datetime.datetime.now().time()),
+            'conditions': {
+                'particle_size': particle_size,
+                'water_to_rock_ratio': water_to_rock_ratio if water_to_rock_ratio > 0 else None,
+                'initial_ph': initial_ph,
+                'catalyst': catalyst,
+                'catalyst_mass': catalyst_mass,
+                'catalyst_percentage': catalyst_percentage,
+                'temperature': temperature,
+                'buffer_system': buffer_system if buffer_system.strip() else None,
+                'buffer_concentration': buffer_concentration,
+                'pressure': pressure,
+                'flow_rate': flow_rate if flow_rate > 0 else None,
+                'experiment_type': experiment_type,
+                'initial_nitrate_concentration': initial_nitrate_concentration,
+                'dissolved_oxygen': dissolved_oxygen,
+                'surfactant_type': surfactant_type,
+                'surfactant_concentration': surfactant_concentration,
+                'co2_partial_pressure': co2_partial_pressure,
+                'confining_pressure': confining_pressure,
+                'pore_pressure': pore_pressure
+            }
+        }
         
-        # Submit button with on_click handler
-        st.form_submit_button(
-            "Save Changes",
-            on_click=submit_experiment_edit,
-            args=(experiment['id'], form_data)
-        )
+        # Submit button
+        submit_button = st.form_submit_button("Save Changes")
+        if submit_button:
+            submit_experiment_edit(experiment['id'], form_data)
 
 def update_experiment(experiment_id, data):
     """Update an experiment in the database."""
@@ -1604,13 +2094,22 @@ def update_experiment(experiment_id, data):
         if conditions:
             # Update existing conditions
             conditions.water_to_rock_ratio = data['conditions']['water_to_rock_ratio']
-            conditions.ph = data['conditions']['ph']
+            conditions.initial_ph = data['conditions']['initial_ph']
             conditions.catalyst = data['conditions']['catalyst']
             conditions.catalyst_percentage = data['conditions']['catalyst_percentage']
             conditions.temperature = data['conditions']['temperature']
             conditions.buffer_system = data['conditions']['buffer_system']
+            conditions.buffer_concentration = data['conditions']['buffer_concentration']
             conditions.pressure = data['conditions']['pressure']
             conditions.flow_rate = data['conditions']['flow_rate']
+            conditions.experiment_type = data['conditions']['experiment_type']
+            conditions.initial_nitrate_concentration = data['conditions']['initial_nitrate_concentration']
+            conditions.dissolved_oxygen = data['conditions']['dissolved_oxygen']
+            conditions.surfactant_type = data['conditions']['surfactant_type']
+            conditions.surfactant_concentration = data['conditions']['surfactant_concentration']
+            conditions.co2_partial_pressure = data['conditions']['co2_partial_pressure']
+            conditions.confining_pressure = data['conditions']['confining_pressure']
+            conditions.pore_pressure = data['conditions']['pore_pressure']
             if hasattr(conditions, 'particle_size'):
                 conditions.particle_size = data['conditions']['particle_size']
         else:
@@ -1618,13 +2117,22 @@ def update_experiment(experiment_id, data):
             conditions = ExperimentalConditions(
                 experiment_id=experiment.id,
                 water_to_rock_ratio=data['conditions']['water_to_rock_ratio'],
-                ph=data['conditions']['ph'],
+                initial_ph=data['conditions']['initial_ph'],
                 catalyst=data['conditions']['catalyst'],
                 catalyst_percentage=data['conditions']['catalyst_percentage'],
                 temperature=data['conditions']['temperature'],
-                buffer_system=data['conditions']['buffer_system'] if st.session_state.experiment_data['conditions']['buffer_system'].strip() else None,
+                buffer_system=data['conditions']['buffer_system'] if data['conditions']['buffer_system'].strip() else None,
+                buffer_concentration=data['conditions']['buffer_concentration'],
                 pressure=data['conditions']['pressure'],
-                flow_rate=data['conditions']['flow_rate']
+                flow_rate=data['conditions']['flow_rate'],
+                experiment_type=data['conditions']['experiment_type'],
+                initial_nitrate_concentration=data['conditions']['initial_nitrate_concentration'],
+                dissolved_oxygen=data['conditions']['dissolved_oxygen'],
+                surfactant_type=data['conditions']['surfactant_type'],
+                surfactant_concentration=data['conditions']['surfactant_concentration'],
+                co2_partial_pressure=data['conditions']['co2_partial_pressure'],
+                confining_pressure=data['conditions']['confining_pressure'],
+                pore_pressure=data['conditions']['pore_pressure']
             )
             if hasattr(conditions, 'particle_size'):
                 conditions.particle_size = data['conditions']['particle_size']
@@ -2142,4 +2650,72 @@ def get_all_samples():
         st.error(f"Error retrieving samples: {str(e)}")
         return []
     finally:
-        db.close() 
+        db.close()
+
+def save_results(experiment_id, final_ph, final_nitrate, yield_value):
+    """Save experiment results to the database."""
+    try:
+        db = SessionLocal()
+        
+        # Check if results exist for this experiment
+        result = db.query(Results).filter(Results.experiment_id == experiment_id).first()
+        
+        if result:
+            # Update existing results
+            result.final_ph = final_ph
+            result.final_nitrate_concentration = final_nitrate
+            result.yield_value = yield_value
+            
+            # Create a modification log entry
+            modification = ModificationsLog(
+                experiment_id=experiment_id,
+                modified_by=st.session_state.get('user', 'Unknown User'),
+                modification_type="update",
+                modified_table="results",
+                old_values={
+                    'final_ph': result.final_ph,
+                    'final_nitrate_concentration': result.final_nitrate_concentration,
+                    'yield_value': result.yield_value
+                },
+                new_values={
+                    'final_ph': final_ph,
+                    'final_nitrate_concentration': final_nitrate,
+                    'yield_value': yield_value
+                }
+            )
+            db.add(modification)
+        else:
+            # Create new results
+            new_result = Results(
+                experiment_id=experiment_id,
+                final_ph=final_ph,
+                final_nitrate_concentration=final_nitrate,
+                yield_value=yield_value
+            )
+            db.add(new_result)
+            
+            # Create a modification log entry
+            modification = ModificationsLog(
+                experiment_id=experiment_id,
+                modified_by=st.session_state.get('user', 'Unknown User'),
+                modification_type="create",
+                modified_table="results",
+                new_values={
+                    'final_ph': final_ph,
+                    'final_nitrate_concentration': final_nitrate,
+                    'yield_value': yield_value
+                }
+            )
+            db.add(modification)
+        
+        # Commit the changes
+        db.commit()
+        
+        st.success("Results saved successfully!")
+        return True
+    except Exception as e:
+        db.rollback()
+        st.error(f"Error saving results: {str(e)}")
+        return False
+    finally:
+        db.close()
