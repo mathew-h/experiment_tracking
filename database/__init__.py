@@ -3,9 +3,11 @@ from .models import (
     Experiment,
     ExperimentStatus,
     ExperimentalConditions,
-    Results,
+    ExperimentalResults,
     ExperimentNotes,
-    ModificationsLog
+    ModificationsLog,
+    SampleInfo,
+    ExternalAnalysis
 )
 
 __all__ = [
@@ -17,7 +19,9 @@ __all__ = [
     'Experiment',
     'ExperimentStatus',
     'ExperimentalConditions',
-    'Results',
+    'ExperimentalResults',
     'ExperimentNotes',
-    'ModificationsLog'
+    'ModificationsLog',
+    'SampleInfo',
+    'ExternalAnalysis'
 ] 

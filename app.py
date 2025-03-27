@@ -1,16 +1,12 @@
 import streamlit as st
 from config import APP_NAME, APP_ICON, APP_LAYOUT
-from frontend.components import (
-    render_sidebar,
-    render_header,
-    render_dashboard,
-    render_new_experiment,
-    render_view_experiments,
-    render_settings,
-    render_new_rock_sample,
-    render_sample_inventory
-)
-from frontend.auth_components import init_auth_state, render_login_page, render_logout_button
+from frontend.components.sidebar import render_sidebar
+from frontend.components.header import render_header
+from frontend.components.new_experiment import render_new_experiment
+from frontend.components.view_experiments import render_view_experiments
+from frontend.components.new_rock import render_new_rock_sample
+from frontend.components.view_samples import render_sample_inventory
+from frontend.components.auth_components import init_auth_state, render_login_page, render_logout_button
 import os
 import logging
 
@@ -37,7 +33,7 @@ icon_path = os.path.join(os.path.dirname(__file__), ".streamlit", "static", "Add
 # Streamlit app configuration
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon=icon_path,  # Using custom icon
+    page_icon=icon_path,
     layout=APP_LAYOUT,
     initial_sidebar_state="expanded"
 )
@@ -67,8 +63,8 @@ def main():
             render_new_rock_sample()
         elif page == "View Sample Inventory":
             render_sample_inventory()
-        elif page == "Settings":
-            render_settings()
+        # elif page == "Settings":
+        #     render_settings()
     except Exception as e:
         logger.error(f"Error in main application: {str(e)}")
         st.error("An error occurred while running the application. Please try again later.")
