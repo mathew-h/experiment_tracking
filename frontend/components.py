@@ -8,7 +8,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from database.models import Experiment, ExperimentalConditions, ExperimentStatus, ExperimentNotes, ModificationsLog, ExperimentalData, SampleInfo, ExternalAnalysis, Results
 from database.database import SessionLocal
-from utils.utils import build_conditions
+from frontend.components.utils import build_conditions
 import pandas as pd
 
 REQUIRED_DEFAULTS = {

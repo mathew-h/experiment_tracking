@@ -2,7 +2,7 @@ import datetime
 import streamlit as st
 from database.database import SessionLocal
 from database.models import Experiment, ExperimentalConditions, ExperimentNotes, ExperimentStatus
-from utils.utils import build_conditions
+from frontend.components.utils import build_conditions
 from frontend.config.variable_config import (
     REQUIRED_DEFAULTS,
     OPTIONAL_FIELDS,
