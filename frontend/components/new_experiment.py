@@ -2,7 +2,7 @@ import datetime
 import streamlit as st
 from database.database import SessionLocal
 from database.models import Experiment, ExperimentalConditions, ExperimentNotes, ExperimentStatus
-from frontend.components.utils import build_conditions
+from frontend.components.utils import build_conditions, log_modification
 from frontend.config.variable_config import (
     REQUIRED_DEFAULTS,
     OPTIONAL_FIELDS,
@@ -69,14 +69,13 @@ def render_new_experiment():
                 )
                 status = st.selectbox(
                     "Experiment Status",
-                    options=['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED'],
-                    index=0
+                    options=EXPERIMENT_STATUSES,
+                    index=EXPERIMENT_STATUSES.index(st.session_state.experiment_data.get('status', 'PLANNED'))
                 )
                 experiment_type = st.selectbox(
                     "Experiment Type",
-                    options=['Serum', 'Autoclave', 'HPHT', 'Core Flood'],
-                    index=0,
-                    help="Select the type of experiment"
+                    options=EXPERIMENT_TYPES,
+                    index=EXPERIMENT_TYPES.index(st.session_state.experiment_data['conditions'].get('experiment_type', 'Serum'))
                 )
                 initial_ph = st.number_input(
                     "Initial pH", 
@@ -282,13 +281,13 @@ def render_new_experiment():
                         'created_at': datetime.datetime.now()
                     })
 
+                # Call save_experiment (which now handles logging)
                 save_experiment()
-                st.success("Experiment saved successfully!")
                 st.session_state.step = 2
 
     # STEP 2: Show a success message and allow another experiment
     elif st.session_state.step == 2:
-        st.success("Experiment created successfully!")
+        st.success(f"Experiment {st.session_state.get('last_created_experiment_id', '')} (Number: {st.session_state.get('last_created_experiment_number', '')}) created successfully!")
         if st.button("Create Another Experiment"):
             st.session_state.step = 1
             st.session_state.experiment_data = {
@@ -299,6 +298,11 @@ def render_new_experiment():
                 'conditions': build_conditions(REQUIRED_DEFAULTS, OPTIONAL_FIELDS, {}, None),
                 'notes': []
             }
+            if 'last_created_experiment_number' in st.session_state:
+                del st.session_state['last_created_experiment_number']
+            if 'last_created_experiment_id' in st.session_state:
+                del st.session_state['last_created_experiment_id']
+            st.rerun()
 
 def save_experiment():
     """
@@ -356,31 +360,61 @@ def save_experiment():
         db.add(experiment)
         db.flush()  # Flush to get the experiment ID
         
-        # Create experimental conditions
-        conditions_data = build_conditions(REQUIRED_DEFAULTS, OPTIONAL_FIELDS, st.session_state.experiment_data['conditions'], experiment.id)
+        # Create experimental conditions, passing the generated experiment.id
+        conditions_data = build_conditions(
+            REQUIRED_DEFAULTS, 
+            OPTIONAL_FIELDS, 
+            st.session_state.experiment_data['conditions'], 
+            experiment.id # Pass the actual experiment ID
+        )
+        # Remove experiment_id if it was incorrectly set by build_conditions (shouldn't be needed now)
+        # conditions_data.pop('experiment_id', None) 
         conditions = ExperimentalConditions(**conditions_data)
+        conditions.experiment_id = experiment.id # Ensure relationship is set
         
         # Add the conditions to the session
         db.add(conditions)
         
         # Add initial notes if any
+        notes_list = []
         for note_data in st.session_state.experiment_data.get('notes', []):
             note = ExperimentNotes(
                 experiment_id=experiment.id,
                 note_text=note_data['note_text']
             )
             db.add(note)
+            notes_list.append({'note_text': note.note_text}) # For logging
         
+        # Log the creation of the experiment and its related data
+        log_modification(
+            db=db,
+            experiment_id=experiment.id,
+            modified_table="experiments",
+            modification_type="create",
+            new_values={
+                'experiment_number': experiment.experiment_number,
+                'experiment_id': experiment.experiment_id,
+                'sample_id': experiment.sample_id,
+                'researcher': experiment.researcher,
+                'date': experiment.date.isoformat(),
+                'status': experiment.status.name,
+                'conditions': conditions_data, # Log the full conditions dict used
+                'notes': notes_list # Log the initial notes
+            }
+        )
+
         # Commit the transaction
         db.commit()
         
-        # Show experiment number and ID for reference
+        # Show experiment number and ID for reference in step 2
         st.session_state.last_created_experiment_number = next_experiment_number
         st.session_state.last_created_experiment_id = st.session_state.experiment_data['experiment_id']
+        
+        return True # Indicate success
         
     except Exception as e:
         db.rollback()
         st.error(f"Error saving experiment: {str(e)}")
-        raise e
+        return False # Indicate failure
     finally:
         db.close()

@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import datetime
 from database.database import SessionLocal
 from database.models import (
     ExperimentalResults,
@@ -53,7 +53,7 @@ def display_experiment_details(experiment):
         "Researcher": str(experiment['researcher']),
         "Status": str(experiment['status']),
         "Date Created": experiment['date'].strftime("%Y-%m-%d %H:%M") if isinstance(experiment['date'], datetime.datetime) else str(experiment['date']),
-        "Date Updated": experiment['updated_at'].strftime("%Y-%m-%d %H:%M") if experiment['updated_at'] else "N/A"
+        "Date Updated": experiment['updated_at'].strftime("%Y-%m-%d %H:%M") if isinstance(experiment['updated_at'], datetime.datetime) else "N/A"
     }
     
     # Convert to DataFrame and ensure all values are strings

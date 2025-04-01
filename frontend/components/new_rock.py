@@ -1,7 +1,8 @@
 import streamlit as st
 from database.database import SessionLocal
-from database.models import SampleInfo
+from database.models import SampleInfo, ModificationsLog
 import os
+from frontend.components.utils import save_uploaded_file, log_modification
 
 def render_new_rock_sample():
     """
@@ -110,21 +111,25 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
         existing_sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
         if existing_sample:
             st.error(f"Sample ID {sample_id} already exists")
+            db.close()
             return
         
-        # Handle photo upload if provided
         photo_path = None
+        photo_name = None
         if photo:
-            # Create uploads directory if it doesn't exist
-            upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'sample_photos')
-            os.makedirs(upload_dir, exist_ok=True)
-            
-            # Save photo and store path
-            photo_path = os.path.join(upload_dir, f"{sample_id}_{photo.name}")
-            with open(photo_path, 'wb') as f:
-                f.write(photo.getvalue())
+            photo_path = save_uploaded_file(
+                file=photo, 
+                base_dir_name='sample_photos', 
+                filename_prefix=sample_id
+            )
+            if photo_path:
+                photo_name = photo.name
+            else:
+                db.rollback()
+                db.close()
+                st.error("Failed to save sample photo.")
+                return
         
-        # Create new sample
         sample = SampleInfo(
             sample_id=sample_id,
             rock_classification=rock_classification,
@@ -133,10 +138,29 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
             latitude=latitude,
             longitude=longitude,
             description=description,
-            photo_path=photo_path  # This will be None if no photo was uploaded
+            photo_path=photo_path
         )
         
         db.add(sample)
+        
+        log_modification(
+            db=db,
+            experiment_id=None,
+            modified_table="sample_info",
+            modification_type="create",
+            new_values={
+                'sample_id': sample.sample_id,
+                'rock_classification': sample.rock_classification,
+                'state': sample.state,
+                'country': sample.country,
+                'latitude': sample.latitude,
+                'longitude': sample.longitude,
+                'description': sample.description,
+                'photo_path': sample.photo_path,
+                'photo_name': photo_name
+            }
+        )
+
         db.commit()
         
         st.success(f"Rock sample {sample_id} saved successfully!")
@@ -145,4 +169,5 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
         db.rollback()
         st.error(f"Error saving rock sample: {str(e)}")
     finally:
-        db.close()
+        if 'db' in locals() and db.is_active:
+            db.close()

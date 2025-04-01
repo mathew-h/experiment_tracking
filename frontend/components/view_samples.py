@@ -4,6 +4,9 @@ from database.database import SessionLocal
 from database.models import SampleInfo, ExternalAnalysis, ModificationsLog
 import os
 import datetime
+# Import utilities and config
+from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
+from frontend.config.variable_config import ANALYSIS_TYPES
 
 def render_sample_inventory():
     """
@@ -196,9 +199,10 @@ def display_sample_details(sample_id):
             # External Analysis Form
             if st.session_state.get('adding_analysis', False) and st.session_state.get('current_sample_id') == sample_id:
                 with st.form(f"external_analysis_form_{sample_id}"):
+                    # Use config list for analysis types
                     analysis_type = st.selectbox(
                         "Analysis Type",
-                        options=['XRD', 'SEM', 'Elemental', 'Other'],
+                        options=ANALYSIS_TYPES, # Use config list
                         key=f"analysis_type_{sample_id}"
                     )
                     
@@ -269,34 +273,40 @@ def update_sample_photo(sample_id, photo):
             st.error(f"Sample with ID {sample_id} not found.")
             return
         
-        # Create uploads directory if it doesn't exist
-        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'sample_photos')
-        os.makedirs(upload_dir, exist_ok=True)
+        old_photo_path = sample.photo_path # Store old path for logging/deletion
         
-        # Delete old photo if it exists
-        if sample.photo_path and os.path.exists(sample.photo_path):
-            os.remove(sample.photo_path)
+        # Use utility to delete old photo
+        delete_file_if_exists(old_photo_path)
         
-        # Save new photo
-        photo_path = os.path.join(upload_dir, f"{sample_id}_{photo.name}")
-        with open(photo_path, 'wb') as f:
-            f.write(photo.getvalue())
+        # Save new photo using utility
+        photo_path = save_uploaded_file(
+            file=photo, 
+            base_dir_name='sample_photos', 
+            filename_prefix=sample_id
+        )
+
+        if not photo_path:
+            # Handle save error
+            db.rollback() # Rollback if file save failed
+            st.error("Failed to save new photo.")
+            return
         
         # Update sample with new photo path
         sample.photo_path = photo_path
         
-        # Create a modification log entry
-        modification = ModificationsLog(
-            experiment_id=None,  # This is sample-level modification
-            modified_by=st.session_state.get('user', 'Unknown User'),
-            modification_type="update",
+        # Log modification using utility
+        log_modification(
+            db=db,
+            experiment_id=None,  # Sample-level modification
             modified_table="sample_info",
+            modification_type="update",
+            old_values={'photo_path': old_photo_path}, # Log old path
             new_values={
                 'sample_id': sample_id,
-                'photo_path': photo_path
+                'photo_path': photo_path,
+                'photo_name': photo.name # Log new name
             }
         )
-        db.add(modification)
         
         # Commit the changes
         db.commit()
@@ -370,23 +380,39 @@ def save_external_analysis(sample_id, analysis_type, file, laboratory, analyst, 
     try:
         db = SessionLocal()
         
-        # Create uploads directory if it doesn't exist
-        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'external_analyses')
-        os.makedirs(upload_dir, exist_ok=True)
+        file_path = None
+        file_name = None
+        file_type = None
+
+        # Save file using utility
+        if file:
+            file_path = save_uploaded_file(
+                file=file, 
+                base_dir_name='external_analyses',
+                filename_prefix=f"{sample_id}_{analysis_type}" # More specific prefix
+            )
+            if file_path:
+                file_name = file.name
+                file_type = file.type
+            else:
+                db.rollback()
+                st.error("Failed to save analysis report file.")
+                return False # Indicate failure
         
-        # Save file and store path
-        file_path = os.path.join(upload_dir, file.name)
-        with open(file_path, 'wb') as f:
-            f.write(file.getvalue())
-        
+        # Combine date and time carefully
+        analysis_datetime = datetime.datetime.combine(analysis_date, datetime.datetime.min.time()) if isinstance(analysis_date, datetime.date) else analysis_date
+        if not isinstance(analysis_datetime, datetime.datetime):
+             # Handle case where analysis_date wasn't a date object (e.g., None)
+             analysis_datetime = datetime.datetime.now() # Or set to None, depending on requirements
+
         # Create new external analysis entry
         analysis = ExternalAnalysis(
             sample_id=sample_id,
             analysis_type=analysis_type,
-            report_file_path=file_path,
-            report_file_name=file.name,
-            report_file_type=file.type,
-            analysis_date=datetime.datetime.combine(analysis_date, datetime.datetime.now().time()),
+            report_file_path=file_path, # Use path from utility
+            report_file_name=file_name, # Use name from file object
+            report_file_type=file_type, # Use type from file object
+            analysis_date=analysis_datetime, # Use combined datetime
             laboratory=laboratory,
             analyst=analyst,
             description=description
@@ -395,38 +421,38 @@ def save_external_analysis(sample_id, analysis_type, file, laboratory, analyst, 
         # Add the analysis to the session
         db.add(analysis)
         
-        # Get user information for the modification log
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
-        
-        # Create a modification log entry
-        modification = ModificationsLog(
-            experiment_id=None,  # This is sample-level modification
-            modified_by=user_identifier,  # Use email as identifier
-            modification_type="add",
+        # Log modification using utility
+        new_values={
+            'sample_id': sample_id,
+            'analysis_type': analysis_type,
+            'report_file_name': file_name,
+            'report_file_path': file_path,
+            'laboratory': laboratory,
+            'analyst': analyst,
+            'analysis_date': analysis_datetime.isoformat(), # Log as ISO string
+            'description': description
+        }
+        log_modification(
+            db=db,
+            experiment_id=None,  # Sample-level modification
             modified_table="external_analyses",
-            new_values={
-                'sample_id': sample_id,
-                'analysis_type': analysis_type,
-                'laboratory': laboratory,
-                'analyst': analyst,
-                'analysis_date': analysis_date.isoformat(),
-                'description': description
-            }
+            modification_type="add",
+            new_values=new_values
         )
-        db.add(modification)
         
         # Commit the transaction
         db.commit()
-        
         st.success("External analysis saved successfully!")
+        return True # Indicate success
         
     except Exception as e:
         db.rollback()
         st.error(f"Error saving external analysis: {str(e)}")
-        raise e
+        return False # Indicate failure
     finally:
-        db.close()
+        # Ensure db is closed if it was opened
+        if 'db' in locals() and db.is_active:
+             db.close()
 
 def delete_external_analysis(analysis_id):
     """
@@ -450,32 +476,30 @@ def delete_external_analysis(analysis_id):
             st.error("Analysis not found")
             return
         
-        # Delete file if it exists
-        if analysis.report_file_path and os.path.exists(analysis.report_file_path):
-            os.remove(analysis.report_file_path)
+        # Store old values before deleting
+        old_values={
+            'sample_id': analysis.sample_id,
+            'analysis_type': analysis.analysis_type,
+            'laboratory': analysis.laboratory,
+            'analyst': analysis.analyst,
+            'analysis_date': analysis.analysis_date.isoformat() if analysis.analysis_date else None,
+            'description': analysis.description,
+            'report_file_path': analysis.report_file_path
+        }
+
+        # Delete file using utility
+        delete_file_if_exists(analysis.report_file_path)
         
-        # Get user information for the modification log
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
-        
-        # Create a modification log entry
-        modification = ModificationsLog(
-            experiment_id=None,  # This is sample-level modification
-            modified_by=user_identifier,  # Use email as identifier
-            modification_type="delete",
+        # Log modification using utility
+        log_modification(
+            db=db,
+            experiment_id=None,  # Sample-level modification
             modified_table="external_analyses",
-            old_values={
-                'sample_id': analysis.sample_id,
-                'analysis_type': analysis.analysis_type,
-                'laboratory': analysis.laboratory,
-                'analyst': analysis.analyst,
-                'analysis_date': analysis.analysis_date.isoformat() if analysis.analysis_date else None,
-                'description': analysis.description
-            }
+            modification_type="delete",
+            old_values=old_values
         )
-        db.add(modification)
         
-        # Delete the analysis
+        # Delete the analysis object
         db.delete(analysis)
         
         # Commit the transaction
@@ -488,4 +512,6 @@ def delete_external_analysis(analysis_id):
         st.error(f"Error deleting external analysis: {str(e)}")
         raise e
     finally:
-        db.close()
+        # Ensure db is closed if it was opened
+        if 'db' in locals() and db.is_active:
+             db.close()

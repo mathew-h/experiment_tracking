@@ -12,6 +12,9 @@ from database.models import (
     ExperimentNotes,
     ExternalAnalysis
 )
+# Import utilities and config
+from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
+from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES
 
 def edit_experiment(experiment):
     """
@@ -39,8 +42,8 @@ def edit_experiment(experiment):
         with col2:
             status = st.selectbox(
                 "Experiment Status",
-                options=['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED'],
-                index=['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED'].index(experiment['status'])
+                options=EXPERIMENT_STATUSES,
+                index=EXPERIMENT_STATUSES.index(experiment['status']) if experiment['status'] in EXPERIMENT_STATUSES else 0
             )
             exp_date = st.date_input(
                 "Experiment Date", 
@@ -57,8 +60,8 @@ def edit_experiment(experiment):
             
             experiment_type = st.selectbox(
                 "Experiment Type",
-                options=['Serum', 'Autoclave', 'HPHT', 'Core Flood'],
-                index=['Serum', 'Autoclave', 'HPHT', 'Core Flood'].index(conditions.get('experiment_type', 'Serum')) if conditions.get('experiment_type') in ['Serum', 'Autoclave', 'HPHT', 'Core Flood'] else 0
+                options=EXPERIMENT_TYPES,
+                index=EXPERIMENT_TYPES.index(conditions.get('experiment_type', 'Serum')) if conditions.get('experiment_type') in EXPERIMENT_TYPES else 0
             )
             
             # Fix particle_size input handling
@@ -352,7 +355,7 @@ def update_experiment(experiment_id, data):
                 conditions.particle_size = data['conditions']['particle_size']
             db.add(conditions)
         
-        # Create a modification log entry
+        # Prepare new values for logging
         new_values = {
             'sample_id': data['sample_id'],
             'researcher': data['researcher'],
@@ -361,15 +364,15 @@ def update_experiment(experiment_id, data):
             'conditions': data['conditions']
         }
         
-        modification = ModificationsLog(
+        # Use utility for logging
+        log_modification(
+            db=db,
             experiment_id=experiment.id,
-            modified_by=data['researcher'],  # Using the researcher as the modifier
-            modification_type="update",
             modified_table="experiments",
+            modification_type="update",
             old_values=old_values,
             new_values=new_values
         )
-        db.add(modification)
         
         # Commit the changes
         db.commit()
@@ -411,34 +414,34 @@ def save_results(experiment_id, final_ph, final_nitrate, yield_value):
         # Check if results exist for this experiment
         result = db.query(ExperimentalResults).filter(ExperimentalResults.experiment_id == experiment_id).first()
         
-        # Get user information for the modification log
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
-        
         if result:
+            # Prepare old values for logging
+            old_values={
+                'final_ph': result.final_ph,
+                'final_nitrate_concentration': result.final_nitrate_concentration,
+                'yield_value': result.yield_value
+            }
             # Update existing results
             result.final_ph = final_ph
             result.final_nitrate_concentration = final_nitrate
             result.yield_value = yield_value
             
-            # Create a modification log entry
-            modification = ModificationsLog(
+            # Prepare new values for logging
+            new_values={
+                'final_ph': final_ph,
+                'final_nitrate_concentration': final_nitrate,
+                'yield_value': yield_value
+            }
+            
+            # Use utility for logging
+            log_modification(
+                db=db,
                 experiment_id=experiment_id,
-                modified_by=user_identifier,
-                modification_type="update",
                 modified_table="results",
-                old_values={
-                    'final_ph': result.final_ph,
-                    'final_nitrate_concentration': result.final_nitrate_concentration,
-                    'yield_value': result.yield_value
-                },
-                new_values={
-                    'final_ph': final_ph,
-                    'final_nitrate_concentration': final_nitrate,
-                    'yield_value': yield_value
-                }
+                modification_type="update",
+                old_values=old_values,
+                new_values=new_values
             )
-            db.add(modification)
         else:
             # Create new results
             new_result = ExperimentalResults(
@@ -449,19 +452,21 @@ def save_results(experiment_id, final_ph, final_nitrate, yield_value):
             )
             db.add(new_result)
             
-            # Create a modification log entry
-            modification = ModificationsLog(
+            # Prepare new values for logging
+            new_values={
+                'final_ph': final_ph,
+                'final_nitrate_concentration': final_nitrate,
+                'yield_value': yield_value
+            }
+            
+            # Use utility for logging
+            log_modification(
+                db=db,
                 experiment_id=experiment_id,
-                modified_by=user_identifier,
-                modification_type="create",
                 modified_table="results",
-                new_values={
-                    'final_ph': final_ph,
-                    'final_nitrate_concentration': final_nitrate,
-                    'yield_value': yield_value
-                }
+                modification_type="create",
+                new_values=new_values
             )
-            db.add(modification)
         
         # Commit the changes
         db.commit()
@@ -499,30 +504,26 @@ def delete_experimental_results(data_id):
             st.error("Data not found")
             return
         
-        # Delete file if it exists
-        if data.file_path and os.path.exists(data.file_path):
-            try:
-                os.remove(data.file_path)
-            except OSError as e:
-                st.warning(f"Could not delete file: {e}")
+        # Store old values before deleting
+        old_values={
+            'data_type': data.data_type,
+            'description': data.description,
+            'data_values': data.data_values,
+            'file_path': data.file_path,
+            'file_name': data.file_name
+        }
+
+        # Use utility to delete file
+        delete_file_if_exists(data.file_path)
         
-        # Get user information for the modification log
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
-        
-        # Create a modification log entry
-        modification = ModificationsLog(
+        # Use utility for logging
+        log_modification(
+            db=db,
             experiment_id=data.experiment_id,
-            modified_by=user_identifier,
-            modification_type="delete",
             modified_table="experimental_results",
-            old_values=json.dumps({  # Convert dict to JSON string
-                'data_type': data.data_type,
-                'description': data.description,
-                'data_values': data.data_values
-            })
+            modification_type="delete",
+            old_values=old_values
         )
-        db.add(modification)
         
         # Delete the data
         db.delete(data)
@@ -559,49 +560,58 @@ def save_experimental_results(experiment_id, data_type, file=None, description=N
     try:
         db = SessionLocal()
         
+        file_path = None
+        file_name = None
+        file_type = None
+
+        # Handle file upload using utility
+        if file:
+            file_path = save_uploaded_file(
+                file=file, 
+                base_dir_name='experimental_results', 
+                filename_prefix=f"{experiment_id}"
+            )
+            if file_path: # Check if save was successful
+                file_name = file.name
+                file_type = file.type
+            else:
+                # Handle file save error (optional: raise exception or return False)
+                db.rollback()
+                st.error("Failed to save uploaded file.")
+                return False # Or raise?
+        
         # Create a new experimental data entry
         experimental_results = ExperimentalResults(
             experiment_id=experiment_id,
             data_type=data_type,
             description=description,
-            data_values=json.dumps(data_values) if data_values else None  # Convert dict to JSON string
+            data_values=json.dumps(data_values) if data_values else None,
+            file_path=file_path, # Use path from utility
+            file_name=file_name, # Use name from file object
+            file_type=file_type  # Use type from file object
         )
         
-        # Handle file upload if present
-        if file:
-            # Create uploads directory if it doesn't exist
-            upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'experimental_results')
-            os.makedirs(upload_dir, exist_ok=True)
-            
-            # Save file and store path
-            file_path = os.path.join(upload_dir, f"{experiment_id}_{file.name}")
-            with open(file_path, 'wb') as f:
-                f.write(file.getvalue())
-            
-            experimental_results.file_path = file_path
-            experimental_results.file_name = file.name
-            experimental_results.file_type = file.type
+        # No need to get user info here, log_modification handles it
+        # user = st.session_state.get('user', {})
+        # user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
         
-        # Add the data to the session
-        db.add(experimental_results)
+        # Prepare new values for logging
+        new_values={
+            'data_type': data_type,
+            'description': description,
+            'data_values': data_values, # Pass the dict, log_modification will serialize
+            'file_path': file_path,
+            'file_name': file_name
+        }
         
-        # Get user information for the modification log
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
-        
-        # Create a modification log entry
-        modification = ModificationsLog(
+        # Use utility for logging
+        log_modification(
+            db=db,
             experiment_id=experiment_id,
-            modified_by=user_identifier,
-            modification_type="add",
             modified_table="experimental_results",
-            new_values=json.dumps({  # Convert dict to JSON string
-                'data_type': data_type,
-                'description': description,
-                'data_values': data_values
-            })
+            modification_type="add",
+            new_values=new_values
         )
-        db.add(modification)
         
         # Commit the transaction
         db.commit()
@@ -639,30 +649,32 @@ def delete_external_analysis(analysis_id):
             st.error("Analysis not found")
             return
         
-        # Delete file if it exists
-        if analysis.report_file_path and os.path.exists(analysis.report_file_path):
-            os.remove(analysis.report_file_path)
+        # Store old values before deleting
+        old_values={
+            'sample_id': analysis.sample_id,
+            'analysis_type': analysis.analysis_type,
+            'laboratory': analysis.laboratory,
+            'analyst': analysis.analyst,
+            'analysis_date': analysis.analysis_date.isoformat() if analysis.analysis_date else None,
+            'description': analysis.description,
+            'report_file_path': analysis.report_file_path
+        }
+
+        # Use utility to delete file
+        delete_file_if_exists(analysis.report_file_path)
         
-        # Get user information for the modification log
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
+        # No need to get user info here, log_modification handles it
+        # user = st.session_state.get('user', {})
+        # user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
         
-        # Create a modification log entry
-        modification = ModificationsLog(
-            experiment_id=None,  # This is sample-level modification
-            modified_by=user_identifier,  # Use email as identifier
-            modification_type="delete",
+        # Use utility for logging
+        log_modification(
+            db=db,
+            experiment_id=None, # Sample-level modification
             modified_table="external_analyses",
-            old_values={
-                'sample_id': analysis.sample_id,
-                'analysis_type': analysis.analysis_type,
-                'laboratory': analysis.laboratory,
-                'analyst': analysis.analyst,
-                'analysis_date': analysis.analysis_date.isoformat() if analysis.analysis_date else None,
-                'description': analysis.description
-            }
+            modification_type="delete",
+            old_values=old_values
         )
-        db.add(modification)
         
         # Delete the analysis
         db.delete(analysis)
