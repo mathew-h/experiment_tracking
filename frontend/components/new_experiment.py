@@ -12,7 +12,22 @@ from frontend.config.variable_config import (
 )
 
 def render_new_experiment():
-
+    """
+    Render the interface for creating a new experiment.
+    
+    This function creates a multi-step form interface that allows users to:
+    - Enter basic experiment information (ID, sample ID, researcher, status)
+    - Set experimental conditions (temperature, pressure, pH, etc.)
+    - Configure optional parameters
+    - Add initial notes
+    
+    The function uses Streamlit's session state to manage form data and
+    handles the submission process with proper validation and error handling.
+    
+    The interface is divided into two steps:
+    1. Data collection form
+    2. Success message and option to create another experiment
+    """
     # Set up session state if not already defined
     if 'step' not in st.session_state:
         st.session_state.step = 1
@@ -286,7 +301,28 @@ def render_new_experiment():
             }
 
 def save_experiment():
-    """Save the experiment data to the database."""
+    """
+    Save the new experiment data to the database.
+    
+    This function:
+    - Generates a new experiment number
+    - Creates a new experiment record
+    - Sets up experimental conditions
+    - Adds any initial notes
+    - Handles database transactions and error cases
+    
+    The function uses the data stored in st.session_state.experiment_data
+    and ensures all required fields are present with appropriate defaults.
+    
+    On success:
+    - Updates session state with the new experiment number and ID
+    - Shows a success message
+    - Moves to step 2 of the form
+    
+    On failure:
+    - Rolls back database changes
+    - Displays an error message
+    """
     try:
         # Create a database session
         db = SessionLocal()

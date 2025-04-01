@@ -6,6 +6,18 @@ import os
 import datetime
 
 def render_sample_inventory():
+    """
+    Render the main sample inventory view with search and filtering capabilities.
+    
+    This function creates the main interface for viewing rock samples, including:
+    - Search functionality by sample ID or classification
+    - Location-based filtering
+    - A table view of all samples with basic information
+    - Navigation to detailed sample views
+    
+    The function uses Streamlit's session state to manage the view state and
+    handles the display of sample details when a sample is selected.
+    """
     st.header("Rock Sample Inventory")
     
     # Initialize session state for viewing sample details if not exists
@@ -65,7 +77,20 @@ def render_sample_inventory():
         display_sample_details(st.session_state.view_sample_id)
 
 def display_sample_details(sample_id):
-    """Display detailed information about a specific sample."""
+    """
+    Display detailed information about a specific rock sample.
+    
+    Args:
+        sample_id (str): The unique identifier of the sample to display
+        
+    This function shows:
+    - Basic sample information (ID, classification, location, etc.)
+    - External analyses associated with the sample
+    - Sample photo with upload/update capabilities
+    - Options to add new external analyses
+    
+    The function handles error cases and provides navigation back to the main inventory view.
+    """
     try:
         db = SessionLocal()
         sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
@@ -222,7 +247,20 @@ def display_sample_details(sample_id):
         db.close()
 
 def update_sample_photo(sample_id, photo):
-    """Update the photo for a sample."""
+    """
+    Update the photo associated with a rock sample.
+    
+    Args:
+        sample_id (str): The unique identifier of the sample
+        photo (UploadedFile): The new photo file to save
+        
+    This function:
+    - Creates/ensures the upload directory exists
+    - Removes the old photo if it exists
+    - Saves the new photo
+    - Updates the database record
+    - Creates a modification log entry
+    """
     try:
         db = SessionLocal()
         sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
@@ -272,7 +310,23 @@ def update_sample_photo(sample_id, photo):
         db.close()
 
 def get_all_samples():
-    """Get all rock samples from the database."""
+    """
+    Retrieve all rock samples from the database.
+    
+    Returns:
+        list: A list of dictionaries containing sample information, including:
+            - sample_id
+            - rock_classification
+            - state
+            - country
+            - latitude
+            - longitude
+            - description
+            - created_at
+            - updated_at
+            
+    The function handles database errors and ensures proper connection cleanup.
+    """
     try:
         db = SessionLocal()
         samples = db.query(SampleInfo).all()
@@ -295,7 +349,24 @@ def get_all_samples():
         db.close()
 
 def save_external_analysis(sample_id, analysis_type, file, laboratory, analyst, analysis_date, description):
-    """Save external analysis data to the database."""
+    """
+    Save a new external analysis record for a rock sample.
+    
+    Args:
+        sample_id (str): The unique identifier of the sample
+        analysis_type (str): Type of analysis performed (e.g., 'XRD', 'SEM')
+        file (UploadedFile): The analysis report file
+        laboratory (str): Name of the laboratory performing the analysis
+        analyst (str): Name of the analyst
+        analysis_date (datetime.date): Date when the analysis was performed
+        description (str): Description of the analysis
+        
+    This function:
+    - Creates/ensures the upload directory exists
+    - Saves the analysis report file
+    - Creates a database record for the analysis
+    - Creates a modification log entry
+    """
     try:
         db = SessionLocal()
         
@@ -358,7 +429,17 @@ def save_external_analysis(sample_id, analysis_type, file, laboratory, analyst, 
         db.close()
 
 def delete_external_analysis(analysis_id):
-    """Delete external analysis from the database."""
+    """
+    Delete an external analysis record and its associated file.
+    
+    Args:
+        analysis_id (int): The unique identifier of the analysis to delete
+        
+    This function:
+    - Removes the analysis report file from storage
+    - Deletes the database record
+    - Creates a modification log entry for the deletion
+    """
     try:
         db = SessionLocal()
         

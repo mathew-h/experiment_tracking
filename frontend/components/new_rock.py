@@ -4,6 +4,17 @@ from database.models import SampleInfo
 import os
 
 def render_new_rock_sample():
+    """
+    Render the interface for creating a new rock sample.
+    
+    This function creates a form interface that allows users to:
+    - Enter basic sample information (ID, classification, location)
+    - Add geographical coordinates
+    - Provide a sample description
+    - Upload a sample photo
+    
+    The form includes validation and proper error handling for the submission process.
+    """
     st.header("New Rock Sample")
     
     with st.form("new_rock_sample_form"):
@@ -64,7 +75,30 @@ def render_new_rock_sample():
             )
 
 def save_rock_sample(sample_id, rock_classification, state, country, latitude, longitude, description, photo=None):
-    """Save a new rock sample to the database."""
+    """
+    Save a new rock sample to the database.
+    
+    Args:
+        sample_id (str): Unique identifier for the rock sample
+        rock_classification (str): Type/classification of the rock
+        state (str): State/Province where the sample was collected
+        country (str): Country where the sample was collected
+        latitude (float): Latitude coordinate of collection site
+        longitude (float): Longitude coordinate of collection site
+        description (str): Description of the sample
+        photo (UploadedFile, optional): Photo of the rock sample
+        
+    This function:
+    - Validates required fields
+    - Checks for duplicate sample IDs
+    - Handles photo upload if provided
+    - Creates a new database record
+    - Ensures proper error handling and database cleanup
+    
+    Raises:
+        ValueError: If required fields are missing
+        DuplicateError: If sample_id already exists
+    """
     if not sample_id or not rock_classification:
         st.error("Sample ID and Rock Classification are required")
         return

@@ -14,7 +14,20 @@ from database.models import (
 )
 
 def edit_experiment(experiment):
-    """Edit an existing experiment."""
+    """
+    Render the interface for editing an existing experiment.
+    
+    Args:
+        experiment (dict): Dictionary containing the experiment data to edit
+        
+    This function creates a form interface that allows users to:
+    - Edit basic experiment information (sample ID, researcher, status, date)
+    - Modify experimental conditions (temperature, pressure, pH, etc.)
+    - Update optional parameters
+    - Save changes to the database
+    
+    The form includes validation and proper error handling for the submission process.
+    """
     with st.form(key="edit_experiment_form"):
         st.markdown("### Basic Information")
         col1, col2 = st.columns(2)
@@ -231,13 +244,41 @@ def edit_experiment(experiment):
             submit_experiment_edit(experiment['id'], form_data)
 
 def submit_experiment_edit(experiment_id, data):
-    """Handle experiment edit form submission."""
+    """
+    Handle the submission of experiment edit form.
+    
+    Args:
+        experiment_id (int): The unique identifier of the experiment to update
+        data (dict): Dictionary containing the updated experiment data
+        
+    This function:
+    - Calls update_experiment to save changes
+    - Updates the session state to reflect the changes
+    - Handles success/failure states
+    """
     success = update_experiment(experiment_id, data)
     if success:
         st.session_state.edit_mode = False
 
 def update_experiment(experiment_id, data):
-    """Update an experiment in the database."""
+    """
+    Update an experiment in the database.
+    
+    Args:
+        experiment_id (int): The unique identifier of the experiment to update
+        data (dict): Dictionary containing the updated experiment data
+        
+    This function:
+    - Retrieves the existing experiment
+    - Logs old values before updating
+    - Updates basic experiment information
+    - Updates or creates experimental conditions
+    - Creates a modification log entry
+    - Handles database transactions and error cases
+    
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
     try:
         db = SessionLocal()
         
@@ -346,7 +387,24 @@ def update_experiment(experiment_id, data):
         db.close()
             
 def save_results(experiment_id, final_ph, final_nitrate, yield_value):
-    """Save experiment results to the database."""
+    """
+    Save experiment results to the database.
+    
+    Args:
+        experiment_id (int): The unique identifier of the experiment
+        final_ph (float): The final pH value of the experiment
+        final_nitrate (float): The final nitrate concentration
+        yield_value (float): The yield value of the experiment
+        
+    This function:
+    - Checks if results exist for the experiment
+    - Updates existing results or creates new ones
+    - Creates a modification log entry
+    - Handles database transactions and error cases
+    
+    Returns:
+        bool: True if save was successful, False otherwise
+    """
     try:
         db = SessionLocal()
         
@@ -418,7 +476,19 @@ def save_results(experiment_id, final_ph, final_nitrate, yield_value):
         db.close()
 
 def delete_experimental_results(data_id):
-    """Delete experimental data from the database."""
+    """
+    Delete experimental data from the database.
+    
+    Args:
+        data_id (int): The unique identifier of the experimental data to delete
+        
+    This function:
+    - Retrieves the data to be deleted
+    - Removes associated files from storage
+    - Creates a modification log entry
+    - Deletes the database record
+    - Handles database transactions and error cases
+    """
     try:
         db = SessionLocal()
         
@@ -470,7 +540,22 @@ def delete_experimental_results(data_id):
         db.close()
 
 def save_experimental_results(experiment_id, data_type, file=None, description=None, data_values=None):
-    """Save experimental data to the database."""
+    """
+    Save experimental data to the database.
+    
+    Args:
+        experiment_id (int): The unique identifier of the experiment
+        data_type (str): Type of experimental data being saved
+        file (UploadedFile, optional): File containing experimental data
+        description (str, optional): Description of the experimental data
+        data_values (dict, optional): Dictionary containing experimental data values
+        
+    This function:
+    - Creates a new experimental data entry
+    - Handles file upload if present
+    - Creates a modification log entry
+    - Handles database transactions and error cases
+    """
     try:
         db = SessionLocal()
         
@@ -531,7 +616,19 @@ def save_experimental_results(experiment_id, data_type, file=None, description=N
         db.close()
 
 def delete_external_analysis(analysis_id):
-    """Delete external analysis from the database."""
+    """
+    Delete external analysis from the database.
+    
+    Args:
+        analysis_id (int): The unique identifier of the analysis to delete
+        
+    This function:
+    - Retrieves the analysis to be deleted
+    - Removes associated files from storage
+    - Creates a modification log entry
+    - Deletes the database record
+    - Handles database transactions and error cases
+    """
     try:
         db = SessionLocal()
         
@@ -583,7 +680,18 @@ def delete_external_analysis(analysis_id):
         db.close()
 
 def save_note(experiment_id, note_text):
-    """Save a new note to the database."""
+    """
+    Save a new note to the database.
+    
+    Args:
+        experiment_id (int): The unique identifier of the experiment
+        note_text (str): The text content of the note
+        
+    This function:
+    - Creates a new note entry
+    - Associates it with the specified experiment
+    - Handles database transactions and error cases
+    """
     try:
         db = SessionLocal()
         
@@ -609,7 +717,18 @@ def save_note(experiment_id, note_text):
         db.close()
 
 def submit_note_edit(note_id, edited_text):
-    """Handle note edit submission."""
+    """
+    Handle note edit submission.
+    
+    Args:
+        note_id (int): The unique identifier of the note to edit
+        edited_text (str): The new text content for the note
+        
+    This function:
+    - Validates the edited text
+    - Calls update_note to save changes
+    - Updates the session state
+    """
     if not edited_text.strip():
         st.error("Note text cannot be empty")
         return
@@ -618,7 +737,18 @@ def submit_note_edit(note_id, edited_text):
     st.session_state.note_form_state['editing_note_id'] = None
 
 def update_note(note_id, note_text):
-    """Update an existing note in the database."""
+    """
+    Update an existing note in the database.
+    
+    Args:
+        note_id (int): The unique identifier of the note to update
+        note_text (str): The new text content for the note
+        
+    This function:
+    - Retrieves the existing note
+    - Updates its content
+    - Handles database transactions and error cases
+    """
     try:
         db = SessionLocal()
         
