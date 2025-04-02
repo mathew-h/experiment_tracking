@@ -17,7 +17,11 @@ from database.models import (
 
 from frontend.components.experiment_details import display_experiment_details
 from frontend.components.edit_experiment import edit_experiment
-from frontend.components.utils import split_conditions_for_display, generate_form_fields
+from frontend.components.utils import (
+    generate_form_fields,
+    extract_conditions,
+    split_conditions_for_display
+)
 
 from frontend.config.variable_config import (
     FIELD_CONFIG,
@@ -372,27 +376,6 @@ def get_all_experiments():
     finally:
         db.close()
 
-def extract_conditions(conditions_obj):
-    """
-    Extracts experimental conditions from an ORM object.
-    
-    This function uses FIELD_CONFIG to provide default values
-    for any missing conditions.
-    
-    Args:
-        conditions_obj: SQLAlchemy ORM object containing experimental conditions
-        
-    Returns:
-        dict: Dictionary of conditions with default values for missing fields
-    """
-    extracted = {}
-    for field_name, config in FIELD_CONFIG.items():
-        # Try to get the attribute from the conditions object;
-        # if it's None or missing, use the default
-        value = getattr(conditions_obj, field_name, None)
-        extracted[field_name] = value if value is not None else config['default']
-    return extracted
-
 def get_experiment_by_id(experiment_id):
     """
     Retrieves a specific experiment by ID with all related data.
@@ -497,55 +480,6 @@ def get_experiment_by_id(experiment_id):
         return None
     finally:
         db.close()
-
-def get_condition_display_dict(conditions):
-    """
-    Build a display dictionary for experimental conditions.
-    
-    It leverages FIELD_CONFIG to determine:
-      - Which fields to display,
-      - The expected type of the field (numeric if the default is a float, string otherwise),
-      - And a friendly label with units.
-    """
-    display_dict = {}
-    
-    for field_name, config in FIELD_CONFIG.items():
-        # Get the friendly label from the config
-        label = config['label']
-        value = conditions.get(field_name)
-        
-        # If value is None or an empty string, display as "N/A"
-        if value is None or (isinstance(value, str) and not value.strip()):
-            display_value = "N/A"
-        else:
-            # If the field type is number and has a format, use it
-            if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
-                try:
-                    display_value = config['format'] % float(value)
-                except (ValueError, TypeError):
-                    display_value = str(value)
-            else:
-                display_value = str(value)
-        
-        display_dict[label] = display_value
-    return display_dict
-
-def split_conditions_for_display(conditions):
-    """
-    Splits conditions into required and optional fields for display purposes.
-    
-    It uses get_condition_display_dict to build the full display dict, and then
-    separates the required fields (based on FIELD_CONFIG) from the rest.
-    """
-    display_dict = get_condition_display_dict(conditions)
-    
-    # Build a set of display labels for required fields using FIELD_CONFIG
-    required_labels = {config['label'] for field_name, config in FIELD_CONFIG.items() if config.get('required', False)}
-    
-    required_fields = {label: value for label, value in display_dict.items() if label in required_labels}
-    optional_fields = {label: value for label, value in display_dict.items() if label not in required_labels}
-    
-    return required_fields, optional_fields
 
 
 

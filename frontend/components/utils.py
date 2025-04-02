@@ -6,35 +6,34 @@ import streamlit as st
 from database.models import ModificationsLog
 import json # Added for JSON serialization in logging
 import datetime # Added for timestamp in logging and date input
+from database.database import SessionLocal
 
 def get_condition_display_dict(conditions):
     """
     Build a display dictionary for experimental conditions.
     
-    This function takes a dictionary of experimental conditions and formats 
-    them for display using the FIELD_CONFIG.
-    
-    Args:
-        conditions (dict): Dictionary containing experimental conditions
-        
-    Returns:
-        dict: Formatted display dictionary with friendly labels and formatted values
+    It leverages FIELD_CONFIG to determine:
+      - Which fields to display,
+      - The expected type of the field (numeric if the default is a float, string otherwise),
+      - And a friendly label with units.
     """
     display_dict = {}
+    
     for field_name, config in FIELD_CONFIG.items():
+        # Get the friendly label from the config
         label = config['label']
         value = conditions.get(field_name)
         
-        # Handle empty or None values
+        # If value is None or an empty string, display as "N/A"
         if value is None or (isinstance(value, str) and not value.strip()):
             display_value = "N/A"
         else:
-            # Use format string from config if available for numbers
+            # If the field type is number and has a format, use it
             if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
                 try:
                     display_value = config['format'] % float(value)
                 except (ValueError, TypeError):
-                    display_value = str(value) # Fallback to string if format fails
+                    display_value = str(value)
             else:
                 display_value = str(value)
         
@@ -45,40 +44,17 @@ def split_conditions_for_display(conditions):
     """
     Splits conditions into required and optional fields for display purposes.
     
-    Uses get_condition_display_dict to format conditions based on FIELD_CONFIG,
-    then separates them using the 'required' flag in the config.
-    
-    Args:
-        conditions (dict): Dictionary containing experimental conditions
-        
-    Returns:
-        tuple: (required_fields, optional_fields) - Two dictionaries containing formatted values
+    It uses get_condition_display_dict to build the full display dict, and then
+    separates the required fields (based on FIELD_CONFIG) from the rest.
     """
-    required_fields = {}
-    optional_fields = {}
-
-    for field_name, config in FIELD_CONFIG.items():
-        label = config['label']
-        value = conditions.get(field_name)
-
-        # Format the value for display (similar logic as get_condition_display_dict)
-        if value is None or (isinstance(value, str) and not value.strip()):
-            display_value = "N/A"
-        else:
-            if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
-                try:
-                    display_value = config['format'] % float(value)
-                except (ValueError, TypeError):
-                    display_value = str(value)
-            else:
-                display_value = str(value)
-
-        # Assign to the correct dictionary based on the 'required' flag
-        if config.get('required', False):
-            required_fields[label] = display_value
-        else:
-            optional_fields[label] = display_value
-
+    display_dict = get_condition_display_dict(conditions)
+    
+    # Build a set of display labels for required fields using FIELD_CONFIG
+    required_labels = {config['label'] for field_name, config in FIELD_CONFIG.items() if config.get('required', False)}
+    
+    required_fields = {label: value for label, value in display_dict.items() if label in required_labels}
+    optional_fields = {label: value for label, value in display_dict.items() if label not in required_labels}
+    
     return required_fields, optional_fields
 
 def build_conditions(data, experiment_id):
@@ -377,3 +353,25 @@ def log_modification(db, experiment_id, modified_table, modification_type, old_v
     except Exception as e:
         # Log the error but don't crash the main operation
         st.error(f"Error creating modification log: {str(e)}")
+
+# --- Moved from view_experiments.py ---
+def extract_conditions(conditions_obj):
+    """
+    Extracts experimental conditions from an ORM object.
+    
+    This function uses FIELD_CONFIG to provide default values
+    for any missing conditions.
+    
+    Args:
+        conditions_obj: SQLAlchemy ORM object containing experimental conditions
+        
+    Returns:
+        dict: Dictionary of conditions with default values for missing fields
+    """
+    extracted = {}
+    for field_name, config in FIELD_CONFIG.items():
+        # Try to get the attribute from the conditions object;
+        # if it's None or missing, use the default
+        value = getattr(conditions_obj, field_name, None)
+        extracted[field_name] = value if value is not None else config['default']
+    return extracted

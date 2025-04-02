@@ -30,10 +30,10 @@ from frontend.components.edit_experiment import (
     save_results,
     delete_experimental_results,
     delete_result_file,
-    delete_external_analysis,
     save_note,
     submit_note_edit
 )
+from frontend.components.edit_sample import delete_external_analysis
 
 # --- Helper function for formatting display values --- 
 # Moved here to be defined before use

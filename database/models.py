@@ -36,7 +36,7 @@ class ExperimentalConditions(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     experiment_id = Column(Integer, ForeignKey("experiments.id"))
-    particle_size = Column(String)
+    particle_size = Column(Float)
     water_to_rock_ratio = Column(Float, nullable=True)
     initial_ph = Column(Float)
     catalyst = Column(String)
@@ -176,7 +176,12 @@ class SampleInfo(Base):
     updated_at = Column(DateTime, onupdate=func.now())
 
     # Relationships
-    external_analyses = relationship("ExternalAnalysis", back_populates="sample_info", cascade="all, delete-orphan")
+    external_analyses = relationship(
+        "ExternalAnalysis", 
+        back_populates="sample_info", 
+        cascade="all, delete-orphan",
+        foreign_keys="[ExternalAnalysis.sample_info_id]" # Specify the correct FK column
+    )
     photos = relationship("SamplePhotos", back_populates="sample_info", cascade="all, delete-orphan")
 
 class AnalysisFiles(Base):
@@ -207,5 +212,9 @@ class ExternalAnalysis(Base):
     updated_at = Column(DateTime, onupdate=func.now())
 
     # Relationships
-    sample_info = relationship("SampleInfo", back_populates="external_analyses")
+    sample_info = relationship(
+        "SampleInfo", 
+        back_populates="external_analyses",
+        foreign_keys=[sample_info_id] # Specify the correct FK column
+    )
     analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan") 

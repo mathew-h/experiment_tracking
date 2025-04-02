@@ -17,6 +17,14 @@ from frontend.config.variable_config import (
 )
 # Import for eager loading
 from sqlalchemy.orm import selectinload
+# Import functions moved to edit_sample.py
+from frontend.components.edit_sample import (
+    delete_external_analysis, 
+    add_external_analysis, 
+    add_sample_photo,        # <-- Import added function
+    delete_sample_photo,     # <-- Import added function
+    delete_analysis_file     # <-- Import added function
+)
 
 def render_sample_inventory():
     """
@@ -189,7 +197,7 @@ def display_sample_details(sample_id):
                         st.markdown("--- ")
                         # Delete button for the entire analysis entry (including all files)
                         if st.button("Delete Entire Analysis Entry", key=f"delete_analysis_{analysis.id}"):
-                             delete_external_analysis(analysis.id) # This needs to handle deleting files too
+                             delete_external_analysis(analysis.id) # Use imported function
                              st.rerun() # Rerun to refresh view after delete
             else:
                 st.info("No external analyses recorded for this sample.")
@@ -215,7 +223,7 @@ def display_sample_details(sample_id):
                         
                         # Delete button for each photo
                         if st.button("Delete Photo", key=f"delete_{photo_key}"):
-                            delete_sample_photo(photo.id)
+                            delete_sample_photo(photo.id) # Use imported function
                             st.rerun() # Rerun to refresh view after delete
             else:
                 st.info("No photos available for this sample.")
@@ -244,6 +252,7 @@ def display_sample_details(sample_id):
                     submitted = st.form_submit_button("Save Photo")
                     if submitted:
                         if photo_file:
+                            # Calls the imported add_sample_photo function
                             add_sample_photo(st.session_state.current_sample_db_id, photo_file, photo_desc)
                             st.session_state.adding_photo = False
                             st.session_state.experiment_updated = True # Flag update for potential refresh
@@ -293,21 +302,26 @@ def display_sample_details(sample_id):
                             elif not uploaded_files:
                                 st.error("Please upload at least one analysis file.")
                             else:
-                                # Call save function WITHOUT specific_file_types
-                                success = save_external_analysis(
-                                    sample_info_id=sample.id, 
-                                    analysis_type=form_values['analysis_type'], 
-                                    files=uploaded_files, # Pass list of files
-                                    laboratory=form_values['laboratory'],
-                                    analyst=form_values['analyst'],
-                                    analysis_date=form_values['analysis_date'],
-                                    description=form_values.get('description', '')
+                                # Prepare the analysis_data dict from form_values
+                                analysis_data_to_save = {
+                                    'analysis_type': form_values['analysis_type'],
+                                    'laboratory': form_values['laboratory'],
+                                    'analyst': form_values['analyst'],
+                                    'analysis_date': form_values['analysis_date'], # Already a date object
+                                    'description': form_values.get('description', ''),
+                                    'analysis_metadata': None # Add logic here if metadata is captured in form
+                                }
+                                
+                                # Calls the imported add_external_analysis function
+                                success = add_external_analysis(
+                                    user_sample_id=sample.sample_id, # Pass the string sample ID
+                                    analysis_data=analysis_data_to_save, # Pass the prepared data dict
+                                    uploaded_files=uploaded_files # Pass the list of files
                                 )
                                 if success:
                                     st.session_state.adding_analysis = False
                                     st.session_state.experiment_updated = True # Flag update
                                     st.rerun()
-                                # Keep form open on failure (error shown in save function)
 
                     # Add a cancel button
                     if st.form_submit_button("Cancel"):
@@ -378,339 +392,3 @@ def get_all_samples():
         return []
     finally:
         db.close()
-
-def save_external_analysis(sample_info_id, analysis_type, files: list, laboratory, analyst, analysis_date, description):
-    """
-    Save a new external analysis entry and its associated file(s).
-    Args:
-        sample_info_id (int): The database ID of the sample
-        analysis_type (str): General category for this analysis entry
-        files (list): List of UploadedFile objects from Streamlit.
-        laboratory (str): Name of the laboratory performing the analysis
-        analyst (str): Name of the analyst
-        analysis_date (datetime.date): Date when the analysis was performed
-        description (str): Description for the overall analysis entry
-    Returns:
-        bool: True if successful, False otherwise.
-    """
-    db = None # Initialize db to None
-    try:
-        db = SessionLocal()
-        
-        sample = db.query(SampleInfo).filter(SampleInfo.id == sample_info_id).first()
-        if not sample:
-             st.error(f"Sample with DB ID {sample_info_id} not found for analysis.")
-             return False
-
-        # --- Create the main ExternalAnalysis record --- 
-        analysis_datetime = datetime.datetime.combine(analysis_date, datetime.datetime.min.time()) if isinstance(analysis_date, datetime.date) else analysis_date
-        if not isinstance(analysis_datetime, datetime.datetime):
-             analysis_datetime = datetime.datetime.now()
-
-        main_analysis = ExternalAnalysis(
-            sample_id=sample.sample_id,
-            analysis_type=analysis_type,
-            analysis_date=analysis_datetime,
-            laboratory=laboratory,
-            analyst=analyst,
-            description=description
-            # No file paths here anymore
-        )
-        db.add(main_analysis)
-        db.flush() # Get the ID for the main_analysis entry
-        db.refresh(main_analysis)
-        main_analysis_id = main_analysis.id
-
-        # --- Process and save each uploaded file --- 
-        saved_files_info = []
-        for i, file in enumerate(files):
-            # Save the physical file
-            file_path = save_uploaded_file(
-                file=file, 
-                base_dir_name='external_analyses', # Keep same base dir?
-                # Make prefix more unique: sampleID_analysisID_fileIndex
-                filename_prefix=f"{sample.sample_id}_{main_analysis_id}_{i}"
-            )
-            if not file_path:
-                st.error(f"Failed to save file: {file.name}. Rolling back.")
-                db.rollback()
-                # Consider deleting already saved files for this batch
-                return False 
-
-            # Create the AnalysisFiles database record
-            analysis_file_record = AnalysisFiles(
-                external_analysis_id=main_analysis_id,
-                file_path=file_path,
-                file_name=file.name,
-                file_type=file.type
-            )
-            db.add(analysis_file_record)
-            # No need to flush/refresh each file record usually, commit handles it
-            saved_files_info.append({
-                'file_path': file_path,
-                'file_name': file.name
-            }) # Store info for logging
-            
-        # --- Log the creation of the main entry and files --- 
-        log_modification(
-            db=db,
-            experiment_id=None, 
-            modified_table="external_analyses",
-            modification_type="add",
-            new_values={
-                'sample_id': sample.sample_id,
-                'analysis_id': main_analysis_id,
-                'analysis_type': analysis_type,
-                'laboratory': laboratory,
-                'analyst': analyst,
-                'analysis_date': analysis_datetime.isoformat(),
-                'description': description,
-                'added_files': saved_files_info # Log details of added files
-            }
-        )
-        
-        # Commit the transaction (saves main entry and all file records)
-        db.commit()
-        st.success(f"External analysis entry and {len(saved_files_info)} file(s) saved successfully!")
-        return True
-        
-    except Exception as e:
-        if db: db.rollback()
-        st.error(f"Error saving external analysis: {str(e)}")
-        # Consider deleting any successfully saved files before rollback if possible
-        return False
-    finally:
-        if db and db.is_active:
-             db.close()
-
-def delete_external_analysis(analysis_id):
-    """
-    Delete an external analysis record and ALL its associated files.
-    Args:
-        analysis_id (int): The unique identifier of the ExternalAnalysis record.
-    """
-    db = None
-    try:
-        db = SessionLocal()
-        # Load the analysis and its associated files eagerly
-        analysis = db.query(ExternalAnalysis).options(
-            selectinload(ExternalAnalysis.analysis_files)
-        ).filter(ExternalAnalysis.id == analysis_id).first()
-        
-        if analysis is None:
-            st.error("Analysis not found")
-            return False
-        
-        # Store details for logging before deletion
-        old_values={
-            'sample_id': analysis.sample_id,
-            'analysis_id': analysis.id,
-            'analysis_type': analysis.analysis_type,
-            'laboratory': analysis.laboratory,
-            'analyst': analysis.analyst,
-            'analysis_date': analysis.analysis_date.isoformat() if analysis.analysis_date else None,
-            'description': analysis.description,
-            'files': [{'id': f.id, 'path': f.file_path, 'name': f.file_name} for f in analysis.analysis_files]
-        }
-        # Store file paths separately to delete AFTER DB commit
-        file_paths_to_delete = [f.file_path for f in analysis.analysis_files if f.file_path]
-
-        # Log the deletion (log before deleting)
-        log_modification(
-            db=db,
-            experiment_id=None,
-            modified_table="external_analyses",
-            modification_type="delete",
-            old_values=old_values
-        )
-        
-        # Delete the main analysis object (cascade should handle AnalysisFiles DB records)
-        db.delete(analysis)
-        db.commit()
-        
-        # --- Delete physical files AFTER successful commit ---
-        for file_path in file_paths_to_delete:
-            delete_file_if_exists(file_path)
-        
-        st.success("External analysis entry and associated files deleted successfully!")
-        return True
-
-    except Exception as e:
-        if db: db.rollback()
-        st.error(f"Error deleting external analysis: {str(e)}")
-        return False
-    finally:
-        if db and db.is_active:
-             db.close()
-
-def delete_analysis_file(analysis_file_id):
-    """
-    Deletes a single analysis file record and its physical file.
-    Args:
-        analysis_file_id (int): The DB ID of the AnalysisFiles record.
-    """
-    db = None
-    try:
-        db = SessionLocal()
-        analysis_file = db.query(AnalysisFiles).filter(AnalysisFiles.id == analysis_file_id).first()
-
-        if not analysis_file:
-            st.error(f"Analysis file with ID {analysis_file_id} not found.")
-            return False
-
-        # Store details for logging and file deletion
-        old_values = {
-            'external_analysis_id': analysis_file.external_analysis_id,
-            'analysis_file_id': analysis_file.id,
-            'file_path': analysis_file.file_path,
-            'file_name': analysis_file.file_name
-        }
-        file_path_to_delete = analysis_file.file_path
-
-        # Log modification before delete
-        log_modification(
-            db=db,
-            experiment_id=None,
-            modified_table="analysis_files",
-            modification_type="delete",
-            old_values=old_values
-        )
-
-        # Delete the DB record
-        db.delete(analysis_file)
-        db.commit()
-
-        # Delete the physical file AFTER commit
-        delete_file_if_exists(file_path_to_delete)
-
-        st.success(f"Analysis file '{old_values['file_name']}' deleted successfully!")
-        return True
-
-    except Exception as e:
-        if db: db.rollback()
-        st.error(f"Error deleting analysis file: {str(e)}")
-        return False
-    finally:
-        if db and db.is_active:
-            db.close()
-
-def add_sample_photo(sample_info_id, photo_file, description=None):
-    """
-    Adds a new photo record for a given sample.
-    Args:
-        sample_info_id (int): The database ID of the SampleInfo record.
-        photo_file (UploadedFile): The photo file uploaded via Streamlit.
-        description (str, optional): Optional description for the photo.
-    """
-    try:
-        db = SessionLocal()
-        
-        # Fetch parent sample to confirm it exists (optional but good practice)
-        sample = db.query(SampleInfo).filter(SampleInfo.id == sample_info_id).first()
-        if not sample:
-             st.error(f"Sample with DB ID {sample_info_id} not found.")
-             return False
-
-        # Save the file using utility
-        file_path = save_uploaded_file(
-            file=photo_file,
-            base_dir_name='sample_photos', 
-            filename_prefix=f"sample_{sample.sample_id}" # Use string sample_id for prefix
-        )
-
-        if not file_path:
-            st.error("Failed to save photo file.")
-            db.rollback()
-            return False
-
-        # Create new SamplePhotos object
-        new_photo = SamplePhotos(
-            sample_info_id=sample_info_id,
-            file_path=file_path,
-            file_name=photo_file.name,
-            file_type=photo_file.type,
-            description=description
-        )
-        db.add(new_photo)
-
-        # Flush and Refresh before logging/commit (like experimental results)
-        db.flush()
-        db.refresh(new_photo)
-
-        # Log modification
-        log_modification(
-            db=db,
-            experiment_id=None, # Sample-level change
-            modified_table="sample_photos",
-            modification_type="add",
-            new_values={
-                'sample_info_id': new_photo.sample_info_id,
-                'photo_id': new_photo.id,
-                'file_path': new_photo.file_path,
-                'file_name': new_photo.file_name,
-                'description': new_photo.description
-            }
-        )
-        
-        db.commit()
-        st.success("Photo added successfully!")
-        return True
-
-    except Exception as e:
-        db.rollback()
-        st.error(f"Error adding sample photo: {str(e)}")
-        return False
-    finally:
-        if 'db' in locals() and db.is_active:
-            db.close()
-
-def delete_sample_photo(photo_id):
-    """
-    Deletes a specific photo record and its associated file.
-    Args:
-        photo_id (int): The database ID of the SamplePhotos record to delete.
-    """
-    try:
-        db = SessionLocal()
-        photo = db.query(SamplePhotos).filter(SamplePhotos.id == photo_id).first()
-
-        if not photo:
-            st.error(f"Photo with ID {photo_id} not found.")
-            return False
-
-        # Store details for logging before deletion
-        old_values = {
-            'sample_info_id': photo.sample_info_id,
-            'photo_id': photo.id,
-            'file_path': photo.file_path,
-            'file_name': photo.file_name
-        }
-        file_path_to_delete = photo.file_path # Store path before deleting object
-
-        # Log modification
-        log_modification(
-            db=db,
-            experiment_id=None,
-            modified_table="sample_photos",
-            modification_type="delete",
-            old_values=old_values
-        )
-
-        # Delete DB record
-        db.delete(photo)
-        db.commit()
-
-        # Delete the file AFTER successful commit
-        delete_file_if_exists(file_path_to_delete)
-
-        st.success("Photo deleted successfully!")
-        return True
-
-    except Exception as e:
-        db.rollback()
-        st.error(f"Error deleting sample photo: {str(e)}")
-        # We might need to manually clean up the file if commit fails but file exists
-        return False
-    finally:
-        if 'db' in locals() and db.is_active:
-            db.close()
