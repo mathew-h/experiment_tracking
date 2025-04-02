@@ -17,15 +17,15 @@ from database.models import (
 
 from frontend.components.experiment_details import display_experiment_details
 from frontend.components.edit_experiment import edit_experiment
-from frontend.components.utils import split_conditions_for_display
+from frontend.components.utils import split_conditions_for_display, generate_form_fields
 
 from frontend.config.variable_config import (
-    REQUIRED_DEFAULTS,
-    OPTIONAL_FIELDS,
-    VALUE_LABELS,
+    FIELD_CONFIG,
     EXPERIMENT_TYPES,
     EXPERIMENT_STATUSES
 )
+
+from sqlalchemy.orm import selectinload
 
 def render_view_experiments():
     """
@@ -121,21 +121,60 @@ def render_experiment_list():
     with col2:
         # Experimental conditions filters
         st.markdown("#### Experimental Conditions")
-        catalyst_filter = st.text_input("Filter by Catalyst Type:", "")
         
-        # Temperature range
-        temp_col1, temp_col2 = st.columns(2)
-        with temp_col1:
-            min_temp = st.number_input("Min Temperature (°C)", value=None, min_value=-273.15)
-        with temp_col2:
-            max_temp = st.number_input("Max Temperature (°C)", value=None, min_value=-273.15)
+        # Get numeric fields from FIELD_CONFIG for filtering
+        numeric_fields = [
+            (field_name, config) 
+            for field_name, config in FIELD_CONFIG.items() 
+            if config['type'] == 'number'
+        ]
         
-        # pH range
-        ph_col1, ph_col2 = st.columns(2)
-        with ph_col1:
-            min_ph = st.number_input("Min pH", value=None, min_value=0.0, max_value=14.0)
-        with ph_col2:
-            max_ph = st.number_input("Max pH", value=None, min_value=0.0, max_value=14.0)
+        # Get text fields from FIELD_CONFIG for filtering
+        text_fields = [
+            (field_name, config) 
+            for field_name, config in FIELD_CONFIG.items() 
+            if config['type'] == 'text'
+        ]
+        
+        # Create filters for text fields
+        for field_name, config in text_fields:
+            if field_name == 'catalyst':  # Special case for catalyst filter
+                catalyst_filter = st.text_input(f"Filter by {config['label']}:", "")
+            elif field_name == 'buffer_system':  # Special case for buffer system filter
+                buffer_filter = st.text_input(f"Filter by {config['label']}:", "")
+        
+        # Create filters for numeric fields with ranges
+        for field_name, config in numeric_fields:
+            if field_name == 'temperature':  # Special case for temperature filter
+                temp_col1, temp_col2 = st.columns(2)
+                with temp_col1:
+                    min_temp = st.number_input(
+                        f"Min {config['label']}", 
+                        value=None, 
+                        min_value=config.get('min_value', -273.15)
+                    )
+                with temp_col2:
+                    max_temp = st.number_input(
+                        f"Max {config['label']}", 
+                        value=None, 
+                        min_value=config.get('min_value', -273.15)
+                    )
+            elif field_name == 'initial_ph':  # Special case for pH filter
+                ph_col1, ph_col2 = st.columns(2)
+                with ph_col1:
+                    min_ph = st.number_input(
+                        f"Min {config['label']}", 
+                        value=None, 
+                        min_value=config.get('min_value', 0.0),
+                        max_value=config.get('max_value', 14.0)
+                    )
+                with ph_col2:
+                    max_ph = st.number_input(
+                        f"Max {config['label']}", 
+                        value=None, 
+                        min_value=config.get('min_value', 0.0),
+                        max_value=config.get('max_value', 14.0)
+                    )
     
     # Apply filters
     filtered_experiments = experiments
@@ -169,6 +208,10 @@ def render_experiment_list():
         if catalyst_filter:
             detailed_experiments = [exp for exp in detailed_experiments if 
                                   exp['conditions'].get('catalyst', '').lower() == catalyst_filter.lower()]
+        
+        if buffer_filter:
+            detailed_experiments = [exp for exp in detailed_experiments if 
+                                  exp['conditions'].get('buffer_system', '').lower() == buffer_filter.lower()]
         
         if min_temp is not None:
             detailed_experiments = [exp for exp in detailed_experiments if 
@@ -249,13 +292,15 @@ def render_experiment_detail():
     3. Manages edit mode state
     4. Displays experiment details or edit form
     """
-    experiment = get_experiment_by_id(st.session_state.view_experiment_id)
-    
-    if experiment is None:
+    # Initial fetch to check if experiment exists and handle navigation/edit buttons first
+    initial_experiment_check = get_experiment_by_id(st.session_state.view_experiment_id)
+
+    if initial_experiment_check is None:
         st.error(f"Experiment with ID {st.session_state.view_experiment_id} not found.")
         if st.button("Back to Experiment List"):
             st.session_state.view_experiment_id = None
             st.session_state.edit_mode = False
+            st.rerun() # Rerun to go back to the list
     else:
         # Navigation buttons
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -263,18 +308,33 @@ def render_experiment_detail():
             if st.button("← Back to List"):
                 st.session_state.view_experiment_id = None
                 st.session_state.edit_mode = False
-        
+                st.rerun() # Rerun to go back to the list
+
         with col3:
             if not st.session_state.edit_mode:
                 if st.button("Edit Experiment"):
                     st.session_state.edit_mode = True
+                    st.rerun() # Rerun to switch to edit mode
             else:
                 if st.button("Cancel Edit"):
                     st.session_state.edit_mode = False
-        
-        # Display experiment info
+                    st.rerun() # Rerun to switch back to view mode
+
+        # --- Refetch the experiment data HERE ---
+        # This ensures we have the latest data before displaying/editing,
+        # especially after a rerun triggered by saving sub-components like notes or data.
+        experiment = get_experiment_by_id(st.session_state.view_experiment_id)
+
+        # Check again in case something went wrong between the initial check and now
+        if experiment is None:
+             st.error(f"Could not reload experiment with ID {st.session_state.view_experiment_id}.")
+             # Optionally add a back button here too
+             return # Stop rendering if reload failed
+
+        # Display experiment info header
         st.subheader(f"Experiment: {experiment['experiment_id']}")
-        
+
+        # Now display either the details or the edit form with the freshly fetched data
         if not st.session_state.edit_mode:
             # View mode - display experiment details
             display_experiment_details(experiment)
@@ -316,7 +376,7 @@ def extract_conditions(conditions_obj):
     """
     Extracts experimental conditions from an ORM object.
     
-    This function uses REQUIRED_DEFAULTS and OPTIONAL_FIELDS to provide default values
+    This function uses FIELD_CONFIG to provide default values
     for any missing conditions.
     
     Args:
@@ -325,14 +385,12 @@ def extract_conditions(conditions_obj):
     Returns:
         dict: Dictionary of conditions with default values for missing fields
     """
-    # Merge required and optional defaults
-    condition_defaults = {**REQUIRED_DEFAULTS, **OPTIONAL_FIELDS}
     extracted = {}
-    for field, default in condition_defaults.items():
+    for field_name, config in FIELD_CONFIG.items():
         # Try to get the attribute from the conditions object;
         # if it's None or missing, use the default
-        value = getattr(conditions_obj, field, None)
-        extracted[field] = value if value is not None else default
+        value = getattr(conditions_obj, field_name, None)
+        extracted[field_name] = value if value is not None else config['default']
     return extracted
 
 def get_experiment_by_id(experiment_id):
@@ -352,14 +410,14 @@ def get_experiment_by_id(experiment_id):
         db = SessionLocal()
         # Check if input is a string (experiment_id) or integer (database id)
         if isinstance(experiment_id, str):
-            experiment = db.query(Experiment).filter(Experiment.experiment_id == experiment_id).first()
+            experiment = db.query(Experiment).options(selectinload(Experiment.results), selectinload(Experiment.notes), selectinload(Experiment.modifications), selectinload(Experiment.conditions)).filter(Experiment.experiment_id == experiment_id).first()
         else:
-            experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+            experiment = db.query(Experiment).options(selectinload(Experiment.results), selectinload(Experiment.notes), selectinload(Experiment.modifications), selectinload(Experiment.conditions)).filter(Experiment.id == experiment_id).first()
         
         if experiment is None:
             return None
         
-        # Get related conditions, notes, and experimental data
+        # Access related data (already loaded due to selectinload)
         conditions = experiment.conditions
         notes = experiment.notes
         modifications = experiment.modifications
@@ -415,21 +473,24 @@ def get_experiment_by_id(experiment_id):
         
         # Add experimental data if they exist
         if results:
-            exp_dict['experimental_results'] = [
-                {
-                    'id': data.id,
-                    'data_type': data.data_type,
-                    'file_path': data.file_path,
-                    'file_name': data.file_name,
-                    'file_type': data.file_type,
-                    'data_values': data.data_values,
-                    'description': data.description,
-                    'created_at': data.created_at,
-                    'updated_at': data.updated_at
-                }
-                for data in results
-            ]
-        
+            exp_dict['experimental_results'] = [] # Ensure it starts empty
+            for data in results:
+                exp_dict['experimental_results'].append(
+                    {
+                        'id': data.id,
+                        'data_type': data.data_type,
+                        'file_path': data.file_path,
+                        'file_name': data.file_name,
+                        'file_type': data.file_type,
+                        'data_values': data.data_values,
+                        'description': data.description,
+                        'created_at': data.created_at,
+                        'updated_at': data.updated_at
+                    }
+                )
+        else:
+            pass # Add pass to fix empty block linting error
+            
         return exp_dict
     except Exception as e:
         st.error(f"Error retrieving experiment: {str(e)}")
@@ -441,27 +502,28 @@ def get_condition_display_dict(conditions):
     """
     Build a display dictionary for experimental conditions.
     
-    It leverages REQUIRED_DEFAULTS and OPTIONAL_FIELDS to determine:
+    It leverages FIELD_CONFIG to determine:
       - Which fields to display,
       - The expected type of the field (numeric if the default is a float, string otherwise),
       - And a friendly label with units.
     """
     display_dict = {}
-    # Combine both required and optional defaults
-    combined_defaults = {**REQUIRED_DEFAULTS, **OPTIONAL_FIELDS}
     
-    for field, default in combined_defaults.items():
-        # Get the friendly label; if not defined, fallback to the field name itself.
-        label = VALUE_LABELS.get(field, field)
-        value = conditions.get(field)
+    for field_name, config in FIELD_CONFIG.items():
+        # Get the friendly label from the config
+        label = config['label']
+        value = conditions.get(field_name)
         
         # If value is None or an empty string, display as "N/A"
         if value is None or (isinstance(value, str) and not value.strip()):
             display_value = "N/A"
         else:
-            # If the default is a float and the value is numeric, format as a number
-            if isinstance(default, float) and isinstance(value, (int, float)):
-                display_value = f"{float(value):.2f}"
+            # If the field type is number and has a format, use it
+            if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
+                try:
+                    display_value = config['format'] % float(value)
+                except (ValueError, TypeError):
+                    display_value = str(value)
             else:
                 display_value = str(value)
         
@@ -473,12 +535,12 @@ def split_conditions_for_display(conditions):
     Splits conditions into required and optional fields for display purposes.
     
     It uses get_condition_display_dict to build the full display dict, and then
-    separates the required fields (based on REQUIRED_DEFAULTS keys) from the rest.
+    separates the required fields (based on FIELD_CONFIG) from the rest.
     """
     display_dict = get_condition_display_dict(conditions)
     
-    # Build a set of display labels for required fields using REQUIRED_DEFAULTS keys.
-    required_labels = {VALUE_LABELS.get(field, field) for field in REQUIRED_DEFAULTS.keys()}
+    # Build a set of display labels for required fields using FIELD_CONFIG
+    required_labels = {config['label'] for field_name, config in FIELD_CONFIG.items() if config.get('required', False)}
     
     required_fields = {label: value for label, value in display_dict.items() if label in required_labels}
     optional_fields = {label: value for label, value in display_dict.items() if label not in required_labels}

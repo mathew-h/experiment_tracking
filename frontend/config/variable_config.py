@@ -2,6 +2,8 @@
 Configuration file containing all experiment-related constants and defaults.
 """
 
+import datetime # Make sure datetime is imported if needed for date default
+
 # Available experiment types
 EXPERIMENT_TYPES = ['Serum', 'Autoclave', 'HPHT', 'Core Flood']
 
@@ -10,6 +12,109 @@ EXPERIMENT_STATUSES = ['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELL
 
 # Available external analysis types
 ANALYSIS_TYPES = ['XRD', 'SEM', 'Elemental', 'Other']
+
+# Configuration for rock sample form fields
+ROCK_SAMPLE_CONFIG = {
+    'sample_id': {
+        'label': "Sample ID",
+        'type': 'text',
+        'required': True,
+        'default': '',
+        'help': "Enter a unique identifier for this rock sample (e.g., 20UM21)"
+    },
+    'rock_classification': {
+        'label': "Rock Classification",
+        'type': 'text',
+        'required': True,
+        'default': '',
+        'help': "Enter the rock type/classification"
+    },
+    'state': {
+        'label': "State/Province",
+        'type': 'text',
+        'required': True,
+        'default': '',
+        'help': "Enter the state or province where the sample was collected"
+    },
+    'country': {
+        'label': "Country",
+        'type': 'text',
+        'required': True,
+        'default': '',
+        'help': "Enter the country where the sample was collected"
+    },
+    'latitude': {
+        'label': "Latitude",
+        'type': 'number',
+        'required': True,
+        'default': 0.0,
+        'min_value': -90.0,
+        'max_value': 90.0,
+        'step': 0.000001,
+        'format': "%.6f",
+        'help': "Enter the latitude coordinate of the collection site"
+    },
+    'longitude': {
+        'label': "Longitude",
+        'type': 'number',
+        'required': True,
+        'default': 0.0,
+        'min_value': -180.0,
+        'max_value': 180.0,
+        'step': 0.000001,
+        'format': "%.6f",
+        'help': "Enter the longitude coordinate of the collection site"
+    },
+    'description': {
+        'label': "Sample Description",
+        'type': 'text_area',
+        'required': False,
+        'default': '',
+        'height': 100,
+        'help': "Add any relevant details about the rock sample"
+    }
+}
+
+# Configuration for external analysis form fields
+EXTERNAL_ANALYSIS_CONFIG = {
+    'analysis_type': {
+        'label': "Analysis Type",
+        'type': 'select',
+        'options': ANALYSIS_TYPES,
+        'default': ANALYSIS_TYPES[0] if ANALYSIS_TYPES else None, # Default to first option or None
+        'required': True,
+        'help': "Select the type of analysis performed"
+    },
+    'laboratory': {
+        'label': "Laboratory",
+        'type': 'text',
+        'default': '', # Default to empty string
+        'required': True,
+        'help': "Enter the name of the laboratory performing the analysis"
+    },
+    'analyst': {
+        'label': "Analyst",
+        'type': 'text',
+        'default': '', # Default to empty string
+        'required': True,
+        'help': "Enter the name of the analyst"
+    },
+    'analysis_date': {
+        'label': "Analysis Date",
+        'type': 'date',
+        'default': None, # Default to None for date input
+        'required': True,
+        'help': "Select the date when the analysis was performed"
+    },
+    'description': {
+        'label': "Description",
+        'type': 'text_area',
+        'default': '', # Default to empty string
+        'required': False,
+        'height': 100,
+        'help': "Add a description of the analysis"
+    }
+}
 
 # Configuration for experiment form fields
 FIELD_CONFIG = {
@@ -55,8 +160,8 @@ FIELD_CONFIG = {
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
-        'step': 0.000001,
-        'format': "%.6f",
+        'step': 0.00001,
+        'format': "%.5f",
         'required': True,
         'help': "Enter the mass of catalyst used in grams."
     },
@@ -187,6 +292,17 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Enter the surfactant concentration (units depend on type)."
     },
+    'dissolved_oxygen': {
+        'label': "Dissolved Oxygen (ppm)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'max_value': 100.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the dissolved oxygen concentration in parts per million (ppm)."
+    },
     'co2_partial_pressure': {
         'label': "CO2 Partial Pressure (psi)",
         'default': 0.0,
@@ -216,5 +332,51 @@ FIELD_CONFIG = {
         'format': "%.2f",
         'required': False,
         'help': "Specify the pore pressure in psi (for core flood/HPHT)."
+    }
+}
+
+# Configuration for basic experiment results fields
+RESULTS_CONFIG = {
+    'final_ph': {
+        'label': "Final pH",
+        'type': 'number',
+        'required': False, # Assuming results might not always be complete
+        'default': None, # Use None as default, handle in form logic
+        'min_value': 0.0,
+        'max_value': 14.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'help': "Enter the final pH of the solution (if measured)."
+    },
+    'final_nitrate_concentration': {
+        'label': "Final Nitrate Concentration (mM)",
+        'type': 'number',
+        'required': False,
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'help': "Enter the final nitrate concentration in mM (if measured)."
+    },
+    'yield_value': {
+        'label': "Yield Value (%)", # Assuming this is Ammonia Yield, adjust label if needed
+        'type': 'number',
+        'required': False,
+        'default': None,
+        'min_value': 0.0,
+        'max_value': 100.0, # Or remove max_value if yield can exceed 100
+        'step': 0.1,
+        'format': "%.1f",
+        'help': "Enter the yield value as a percentage (if measured)."
+    },
+    'time_post_reaction': {
+        'label': "Time Post-Reaction (hours)",
+        'type': 'number',
+        'required': True, # Make this required for new entries
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.5,
+        'format': "%.1f",
+        'help': "Enter the time elapsed in hours since the reaction started when these results were measured."
     }
 } 

@@ -1,21 +1,18 @@
 from frontend.config.variable_config import (
-    REQUIRED_DEFAULTS,
-    OPTIONAL_FIELDS,
-    VALUE_LABELS,
+    FIELD_CONFIG,
 )
 import os
 import streamlit as st
 from database.models import ModificationsLog
 import json # Added for JSON serialization in logging
-import datetime # Added for timestamp in logging
+import datetime # Added for timestamp in logging and date input
 
 def get_condition_display_dict(conditions):
     """
     Build a display dictionary for experimental conditions.
     
-    This function takes a dictionary of experimental conditions and formats them for display.
-    It uses REQUIRED_DEFAULTS and OPTIONAL_FIELDS to determine which fields to include
-    and how to format them.
+    This function takes a dictionary of experimental conditions and formats 
+    them for display using the FIELD_CONFIG.
     
     Args:
         conditions (dict): Dictionary containing experimental conditions
@@ -24,21 +21,20 @@ def get_condition_display_dict(conditions):
         dict: Formatted display dictionary with friendly labels and formatted values
     """
     display_dict = {}
-    # Combine both required and optional defaults to get all possible fields
-    combined_defaults = {**REQUIRED_DEFAULTS, **OPTIONAL_FIELDS}
-    
-    for field, default in combined_defaults.items():
-        # Get the friendly label from VALUE_LABELS, fallback to field name if not found
-        label = VALUE_LABELS.get(field, field)
-        value = conditions.get(field)
+    for field_name, config in FIELD_CONFIG.items():
+        label = config['label']
+        value = conditions.get(field_name)
         
         # Handle empty or None values
         if value is None or (isinstance(value, str) and not value.strip()):
             display_value = "N/A"
         else:
-            # Format numeric values with 2 decimal places if default is float
-            if isinstance(default, float) and isinstance(value, (int, float)):
-                display_value = f"{float(value):.2f}"
+            # Use format string from config if available for numbers
+            if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
+                try:
+                    display_value = config['format'] % float(value)
+                except (ValueError, TypeError):
+                    display_value = str(value) # Fallback to string if format fails
             else:
                 display_value = str(value)
         
@@ -49,8 +45,8 @@ def split_conditions_for_display(conditions):
     """
     Splits conditions into required and optional fields for display purposes.
     
-    This function uses get_condition_display_dict to format all conditions,
-    then separates them into required and optional fields based on REQUIRED_DEFAULTS.
+    Uses get_condition_display_dict to format conditions based on FIELD_CONFIG,
+    then separates them using the 'required' flag in the config.
     
     Args:
         conditions (dict): Dictionary containing experimental conditions
@@ -58,106 +54,196 @@ def split_conditions_for_display(conditions):
     Returns:
         tuple: (required_fields, optional_fields) - Two dictionaries containing formatted values
     """
-    # Get formatted display dictionary for all conditions
-    display_dict = get_condition_display_dict(conditions)
-    
-    # Create set of required field labels using REQUIRED_DEFAULTS keys
-    required_labels = {VALUE_LABELS.get(field, field) for field in REQUIRED_DEFAULTS.keys()}
-    
-    # Split display dictionary into required and optional fields
-    required_fields = {label: value for label, value in display_dict.items() if label in required_labels}
-    optional_fields = {label: value for label, value in display_dict.items() if label not in required_labels}
-    
+    required_fields = {}
+    optional_fields = {}
+
+    for field_name, config in FIELD_CONFIG.items():
+        label = config['label']
+        value = conditions.get(field_name)
+
+        # Format the value for display (similar logic as get_condition_display_dict)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            display_value = "N/A"
+        else:
+            if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
+                try:
+                    display_value = config['format'] % float(value)
+                except (ValueError, TypeError):
+                    display_value = str(value)
+            else:
+                display_value = str(value)
+
+        # Assign to the correct dictionary based on the 'required' flag
+        if config.get('required', False):
+            required_fields[label] = display_value
+        else:
+            optional_fields[label] = display_value
+
     return required_fields, optional_fields
 
-def build_conditions(REQUIRED_DEFAULTS, OPTIONAL_FIELDS, data, experiment_id):
+def build_conditions(data, experiment_id):
     """
     Builds a complete conditions dictionary for an experiment.
     
-    This function merges default values with provided data and adds the experiment_id.
-    It's used when creating or updating experimental conditions.
+    This function creates a conditions dictionary using FIELD_CONFIG defaults
+    and provided data, then adds the experiment_id.
     
     Args:
-        REQUIRED_DEFAULTS (dict): Dictionary of required default values
-        OPTIONAL_FIELDS (dict): Dictionary of optional default values
         data (dict): Dictionary containing actual values to use
         experiment_id (int): ID of the experiment these conditions belong to
         
     Returns:
         dict: Complete conditions dictionary ready for database storage
     """
-    # Merge defaults
-    merged = {**REQUIRED_DEFAULTS, **OPTIONAL_FIELDS}
+    # Start with default values from FIELD_CONFIG
+    conditions = {name: config['default'] for name, config in FIELD_CONFIG.items()}
+    
     # Override with values provided in 'data'
-    merged.update({key: data.get(key, default) for key, default in merged.items()})
+    conditions.update({key: data.get(key, default) for key, default in conditions.items()})
+    
     # Add experiment_id for the relationship
-    merged['experiment_id'] = experiment_id
-    return merged
+    conditions['experiment_id'] = experiment_id
+    
+    return conditions
 
-# --- File Handling Utilities ---
+# --- Cloud Storage Abstraction ---
+class FileStorage:
+    """
+    Abstract file storage interface that supports both local and cloud storage.
+    """
+    def __init__(self, storage_type='local', **kwargs):
+        """
+        Initialize the storage backend.
+        
+        Args:
+            storage_type (str): Type of storage ('local', 's3', 'gcs', 'azure')
+            **kwargs: Additional configuration for the specific storage type
+        """
+        self.storage_type = storage_type
+        self.config = kwargs
+        
+    def get_upload_path(self, base_dir_name):
+        """
+        Get the appropriate upload path for the storage type.
+        """
+        if self.storage_type == 'local':
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            upload_dir = os.path.join(project_root, 'uploads', base_dir_name)
+            os.makedirs(upload_dir, exist_ok=True)
+            return upload_dir
+        else:
+            # For cloud storage, return the virtual path
+            return f"{base_dir_name}/"
+            
+    def save_file(self, file, base_dir_name, filename_prefix):
+        """
+        Save a file using the appropriate storage backend.
+        """
+        if self.storage_type == 'local':
+            return self._save_local(file, base_dir_name, filename_prefix)
+        elif self.storage_type == 's3':
+            return self._save_s3(file, base_dir_name, filename_prefix)
+        elif self.storage_type == 'gcs':
+            return self._save_gcs(file, base_dir_name, filename_prefix)
+        elif self.storage_type == 'azure':
+            return self._save_azure(file, base_dir_name, filename_prefix)
+        else:
+            raise ValueError(f"Unsupported storage type: {self.storage_type}")
+            
+    def delete_file(self, file_path):
+        """
+        Delete a file using the appropriate storage backend.
+        """
+        if self.storage_type == 'local':
+            return self._delete_local(file_path)
+        elif self.storage_type == 's3':
+            return self._delete_s3(file_path)
+        elif self.storage_type == 'gcs':
+            return self._delete_gcs(file_path)
+        elif self.storage_type == 'azure':
+            return self._delete_azure(file_path)
+        else:
+            raise ValueError(f"Unsupported storage type: {self.storage_type}")
+            
+    def _save_local(self, file, base_dir_name, filename_prefix):
+        """Local filesystem implementation"""
+        if not file:
+            return None
+            
+        try:
+            upload_dir = self.get_upload_path(base_dir_name)
+            safe_filename = os.path.basename(file.name).replace(" ", "_")
+            file_path = os.path.join(upload_dir, f"{filename_prefix}_{safe_filename}")
+            
+            with open(file_path, 'wb') as f:
+                f.write(file.getvalue())
+            return file_path
+        except Exception as e:
+            st.error(f"Error saving file {file.name}: {str(e)}")
+            return None
+            
+    def _delete_local(self, file_path):
+        """Local filesystem implementation"""
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                return True
+            except OSError as e:
+                st.warning(f"Could not delete file {file_path}: {e}")
+                return False
+        return True
+        
+    def _save_s3(self, file, base_dir_name, filename_prefix):
+        """AWS S3 implementation"""
+        # TODO: Implement S3 storage
+        raise NotImplementedError("S3 storage not yet implemented")
+        
+    def _delete_s3(self, file_path):
+        """AWS S3 implementation"""
+        # TODO: Implement S3 deletion
+        raise NotImplementedError("S3 deletion not yet implemented")
+        
+    def _save_gcs(self, file, base_dir_name, filename_prefix):
+        """Google Cloud Storage implementation"""
+        # TODO: Implement GCS storage
+        raise NotImplementedError("GCS storage not yet implemented")
+        
+    def _delete_gcs(self, file_path):
+        """Google Cloud Storage implementation"""
+        # TODO: Implement GCS deletion
+        raise NotImplementedError("GCS deletion not yet implemented")
+        
+    def _save_azure(self, file, base_dir_name, filename_prefix):
+        """Azure Blob Storage implementation"""
+        # TODO: Implement Azure storage
+        raise NotImplementedError("Azure storage not yet implemented")
+        
+    def _delete_azure(self, file_path):
+        """Azure Blob Storage implementation"""
+        # TODO: Implement Azure deletion
+        raise NotImplementedError("Azure deletion not yet implemented")
 
+# Initialize the file storage with default local storage
+file_storage = FileStorage()
+
+# Update the existing functions to use the FileStorage class
 def get_upload_dir(base_dir_name):
     """
     Constructs the path to an upload directory and ensures it exists.
-    
-    Args:
-        base_dir_name (str): The name of the subdirectory within 'uploads' (e.g., 'sample_photos').
-        
-    Returns:
-        str: The absolute path to the upload directory.
     """
-    # Assumes utils.py is in frontend/components
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    upload_dir = os.path.join(project_root, 'uploads', base_dir_name)
-    os.makedirs(upload_dir, exist_ok=True)
-    return upload_dir
+    return file_storage.get_upload_path(base_dir_name)
 
 def save_uploaded_file(file, base_dir_name, filename_prefix):
     """
-    Saves an uploaded file to the specified directory.
-    
-    Args:
-        file (UploadedFile): The Streamlit uploaded file object.
-        base_dir_name (str): The name of the subdirectory within 'uploads'.
-        filename_prefix (str): A prefix to add to the filename (e.g., sample_id or experiment_id).
-        
-    Returns:
-        str: The absolute path where the file was saved, or None if save failed.
+    Saves an uploaded file using the configured storage backend.
     """
-    if not file:
-        return None
-        
-    try:
-        upload_dir = get_upload_dir(base_dir_name)
-        # Sanitize file name if needed (basic example)
-        safe_filename = os.path.basename(file.name).replace(" ", "_") 
-        file_path = os.path.join(upload_dir, f"{filename_prefix}_{safe_filename}")
-        
-        with open(file_path, 'wb') as f:
-            f.write(file.getvalue())
-        return file_path
-    except Exception as e:
-        st.error(f"Error saving file {file.name}: {str(e)}")
-        return None
+    return file_storage.save_file(file, base_dir_name, filename_prefix)
 
 def delete_file_if_exists(file_path):
     """
-    Deletes a file if it exists.
-    
-    Args:
-        file_path (str): The absolute path to the file to delete.
-        
-    Returns:
-        bool: True if the file was deleted or didn't exist, False if deletion failed.
+    Deletes a file using the configured storage backend.
     """
-    if file_path and os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-            return True
-        except OSError as e:
-            st.warning(f"Could not delete file {file_path}: {e}")
-            return False
-    return True # File doesn't exist, so considered successful deletion
+    return file_storage.delete_file(file_path)
 
 # --- New Form Generation Utility ---
 def generate_form_fields(field_config, current_data, field_names, key_prefix):
@@ -185,27 +271,21 @@ def generate_form_fields(field_config, current_data, field_names, key_prefix):
         label = config['label']
         field_type = config['type']
         # Get current value, falling back to default if not present in current_data
-        current_value = current_data.get(field_name, config['default'])
+        current_value = current_data.get(field_name, config.get('default')) # Use .get for default
         key = f"{key_prefix}_{field_name}"
         help_text = config.get('help')
 
-        # Ensure numeric defaults are floats if step/format implies it
-        # This helps prevent type errors with st.number_input
-        if field_type == 'number' and isinstance(current_value, (int, float)):
-             try:
-                 # Attempt conversion based on format hint if available
-                 if 'format' in config and '%' in config['format']:
-                    # Basic check for float format
-                    if any(f_char in config['format'] for f_char in ['f', 'e', 'g', 'E', 'G']):
-                        current_value = float(current_value)
-                 elif 'step' in config and isinstance(config['step'], float):
-                    current_value = float(current_value)
-             except (ValueError, TypeError):
-                 # Fallback if conversion fails
-                 current_value = float(config['default'])
-        elif field_type == 'number' and current_value is None:
-            current_value = float(config['default']) # Use float default if current is None
-
+        # Handle numeric fields with None values
+        if field_type == 'number':
+            try:
+                # If current_value is None, use 0.0 as default
+                if current_value is None:
+                    current_value = 0.0
+                # Convert to float if it's a string or number
+                current_value = float(current_value)
+            except (ValueError, TypeError):
+                # If conversion fails, use 0.0 as fallback
+                current_value = 0.0
 
         if field_type == 'text':
             form_values[field_name] = st.text_input(
@@ -215,18 +295,11 @@ def generate_form_fields(field_config, current_data, field_names, key_prefix):
                 help=help_text
             )
         elif field_type == 'number':
-            # Ensure value is float for number input if step/min/max are floats
-            try:
-                # Handle None case specifically for number inputs
-                display_value = float(current_value) if current_value is not None else float(config['default'])
-            except (ValueError, TypeError):
-                display_value = float(config['default'])
-                
             form_values[field_name] = st.number_input(
                 label=label,
                 min_value=config.get('min_value'),
                 max_value=config.get('max_value'),
-                value=display_value,
+                value=current_value,
                 step=config.get('step'),
                 format=config.get('format'),
                 key=key,
@@ -250,6 +323,16 @@ def generate_form_fields(field_config, current_data, field_names, key_prefix):
                  label=label,
                  value=str(current_value) if current_value is not None else '',
                  height=config.get('height', 100), # Optional height
+                 key=key,
+                 help=help_text
+             )
+        elif field_type == 'date':
+             # st.date_input handles None value correctly (shows current date by default)
+             # Ensure value passed is either None or a datetime.date/datetime.datetime
+             date_value = current_value if isinstance(current_value, (datetime.date, datetime.datetime)) else None
+             form_values[field_name] = st.date_input(
+                 label=label,
+                 value=date_value, 
                  key=key,
                  help=help_text
              )
@@ -288,8 +371,7 @@ def log_modification(db, experiment_id, modified_table, modification_type, old_v
             modification_type=modification_type,
             modified_table=modified_table,
             old_values=old_values_json,
-            new_values=new_values_json,
-            timestamp=datetime.datetime.now() # Add timestamp explicitly if needed
+            new_values=new_values_json
         )
         db.add(modification)
     except Exception as e:

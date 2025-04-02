@@ -2,7 +2,8 @@ import streamlit as st
 from database.database import SessionLocal
 from database.models import SampleInfo, ModificationsLog
 import os
-from frontend.components.utils import save_uploaded_file, log_modification
+from frontend.components.utils import save_uploaded_file, log_modification, generate_form_fields
+from frontend.config.variable_config import ROCK_SAMPLE_CONFIG
 
 def render_new_rock_sample():
     """
@@ -18,66 +19,37 @@ def render_new_rock_sample():
     """
     st.header("New Rock Sample")
     
-    with st.form("new_rock_sample_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            sample_id = st.text_input(
-                "Sample ID",
-                help="Enter a unique identifier for this rock sample (e.g., 20UM21)"
-            )
-            rock_classification = st.text_input(
-                "Rock Classification",
-                help="Enter the rock type/classification"
-            )
-            state = st.text_input("State/Province")
-            country = st.text_input("Country")
-        
-        with col2:
-            latitude = st.number_input(
-                "Latitude",
-                min_value=-90.0,
-                max_value=90.0,
-                step=0.000001,
-                format="%.6f"
-            )
-            longitude = st.number_input(
-                "Longitude",
-                min_value=-180.0,
-                max_value=180.0,
-                step=0.000001,
-                format="%.6f"
-            )
-        
-        description = st.text_area(
-            "Sample Description",
-            height=100,
-            help="Add any relevant details about the rock sample"
-        )
-        
-        # Add photo upload section
-        st.markdown("### Sample Photo")
-        photo = st.file_uploader(
-            "Upload Sample Photo",
-            type=['jpg', 'jpeg', 'png'],
-            help="Upload a photo of the rock sample"
+    with st.form("new_rock_sample_form", clear_on_submit=True):
+        # Generate form fields using the configuration
+        form_values = generate_form_fields(
+            ROCK_SAMPLE_CONFIG,
+            {},  # Empty dict for new sample
+            list(ROCK_SAMPLE_CONFIG.keys()),
+            'rock_sample'
         )
         
         if st.form_submit_button("Save Rock Sample"):
+            # Validate required fields
+            required_fields = [field for field, config in ROCK_SAMPLE_CONFIG.items() if config.get('required', False)]
+            missing_fields = [field for field in required_fields if not form_values.get(field)]
+            
+            if missing_fields:
+                st.error(f"Please fill in all required fields: {', '.join(missing_fields)}")
+                return
+            
             save_rock_sample(
-                sample_id=sample_id,
-                rock_classification=rock_classification,
-                state=state,
-                country=country,
-                latitude=latitude,
-                longitude=longitude,
-                description=description,
-                photo=photo
+                sample_id=form_values['sample_id'],
+                rock_classification=form_values['rock_classification'],
+                state=form_values['state'],
+                country=form_values['country'],
+                latitude=form_values['latitude'],
+                longitude=form_values['longitude'],
+                description=form_values.get('description', '')
             )
 
-def save_rock_sample(sample_id, rock_classification, state, country, latitude, longitude, description, photo=None):
+def save_rock_sample(sample_id, rock_classification, state, country, latitude, longitude, description):
     """
-    Save a new rock sample to the database.
+    Save a new rock sample to the database (without initial photo).
     
     Args:
         sample_id (str): Unique identifier for the rock sample
@@ -87,14 +59,11 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
         latitude (float): Latitude coordinate of collection site
         longitude (float): Longitude coordinate of collection site
         description (str): Description of the sample
-        photo (UploadedFile, optional): Photo of the rock sample
         
     This function:
     - Validates required fields
     - Checks for duplicate sample IDs
-    - Handles photo upload if provided
-    - Creates a new database record
-    - Ensures proper error handling and database cleanup
+    - Creates a new database record (without photo info).
     
     Raises:
         ValueError: If required fields are missing
@@ -114,22 +83,6 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
             db.close()
             return
         
-        photo_path = None
-        photo_name = None
-        if photo:
-            photo_path = save_uploaded_file(
-                file=photo, 
-                base_dir_name='sample_photos', 
-                filename_prefix=sample_id
-            )
-            if photo_path:
-                photo_name = photo.name
-            else:
-                db.rollback()
-                db.close()
-                st.error("Failed to save sample photo.")
-                return
-        
         sample = SampleInfo(
             sample_id=sample_id,
             rock_classification=rock_classification,
@@ -137,8 +90,7 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
             country=country,
             latitude=latitude,
             longitude=longitude,
-            description=description,
-            photo_path=photo_path
+            description=description
         )
         
         db.add(sample)
@@ -155,9 +107,7 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
                 'country': sample.country,
                 'latitude': sample.latitude,
                 'longitude': sample.longitude,
-                'description': sample.description,
-                'photo_path': sample.photo_path,
-                'photo_name': photo_name
+                'description': sample.description
             }
         )
 

@@ -55,6 +55,7 @@ class ExperimentalConditions(Base):
     co2_partial_pressure = Column(Float)  # in psi, optional
     confining_pressure = Column(Float)  # optional
     pore_pressure = Column(Float)  # optional
+    dissolved_oxygen = Column(Float)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
@@ -71,8 +72,11 @@ class ExperimentalResults(Base):
     final_ph = Column(Float)  # Optional result field
     final_nitrate_concentration = Column(Float)  # in mM, optional result field
     
+    # New field for time-series data
+    time_post_reaction = Column(Float, nullable=True) # Time in hours post-reaction start
+    
     # File and data storage
-    data_type = Column(String)  # e.g., 'NMR', 'GC', 'AMMONIA_YIELD'
+    data_type = Column(String)  # e.g., 'NMR', 'GC', 'AMMONIA_YIELD', 'SCALAR'
     file_path = Column(String)  # Path to stored file
     file_name = Column(String)  # Original file name
     file_type = Column(String)  # File extension
@@ -91,6 +95,22 @@ class ExperimentalResults(Base):
 
     # Relationship
     experiment = relationship("Experiment", back_populates="results")
+    # Add relationship to ResultFiles
+    files = relationship("ResultFiles", back_populates="result_entry", cascade="all, delete-orphan")
+
+class ResultFiles(Base):
+    __tablename__ = "result_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    result_id = Column(Integer, ForeignKey("experimental_results.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    file_name = Column(String)
+    file_type = Column(String)
+    description = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationship back to the specific result entry
+    result_entry = relationship("ExperimentalResults", back_populates="files")
 
 """
 Injection flow rate
@@ -126,6 +146,19 @@ class ModificationsLog(Base):
 
     experiment = relationship("Experiment", back_populates="modifications")
 
+class SamplePhotos(Base):
+    __tablename__ = "sample_photos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sample_info_id = Column(Integer, ForeignKey("sample_info.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    file_name = Column(String)
+    file_type = Column(String)
+    description = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    sample_info = relationship("SampleInfo", back_populates="photos")
+
 class SampleInfo(Base):
     __tablename__ = "sample_info"
 
@@ -137,22 +170,31 @@ class SampleInfo(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     description = Column(Text)
-    photo_path = Column(String)  # Path to stored photo
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
     # Relationships
     external_analyses = relationship("ExternalAnalysis", back_populates="sample_info", cascade="all, delete-orphan")
+    photos = relationship("SamplePhotos", back_populates="sample_info", cascade="all, delete-orphan")
+
+class AnalysisFiles(Base):
+    __tablename__ = "analysis_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_analysis_id = Column(Integer, ForeignKey("external_analyses.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    file_name = Column(String)
+    file_type = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    external_analysis = relationship("ExternalAnalysis", back_populates="analysis_files")
 
 class ExternalAnalysis(Base):
     __tablename__ = "external_analyses"
 
     id = Column(Integer, primary_key=True, index=True)
     sample_id = Column(String, ForeignKey("sample_info.sample_id"), nullable=False)
-    analysis_type = Column(String)  # e.g., 'XRD', 'SEM', 'Elemental'
-    report_file_path = Column(String)
-    report_file_name = Column(String)
-    report_file_type = Column(String)
+    analysis_type = Column(String)  # General type/category (e.g., 'Elemental Scan', 'Mineralogy')
     analysis_date = Column(DateTime)
     laboratory = Column(String)
     analyst = Column(String)
@@ -162,4 +204,5 @@ class ExternalAnalysis(Base):
     updated_at = Column(DateTime, onupdate=func.now())
 
     # Relationships
-    sample_info = relationship("SampleInfo", back_populates="external_analyses") 
+    sample_info = relationship("SampleInfo", back_populates="external_analyses")
+    analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan") 

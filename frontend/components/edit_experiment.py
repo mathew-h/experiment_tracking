@@ -2,19 +2,21 @@ import datetime
 import streamlit as st
 import os
 import json
+from sqlalchemy.orm import Session # Import Session for type hinting
 from database.database import SessionLocal
 from database.models import (
     Experiment,
     ExperimentStatus,
     ExperimentalResults,
+    ResultFiles, # Import ResultFiles
     ExperimentalConditions,
     ModificationsLog,
     ExperimentNotes,
     ExternalAnalysis
 )
 # Import utilities and config
-from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
-from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES
+from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields
+from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG
 
 def edit_experiment(experiment):
     """
@@ -57,160 +59,28 @@ def edit_experiment(experiment):
         
         with col3:
             st.markdown("#### Required Parameters")
-            
-            experiment_type = st.selectbox(
-                "Experiment Type",
-                options=EXPERIMENT_TYPES,
-                index=EXPERIMENT_TYPES.index(conditions.get('experiment_type', 'Serum')) if conditions.get('experiment_type') in EXPERIMENT_TYPES else 0
+            # Get required field names from FIELD_CONFIG
+            required_field_names = [name for name, config in FIELD_CONFIG.items() if config.get('required', False)]
+            required_values = generate_form_fields(
+                FIELD_CONFIG, 
+                conditions, 
+                required_field_names,
+                key_prefix="edit_req"
             )
             
-            # Fix particle_size input handling
-            particle_size = st.number_input(
-                "Particle Size (μm)",
-                min_value=0.0,
-                value=float(conditions.get('particle_size', 0.0)),
-                step=0.1,
-                format="%.1f",
-                help="Enter the particle size in micrometers"
-            )
-            
-            initial_ph = st.number_input(
-                "Initial pH",
-                min_value=0.0,
-                max_value=14.0,
-                value=float(conditions.get('initial_ph', 7.0) or 7.0),
-                step=0.1,
-                format="%.1f"
-            )
-            
-            catalyst = st.text_input(
-                "Catalyst",
-                value=conditions.get('catalyst', '')
-            )
-            
-            catalyst_mass = st.number_input(
-                "Catalyst Mass (g)",
-                min_value=0.0,
-                value=float(conditions.get('catalyst_mass', 0.0) or 0.0),
-                step=0.000001,  # 6 significant figures
-                format="%.6f",
-                help="Enter the mass of catalyst in grams"
-            )
-            
-            temperature = st.number_input(
-                "Temperature (°C)",
-                min_value=-273.15,
-                value=float(conditions.get('temperature', 25.0) or 25.0),
-                step=1.0,
-                format="%.1f"
-            )
-            
-            pressure = st.number_input(
-                "Pressure (psi)",
-                min_value=0.0,
-                value=float(conditions.get('pressure', 14.6959) or 14.6959),
-                step=0.1,
-                format="%.2f",
-                help="Enter the pressure in psi"
-            )
-            
-        
         with col4:
             st.markdown("#### Optional Parameters")
-            
-            catalyst_percentage = st.number_input(
-                "Catalyst %",
-                min_value=0.0,
-                max_value=100.0,
-                value=float(conditions.get('catalyst_percentage', 0.0) or 0.0),
-                step=0.1,
-                format="%.1f"
+            # Get optional field names from FIELD_CONFIG
+            optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False)]
+            optional_values = generate_form_fields(
+                FIELD_CONFIG, 
+                conditions, 
+                optional_field_names,
+                key_prefix="edit_opt"
             )
-            
-            water_to_rock_ratio = st.number_input(
-                "Water to Rock Ratio",
-                min_value=0.0,
-                value=float(conditions.get('water_to_rock_ratio', 0.0) or 0.0),
-                step=0.1,
-                format="%.2f",
-                help="Enter the water to rock ratio"
-            )
-
-            buffer_system = st.text_input(
-                "Buffer System",
-                value=conditions.get('buffer_system', ''),
-                help="Enter the buffer system used"
-            )
-
-            buffer_concentration = st.number_input(
-                "Buffer Concentration (mM)",
-                min_value=0.0,
-                value=float(conditions.get('buffer_concentration', 0.0) or 0.0),
-                step=0.1,
-                format="%.1f"
-            )
-            
-            initial_nitrate_concentration = st.number_input(
-                "Initial Nitrate Concentration (mM)",
-                min_value=0.0,
-                value=float(conditions.get('initial_nitrate_concentration', 0.0) or 0.0),
-                step=0.1,
-                format="%.1f"
-            )
-            
-            dissolved_oxygen = st.number_input(
-                "Dissolved Oxygen (ppm)",
-                min_value=0.0,
-                value=float(conditions.get('dissolved_oxygen', 0.0) or 0.0),
-                step=0.1,
-                format="%.1f"
-            )
-            
-            surfactant_type = st.text_input(
-                "Surfactant Type",
-                value=conditions.get('surfactant_type', '')
-            )
-            
-            surfactant_concentration = st.number_input(
-                "Surfactant Concentration",
-                min_value=0.0,
-                value=float(conditions.get('surfactant_concentration', 0.0) or 0.0),
-                step=0.1,
-                format="%.2f"
-            )
-
-            flow_rate = st.number_input(
-                "Flow Rate (mL/min)",
-                min_value=0.0,
-                value=float(conditions.get('flow_rate', 0.0) or 0.0),
-                step=0.1,
-                format="%.1f",
-                help="Enter the flow rate in mL/min (optional)"
-            )
-
-            co2_partial_pressure = st.number_input(
-                "CO2 Partial Pressure (psi)",
-                min_value=0.0,
-                value=float(conditions.get('co2_partial_pressure', 0.0) or 0.0),
-                step=0.1,
-                format="%.2f"
-            )
-            
-            confining_pressure = st.number_input(
-                "Confining Pressure (psi)",
-                min_value=0.0,
-                value=float(conditions.get('confining_pressure', 0.0) or 0.0),
-                step=0.1,
-                format="%.2f"
-            )
-            
-            pore_pressure = st.number_input(
-                "Pore Pressure (psi)",
-                min_value=0.0,
-                value=float(conditions.get('pore_pressure', 0.0) or 0.0),
-                step=0.1,
-                format="%.2f"
-            )
+        
+        # Combine required and optional values into a single dictionary
+        all_condition_values = {**required_values, **optional_values}
         
         # Prepare data for submission
         form_data = {
@@ -218,27 +88,7 @@ def edit_experiment(experiment):
             'researcher': researcher,
             'status': status,
             'date': datetime.datetime.combine(exp_date, datetime.datetime.now().time()),
-            'conditions': {
-                'particle_size': particle_size,
-                'water_to_rock_ratio': water_to_rock_ratio if water_to_rock_ratio > 0 else 0.0,
-                'initial_ph': initial_ph,
-                'catalyst': catalyst,
-                'catalyst_mass': catalyst_mass,
-                'catalyst_percentage': catalyst_percentage,
-                'temperature': temperature,
-                'buffer_system': buffer_system.strip() if buffer_system else '',
-                'buffer_concentration': buffer_concentration,
-                'pressure': pressure,
-                'flow_rate': flow_rate if flow_rate > 0 else None,
-                'experiment_type': experiment_type,
-                'initial_nitrate_concentration': initial_nitrate_concentration,
-                'dissolved_oxygen': dissolved_oxygen,
-                'surfactant_type': surfactant_type.strip() if surfactant_type else '',
-                'surfactant_concentration': surfactant_concentration,
-                'co2_partial_pressure': co2_partial_pressure,
-                'confining_pressure': confining_pressure,
-                'pore_pressure': pore_pressure
-            }
+            'conditions': all_condition_values
         }
         
         # Submit button
@@ -309,50 +159,28 @@ def update_experiment(experiment_id, data):
         # Update or create conditions
         conditions = experiment.conditions
         if conditions:
-            # Update existing conditions
-            conditions.water_to_rock_ratio = data['conditions']['water_to_rock_ratio']
-            conditions.initial_ph = data['conditions']['initial_ph']
-            conditions.catalyst = data['conditions']['catalyst']
-            conditions.catalyst_percentage = data['conditions']['catalyst_percentage']
-            conditions.temperature = data['conditions']['temperature']
-            conditions.buffer_system = data['conditions']['buffer_system'].strip() if data['conditions']['buffer_system'] else ''
-            conditions.buffer_concentration = data['conditions']['buffer_concentration']
-            conditions.pressure = data['conditions']['pressure']
-            conditions.flow_rate = data['conditions']['flow_rate']
-            conditions.experiment_type = data['conditions']['experiment_type']
-            conditions.initial_nitrate_concentration = data['conditions']['initial_nitrate_concentration']
-            conditions.dissolved_oxygen = data['conditions']['dissolved_oxygen']
-            conditions.surfactant_type = data['conditions']['surfactant_type'].strip() if data['conditions']['surfactant_type'] else ''
-            conditions.surfactant_concentration = data['conditions']['surfactant_concentration']
-            conditions.co2_partial_pressure = data['conditions']['co2_partial_pressure']
-            conditions.confining_pressure = data['conditions']['confining_pressure']
-            conditions.pore_pressure = data['conditions']['pore_pressure']
-            if hasattr(conditions, 'particle_size'):
-                conditions.particle_size = data['conditions']['particle_size']
+            # Update existing conditions using FIELD_CONFIG to ensure all fields are handled
+            for field_name, config in FIELD_CONFIG.items():
+                if hasattr(conditions, field_name):
+                    value = data['conditions'].get(field_name)
+                    # Handle special cases for text fields
+                    if config['type'] == 'text' and value is not None:
+                        value = value.strip() if value else ''
+                    # Handle special cases for numeric fields
+                    elif config['type'] == 'number':
+                        if value is not None:
+                            try:
+                                value = float(value)
+                            except (ValueError, TypeError):
+                                value = float(config['default'])
+                    setattr(conditions, field_name, value)
         else:
             # Create new conditions
-            conditions = ExperimentalConditions(
-                experiment_id=experiment.id,
-                water_to_rock_ratio=data['conditions']['water_to_rock_ratio'],
-                initial_ph=data['conditions']['initial_ph'],
-                catalyst=data['conditions']['catalyst'],
-                catalyst_percentage=data['conditions']['catalyst_percentage'],
-                temperature=data['conditions']['temperature'],
-                buffer_system=data['conditions']['buffer_system'].strip() if data['conditions']['buffer_system'] else '',
-                buffer_concentration=data['conditions']['buffer_concentration'],
-                pressure=data['conditions']['pressure'],
-                flow_rate=data['conditions']['flow_rate'],
-                experiment_type=data['conditions']['experiment_type'],
-                initial_nitrate_concentration=data['conditions']['initial_nitrate_concentration'],
-                dissolved_oxygen=data['conditions']['dissolved_oxygen'],
-                surfactant_type=data['conditions']['surfactant_type'].strip() if data['conditions']['surfactant_type'] else '',
-                surfactant_concentration=data['conditions']['surfactant_concentration'],
-                co2_partial_pressure=data['conditions']['co2_partial_pressure'],
-                confining_pressure=data['conditions']['confining_pressure'],
-                pore_pressure=data['conditions']['pore_pressure']
-            )
-            if hasattr(conditions, 'particle_size'):
-                conditions.particle_size = data['conditions']['particle_size']
+            conditions_data = {
+                'experiment_id': experiment.id,
+                **data['conditions']
+            }
+            conditions = ExperimentalConditions(**conditions_data)
             db.add(conditions)
         
         # Prepare new values for logging
@@ -389,154 +217,242 @@ def update_experiment(experiment_id, data):
     finally:
         db.close()
             
-def save_results(experiment_id, final_ph, final_nitrate, yield_value):
+def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, yield_value, uploaded_files_data=None):
     """
-    Save experiment results to the database.
+    Save or update experiment results for a specific time point, including scalar values and associated files.
     
     Args:
         experiment_id (int): The unique identifier of the experiment
-        final_ph (float): The final pH value of the experiment
-        final_nitrate (float): The final nitrate concentration
-        yield_value (float): The yield value of the experiment
-        
+        time_post_reaction (float): Time in hours post-reaction when results were measured.
+        final_ph (float): The final pH value at this time point
+        final_nitrate (float): The final nitrate concentration at this time point
+        yield_value (float): The yield value at this time point
+        uploaded_files_data (list[dict], optional): List of dictionaries, each containing:
+            {'file': UploadedFile, 'description': str}. Defaults to None.
+            
     This function:
-    - Checks if results exist for the experiment
-    - Updates existing results or creates new ones
-    - Creates a modification log entry
+    - Checks if results exist for the experiment at the specified time_post_reaction
+    - Updates existing scalar results or creates a new results entry
+    - Handles file uploads: saves files and creates/updates ResultFiles entries
+    - Creates modification log entries for scalar data changes
     - Handles database transactions and error cases
     
     Returns:
         bool: True if save was successful, False otherwise
     """
+    db = SessionLocal()
     try:
-        db = SessionLocal()
+        # Check if results exist for this experiment AND time point
+        result = db.query(ExperimentalResults).filter(
+            ExperimentalResults.experiment_id == experiment_id,
+            ExperimentalResults.time_post_reaction == time_post_reaction
+        ).first()
         
-        # Check if results exist for this experiment
-        result = db.query(ExperimentalResults).filter(ExperimentalResults.experiment_id == experiment_id).first()
-        
+        modification_type = ""
+        old_values = {}
+        new_values_log = {}
+
         if result:
+            modification_type = "update"
             # Prepare old values for logging
-            old_values={
+            old_values = {
+                'time_post_reaction': result.time_post_reaction,
                 'final_ph': result.final_ph,
                 'final_nitrate_concentration': result.final_nitrate_concentration,
                 'yield_value': result.yield_value
             }
-            # Update existing results
+            # Update existing scalar results
             result.final_ph = final_ph
             result.final_nitrate_concentration = final_nitrate
             result.yield_value = yield_value
+            result.data_type = 'SCALAR_RESULTS' # Ensure data_type is set
             
-            # Prepare new values for logging
-            new_values={
+            new_values_log = {
+                'time_post_reaction': time_post_reaction,
                 'final_ph': final_ph,
                 'final_nitrate_concentration': final_nitrate,
                 'yield_value': yield_value
             }
-            
-            # Use utility for logging
+            # Log the scalar update
             log_modification(
                 db=db,
                 experiment_id=experiment_id,
-                modified_table="results",
-                modification_type="update",
+                modified_table="experimental_results", 
+                modification_type=modification_type,
                 old_values=old_values,
-                new_values=new_values
+                new_values=new_values_log
             )
+
         else:
-            # Create new results
-            new_result = ExperimentalResults(
+            modification_type = "create"
+            # Create new results entry for the time point
+            result = ExperimentalResults(
                 experiment_id=experiment_id,
+                time_post_reaction=time_post_reaction,
                 final_ph=final_ph,
                 final_nitrate_concentration=final_nitrate,
-                yield_value=yield_value
+                yield_value=yield_value,
+                data_type='SCALAR_RESULTS' 
             )
-            db.add(new_result)
+            db.add(result)
             
-            # Prepare new values for logging
-            new_values={
+            new_values_log = {
+                'time_post_reaction': time_post_reaction,
                 'final_ph': final_ph,
                 'final_nitrate_concentration': final_nitrate,
-                'yield_value': yield_value
+                'yield_value': yield_value,
+                'data_type': 'SCALAR_RESULTS'
             }
             
-            # Use utility for logging
+            # --- Flush and Refresh to get result.id BEFORE saving files --- 
+            try:
+                db.flush()
+                db.refresh(result)
+            except Exception as flush_err:
+                 st.error(f"DB flush/refresh error before saving result entry: {flush_err}")
+                 db.rollback()
+                 return False
+            # --- End Flush and Refresh ---
+
+            # Log the scalar creation
             log_modification(
                 db=db,
                 experiment_id=experiment_id,
-                modified_table="results",
-                modification_type="create",
-                new_values=new_values
+                modified_table="experimental_results",
+                modification_type=modification_type,
+                new_values=new_values_log
             )
         
-        # Commit the changes
+        # --- Handle File Uploads --- 
+        if uploaded_files_data:
+            saved_files_info = []
+            for file_data in uploaded_files_data:
+                uploaded_file = file_data.get('file')
+                description = file_data.get('description', '')
+                
+                if uploaded_file:
+                    # Construct a unique filename prefix including result ID
+                    filename_prefix = f"exp_{experiment_id}_res_{result.id}"
+                    file_path = save_uploaded_file(
+                        file=uploaded_file, 
+                        base_dir_name='result_files', # Save to a dedicated directory
+                        filename_prefix=filename_prefix 
+                    )
+                    
+                    if file_path:
+                        file_name = uploaded_file.name
+                        file_type = uploaded_file.type
+                        
+                        # Create ResultFiles entry
+                        result_file_entry = ResultFiles(
+                            result_id=result.id, # Link to the ExperimentalResults entry
+                            file_path=file_path,
+                            file_name=file_name,
+                            file_type=file_type,
+                            description=description
+                        )
+                        db.add(result_file_entry)
+                        saved_files_info.append({'name': file_name, 'path': file_path, 'description': description})
+                    else:
+                        # Rollback if any file fails to save
+                        st.error(f"Failed to save uploaded file: {uploaded_file.name}")
+                        db.rollback()
+                        return False
+            
+            # Log file additions separately? Or add to the main log? 
+            # For simplicity, we can log them as part of the update/create action.
+            if saved_files_info:
+                 # We might need another log entry specifically for file changes 
+                 # if granular tracking is needed. For now, rely on the main log.
+                 pass
+
+        # --- Commit all changes (scalar + files) --- 
         db.commit()
-        
-        st.success("Results saved successfully!")
+        st.success(f"Results and files for time point {time_post_reaction}h saved successfully!")
         return True
+        
     except Exception as e:
         db.rollback()
-        st.error(f"Error saving results: {str(e)}")
+        st.error(f"Error saving results/files for time {time_post_reaction}h: {str(e)}")
+        # Clean up any partially saved files if rollback occurs? save_uploaded_file might need enhancement.
         return False
     finally:
         db.close()
 
 def delete_experimental_results(data_id):
     """
-    Delete experimental data from the database.
+    Delete an experimental result time point entry and its associated files.
     
     Args:
-        data_id (int): The unique identifier of the experimental data to delete
+        data_id (int): The unique identifier of the ExperimentalResults entry to delete
         
     This function:
-    - Retrieves the data to be deleted
-    - Removes associated files from storage
-    - Creates a modification log entry
-    - Deletes the database record
+    - Retrieves the ExperimentalResults entry (time point)
+    - Retrieves all associated ResultFiles entries
+    - Deletes the actual files from storage for each associated ResultFiles entry
+    - Creates a modification log entry for the deletion of the time point
+    - Deletes the ExperimentalResults database record (cascade deletes ResultFiles records)
     - Handles database transactions and error cases
     """
+    db = SessionLocal()
     try:
-        db = SessionLocal()
+        # Get the main result entry (time point)
+        result_entry = db.query(ExperimentalResults).filter(ExperimentalResults.id == data_id).first()
         
-        # Get the data
-        data = db.query(ExperimentalResults).filter(ExperimentalResults.id == data_id).first()
-        
-        if data is None:
-            st.error("Data not found")
+        if result_entry is None:
+            st.error("Result entry not found")
+            db.close()
             return
         
-        # Store old values before deleting
+        # Store old values for logging (only scalar data for the main log entry)
         old_values={
-            'data_type': data.data_type,
-            'description': data.description,
-            'data_values': data.data_values,
-            'file_path': data.file_path,
-            'file_name': data.file_name
+            'time_post_reaction': result_entry.time_post_reaction,
+            'final_ph': result_entry.final_ph,
+            'final_nitrate_concentration': result_entry.final_nitrate_concentration,
+            'yield_value': result_entry.yield_value,
+            'data_type': result_entry.data_type
+            # Add other scalar fields if necessary
         }
 
-        # Use utility to delete file
-        delete_file_if_exists(data.file_path)
+        # --- Delete associated files first ---
+        associated_files = db.query(ResultFiles).filter(ResultFiles.result_id == data_id).all()
+        deleted_file_info = []
+        for file_record in associated_files:
+            deleted = delete_file_if_exists(file_record.file_path)
+            deleted_file_info.append({
+                'name': file_record.file_name,
+                'path': file_record.file_path,
+                'deleted': deleted
+            })
+            if not deleted:
+                 # Log a warning but proceed with deleting DB record? Or halt?
+                 st.warning(f"Could not delete file from storage: {file_record.file_path}")
         
-        # Use utility for logging
+        # Add info about deleted files to the log? Optional.
+        old_values['deleted_files'] = deleted_file_info 
+
+        # Use utility for logging the deletion of the main result entry
         log_modification(
             db=db,
-            experiment_id=data.experiment_id,
-            modified_table="experimental_results",
+            experiment_id=result_entry.experiment_id,
+            modified_table="experimental_results", # Log deletion of the time point
             modification_type="delete",
-            old_values=old_values
+            old_values=old_values # Includes scalar data and info about attempted file deletions
         )
         
-        # Delete the data
-        db.delete(data)
+        # --- Delete the ExperimentalResults record --- 
+        # The cascade delete will handle removing the ResultFiles records from DB.
+        db.delete(result_entry)
         
         # Commit the transaction
         db.commit()
         
-        st.success("Experimental data deleted successfully!")
+        st.success(f"Result entry for time {old_values.get('time_post_reaction', '?')}h and associated files deleted successfully!")
         
     except Exception as e:
         db.rollback()
-        st.error(f"Error deleting experimental data: {str(e)}")
-        raise e
+        st.error(f"Error deleting result entry (ID: {data_id}): {str(e)}")
+        raise e # Re-raise after logging/rollback
     finally:
         db.close()
 
@@ -604,6 +520,18 @@ def save_experimental_results(experiment_id, data_type, file=None, description=N
             'file_name': file_name
         }
         
+        db.add(experimental_results)
+
+        # --- Flush and Refresh the new object BEFORE commit ---
+        try:
+            db.flush() # Assign ID to experimental_results without ending transaction
+            db.refresh(experimental_results) # Refresh its state from DB
+        except Exception as flush_refresh_err:
+            # Consider rolling back if this fails, as commit might have issues
+            db.rollback()
+            return False
+        # --- End Flush and Refresh ---
+
         # Use utility for logging
         log_modification(
             db=db,
@@ -617,11 +545,13 @@ def save_experimental_results(experiment_id, data_type, file=None, description=N
         db.commit()
         
         st.success("Experimental data saved successfully!")
+        return True # Explicitly return True on success
         
     except Exception as e:
         db.rollback()
         st.error(f"Error saving experimental data: {str(e)}")
-        raise e
+        # raise e # Consider if raising is needed, or just return False
+        return False # Explicitly return False on error
     finally:
         db.close()
 
@@ -783,5 +713,70 @@ def update_note(note_id, note_text):
         db.rollback()
         st.error(f"Error updating note: {str(e)}")
         raise e
+    finally:
+        db.close()
+
+def delete_result_file(file_id):
+    """
+    Delete an individual result file record and its corresponding file from storage.
+
+    Args:
+        file_id (int): The unique identifier of the ResultFiles entry to delete.
+
+    Returns:
+        bool: True if deletion was successful, False otherwise.
+    """
+    db = SessionLocal()
+    try:
+        # Find the file record
+        file_record = db.query(ResultFiles).filter(ResultFiles.id == file_id).first()
+
+        if file_record is None:
+            st.error(f"File record with ID {file_id} not found.")
+            return False
+
+        # Store info for logging
+        old_values = {
+            'result_id': file_record.result_id,
+            'file_path': file_record.file_path,
+            'file_name': file_record.file_name,
+            'description': file_record.description
+        }
+        
+        # Get the associated experiment ID for logging context
+        # We need to query the parent ExperimentalResults to get the experiment_id
+        parent_result = db.query(ExperimentalResults).filter(ExperimentalResults.id == file_record.result_id).first()
+        experiment_id_for_log = parent_result.experiment_id if parent_result else None
+
+        # --- Delete the actual file from storage FIRST ---
+        file_deleted_from_storage = delete_file_if_exists(file_record.file_path)
+        
+        if not file_deleted_from_storage:
+            # Log a warning if the file couldn't be deleted, but proceed to delete DB record
+            st.warning(f"Could not delete file from storage: {file_record.file_path}. Proceeding to remove database record.")
+            # We might add this status to the log
+            old_values['storage_deletion_failed'] = True
+
+        # --- Delete the database record ---
+        db.delete(file_record)
+
+        # --- Log the deletion --- 
+        log_modification(
+            db=db,
+            experiment_id=experiment_id_for_log, # Log against the parent experiment
+            modified_table="result_files", # Indicate which table
+            modification_type="delete",
+            old_values=old_values # Log the details of the deleted file record
+        )
+
+        # --- Commit the transaction ---
+        db.commit()
+        st.success(f"File '{old_values.get('file_name', 'Unknown')}' deleted successfully.")
+        return True
+
+    except Exception as e:
+        db.rollback()
+        st.error(f"Error deleting file record (ID: {file_id}): {str(e)}")
+        return False
     finally:
         db.close()
