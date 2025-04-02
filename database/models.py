@@ -21,6 +21,7 @@ class Experiment(Base):
     researcher = Column(String)
     date = Column(DateTime)
     status = Column(Enum(ExperimentStatus))
+    sample_info_id = Column(Integer, ForeignKey("sample_info.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
@@ -28,6 +29,7 @@ class Experiment(Base):
     notes = relationship("ExperimentNotes", back_populates="experiment", cascade="all, delete-orphan")
     modifications = relationship("ModificationsLog", back_populates="experiment", cascade="all, delete-orphan")
     results = relationship("ExperimentalResults", back_populates="experiment", cascade="all, delete-orphan")
+    sample_info = relationship("SampleInfo", backref="experiments")
 
 class ExperimentalConditions(Base):
     __tablename__ = "experimental_conditions"
@@ -194,6 +196,7 @@ class ExternalAnalysis(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sample_id = Column(String, ForeignKey("sample_info.sample_id"), nullable=False)
+    sample_info_id = Column(Integer, ForeignKey("sample_info.id"), nullable=False)
     analysis_type = Column(String)  # General type/category (e.g., 'Elemental Scan', 'Mineralogy')
     analysis_date = Column(DateTime)
     laboratory = Column(String)
