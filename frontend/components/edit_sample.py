@@ -24,7 +24,7 @@ def delete_external_analysis(analysis_id):
     db = SessionLocal()
     try:
         # Get the analysis and related files
-        analysis = db.query(ExternalAnalysis).options(orm.selectinload(ExternalAnalysis.analysis_files)).filter(ExternalAnalysis.id == analysis_id).first()
+        analysis = db.query(ExternalAnalysis).options(selectinload(ExternalAnalysis.analysis_files)).filter(ExternalAnalysis.id == analysis_id).first()
         
         if analysis is None:
             st.error("Analysis not found")
