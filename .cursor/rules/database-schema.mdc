@@ -1,0 +1,9 @@
+---
+description: If referencing forms, fields, database, models. Important when modifying schema or adding new data points.
+globs: 
+alwaysApply: false
+---
+Always use dictionaries, mapping, abstraction, and refactoring to ensure that tables used in forms are consistently referenced through variable_config and models. Function structure should be informed by these sources to maximize reuse and minimize hardcoding.
+[utils.py](mdc:frontend/components/utils.py)
+[variable_config.py](mdc:frontend/config/variable_config.py)
+[models.py](mdc:database/models.py)
