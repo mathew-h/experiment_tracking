@@ -217,7 +217,7 @@ def update_experiment(experiment_id, data):
     finally:
         db.close()
             
-def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, yield_value, uploaded_files_data=None):
+def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, ferrous_iron_yield, grams_per_ton_yield=None, final_dissolved_oxygen=None, final_conductivity=None, final_alkalinity=None, sampling_volume=None, uploaded_files_data=None):
     """
     Save or update experiment results for a specific time point, including scalar values and associated files.
     
@@ -226,7 +226,12 @@ def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, yie
         time_post_reaction (float): Time in hours post-reaction when results were measured.
         final_ph (float): The final pH value at this time point
         final_nitrate (float): The final nitrate concentration at this time point
-        yield_value (float): The yield value at this time point
+        ferrous_iron_yield (float): The ferrous iron yield percentage at this time point
+        grams_per_ton_yield (float, optional): The yield in g NH3/ton rock
+        final_dissolved_oxygen (float, optional): Final dissolved oxygen in ppm
+        final_conductivity (float, optional): Final conductivity in μS/cm
+        final_alkalinity (float, optional): Final alkalinity in mg/L CaCO₃
+        sampling_volume (float, optional): Volume of sample taken in mL
         uploaded_files_data (list[dict], optional): List of dictionaries, each containing:
             {'file': UploadedFile, 'description': str}. Defaults to None.
             
@@ -259,19 +264,34 @@ def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, yie
                 'time_post_reaction': result.time_post_reaction,
                 'final_ph': result.final_ph,
                 'final_nitrate_concentration': result.final_nitrate_concentration,
-                'yield_value': result.yield_value
+                'ferrous_iron_yield': result.ferrous_iron_yield,
+                'grams_per_ton_yield': result.grams_per_ton_yield,
+                'final_dissolved_oxygen': result.final_dissolved_oxygen,
+                'final_conductivity': result.final_conductivity,
+                'final_alkalinity': result.final_alkalinity,
+                'sampling_volume': result.sampling_volume
             }
             # Update existing scalar results
             result.final_ph = final_ph
             result.final_nitrate_concentration = final_nitrate
-            result.yield_value = yield_value
-            result.data_type = 'SCALAR_RESULTS' # Ensure data_type is set
+            result.ferrous_iron_yield = ferrous_iron_yield
+            result.grams_per_ton_yield = grams_per_ton_yield
+            result.final_dissolved_oxygen = final_dissolved_oxygen
+            result.final_conductivity = final_conductivity
+            result.final_alkalinity = final_alkalinity
+            result.sampling_volume = sampling_volume
+            result.data_type = 'SCALAR_RESULTS'
             
             new_values_log = {
                 'time_post_reaction': time_post_reaction,
                 'final_ph': final_ph,
                 'final_nitrate_concentration': final_nitrate,
-                'yield_value': yield_value
+                'ferrous_iron_yield': ferrous_iron_yield,
+                'grams_per_ton_yield': grams_per_ton_yield,
+                'final_dissolved_oxygen': final_dissolved_oxygen,
+                'final_conductivity': final_conductivity,
+                'final_alkalinity': final_alkalinity,
+                'sampling_volume': sampling_volume
             }
             # Log the scalar update
             log_modification(
@@ -291,7 +311,12 @@ def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, yie
                 time_post_reaction=time_post_reaction,
                 final_ph=final_ph,
                 final_nitrate_concentration=final_nitrate,
-                yield_value=yield_value,
+                ferrous_iron_yield=ferrous_iron_yield,
+                grams_per_ton_yield=grams_per_ton_yield,
+                final_dissolved_oxygen=final_dissolved_oxygen,
+                final_conductivity=final_conductivity,
+                final_alkalinity=final_alkalinity,
+                sampling_volume=sampling_volume,
                 data_type='SCALAR_RESULTS' 
             )
             db.add(result)
@@ -300,7 +325,12 @@ def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, yie
                 'time_post_reaction': time_post_reaction,
                 'final_ph': final_ph,
                 'final_nitrate_concentration': final_nitrate,
-                'yield_value': yield_value,
+                'ferrous_iron_yield': ferrous_iron_yield,
+                'grams_per_ton_yield': grams_per_ton_yield,
+                'final_dissolved_oxygen': final_dissolved_oxygen,
+                'final_conductivity': final_conductivity,
+                'final_alkalinity': final_alkalinity,
+                'sampling_volume': sampling_volume,
                 'data_type': 'SCALAR_RESULTS'
             }
             
@@ -409,7 +439,12 @@ def delete_experimental_results(data_id):
             'time_post_reaction': result_entry.time_post_reaction,
             'final_ph': result_entry.final_ph,
             'final_nitrate_concentration': result_entry.final_nitrate_concentration,
-            'yield_value': result_entry.yield_value,
+            'ferrous_iron_yield': result_entry.ferrous_iron_yield,
+            'grams_per_ton_yield': result_entry.grams_per_ton_yield,
+            'final_dissolved_oxygen': result_entry.final_dissolved_oxygen,
+            'final_conductivity': result_entry.final_conductivity,
+            'final_alkalinity': result_entry.final_alkalinity,
+            'sampling_volume': result_entry.sampling_volume,
             'data_type': result_entry.data_type
             # Add other scalar fields if necessary
         }

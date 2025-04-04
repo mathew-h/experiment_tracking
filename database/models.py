@@ -37,27 +37,34 @@ class ExperimentalConditions(Base):
     id = Column(Integer, primary_key=True, index=True)
     experiment_id = Column(Integer, ForeignKey("experiments.id"))
     particle_size = Column(Float)
-    water_to_rock_ratio = Column(Float, nullable=True)
     initial_ph = Column(Float)
     catalyst = Column(String)
     catalyst_mass = Column(Float)
     rock_mass = Column(Float)
     water_volume = Column(Float)
-    catalyst_percentage = Column(Float)
     temperature = Column(Float)
     buffer_system = Column(String, nullable=True)
-    buffer_concentration = Column(Float)  # in mM
-    pressure = Column(Float)  # in psi instead of bar
+    water_to_rock_ratio = Column(Float, nullable=True)
+    catalyst_percentage = Column(Float, nullable=True)
+    buffer_concentration = Column(Float, nullable=True)  # in mM
+    room_temp_pressure = Column(Float, nullable=True)  # in psi instead of bar
     flow_rate = Column(Float, nullable=True)
     experiment_type = Column(String)  # Serum, Autoclave, HPHT, Core Flood
-    initial_nitrate_concentration = Column(Float)  # in mM, optional
-    dissolved_oxygen = Column(Float)  # in ppm, optional
-    surfactant_type = Column(String)  # optional
-    surfactant_concentration = Column(Float)  # optional
-    co2_partial_pressure = Column(Float)  # in psi, optional
-    confining_pressure = Column(Float)  # optional
-    pore_pressure = Column(Float)  # optional
-    dissolved_oxygen = Column(Float)
+    initial_nitrate_concentration = Column(Float, nullable=True)  # in mM, optional
+    initial_dissolved_oxygen = Column(Float, nullable=True)  # in ppm, optional
+    surfactant_type = Column(String, nullable=True)  # optional
+    surfactant_concentration = Column(Float, nullable=True)  # optional
+    co2_partial_pressure = Column(Float, nullable=True)  # in psi, optional
+    confining_pressure = Column(Float, nullable=True)  # optional
+    pore_pressure = Column(Float, nullable=True)  # optional
+    rxn_temp_pressure = Column(Float, nullable=True)
+    core_height = Column(Float, nullable=True)
+    core_width = Column(Float, nullable=True)
+    core_volume = Column(Float, nullable=True)
+    stir_speed = Column(Float, nullable=True)
+    initial_conductivity = Column(Float, nullable=True)
+    initial_alkalinity = Column(Float, nullable=True)
+    feedstock = Column(String, nullable=True)  # Valid values: "Nitrogen", "Nitrate", "Blank"
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
 
@@ -70,11 +77,18 @@ class ExperimentalResults(Base):
     experiment_id = Column(Integer, ForeignKey("experiments.id"), nullable=False)
     
     # Results data
-    yield_value = Column(Float)  # in percentage
-    final_ph = Column(Float)  # Optional result field
-    final_nitrate_concentration = Column(Float)  # in mM, optional result field
+    ferrous_iron_yield = Column(Float, nullable=True)  # in percentage
+    grams_per_ton_yield = Column(Float, nullable=True)  # yield in g/ton
+    final_ph = Column(Float, nullable=True)  # Optional result field
+    final_nitrate_concentration = Column(Float, nullable=True)  # in mM, optional result field
     
-    # New field for time-series data
+    # New optional result fields
+    final_dissolved_oxygen = Column(Float, nullable=True)
+    final_conductivity = Column(Float, nullable=True)
+    final_alkalinity = Column(Float, nullable=True)
+    sampling_volume = Column(Float, nullable=True)
+    
+    # Time-series data
     time_post_reaction = Column(Float, nullable=True) # Time in hours post-reaction start
     
     # File and data storage
@@ -84,9 +98,9 @@ class ExperimentalResults(Base):
     file_type = Column(String)  # File extension
     
     # Raw data storage
-    nmr_data = Column(JSON)  # Store NMR data as JSON
-    gc_data = Column(JSON)   # Store GC data as JSON
-    data_values = Column(JSON)  # For numerical data like ammonia yield
+    nmr_data = Column(JSON, nullable=True)  # Store NMR data as JSON
+    gc_data = Column(JSON, nullable=True)   # Store GC data as JSON
+    data_values = Column(JSON, nullable=True)  # For numerical data like ammonia yield
     
     # Metadata
     description = Column(Text)  # Optional description of the data

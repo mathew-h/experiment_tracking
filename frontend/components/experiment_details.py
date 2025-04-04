@@ -334,12 +334,16 @@ def display_experiment_details(experiment):
             with col1:
                 submitted = st.form_submit_button("Save Results")
                 if submitted:
-                    # (Scalar value prep remains the same)
-                    # ...
+                    # Get form values
                     time_val = form_values.get('time_post_reaction')
                     ph_val = form_values.get('final_ph')
                     nitrate_val = form_values.get('final_nitrate_concentration')
-                    yield_val = form_values.get('yield_value')
+                    ferrous_iron_yield_val = form_values.get('ferrous_iron_yield')
+                    grams_per_ton_yield_val = form_values.get('grams_per_ton_yield')
+                    final_dissolved_oxygen_val = form_values.get('final_dissolved_oxygen')
+                    final_conductivity_val = form_values.get('final_conductivity')
+                    final_alkalinity_val = form_values.get('final_alkalinity')
+                    sampling_volume_val = form_values.get('sampling_volume')
 
                     # File data comes from the buffer (accessed via file_buffer alias -> buffer_key)
                     files_to_save = []
@@ -350,13 +354,11 @@ def display_experiment_details(experiment):
                                 'description': file_buffer['descriptions'].get(uploaded_file.name, '') 
                             })
 
-                    # (Validation logic remains the same)
-                    # ...
+                    # Validation logic
                     if time_val is None and st.session_state.editing_result_id is None:
                          st.error("Time Post-Reaction is required.")
                     else:
-                        # (Save logic remains the same)
-                        # ...
+                        # Save logic
                         if st.session_state.editing_result_id is not None:
                             pass 
                         save_success = save_results(
@@ -364,7 +366,12 @@ def display_experiment_details(experiment):
                             time_post_reaction=time_val,
                             final_ph=ph_val,
                             final_nitrate=nitrate_val,
-                            yield_value=yield_val,
+                            ferrous_iron_yield=ferrous_iron_yield_val,
+                            grams_per_ton_yield=grams_per_ton_yield_val,
+                            final_dissolved_oxygen=final_dissolved_oxygen_val,
+                            final_conductivity=final_conductivity_val,
+                            final_alkalinity=final_alkalinity_val,
+                            sampling_volume=sampling_volume_val,
                             uploaded_files_data=files_to_save
                         )
                         if save_success:

@@ -13,6 +13,9 @@ EXPERIMENT_STATUSES = ['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELL
 # Available external analysis types
 ANALYSIS_TYPES = ['XRD', 'SEM', 'Elemental', 'Other']
 
+# Feedstock types
+FEEDSTOCK_TYPES = ['Nitrogen', 'Nitrate', 'Blank']
+
 # Configuration for rock sample form fields
 ROCK_SAMPLE_CONFIG = {
     'sample_id': {
@@ -160,18 +163,18 @@ FIELD_CONFIG = {
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
-        'step': 0.00001,
-        'format': "%.5f",
+        'step': 0.0001,
+        'format': "%.4f",
         'required': True,
         'help': "Enter the mass of catalyst used in grams."
     },
-     'rock_mass': {
+    'rock_mass': {
         'label': "Rock Mass (g)",
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
-        'step': 0.000001,
-        'format': "%.6f",
+        'step': 0.001,
+        'format': "%.3f",
         'required': True,
         'help': "Enter the mass of the rock sample in grams."
     },
@@ -195,38 +198,36 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Specify the experiment temperature in Celsius."
     },
-    'pressure': {
-        'label': "Pressure (psi)",
-        'default': 14.6959, # Standard atmospheric pressure
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
-        'required': True,
-        'help': "Specify the experiment pressure in pounds per square inch (psi)."
-    },
 
     # --- Optional Fields ---
-    'water_to_rock_ratio': {
-        'label': "Water to Rock Ratio",
-        'default': 0.0, # Consider if a different default makes sense, or calculate based on rock_mass/water_volume?
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
+    # 'water_to_rock_ratio': {
+    #     'label': "Water to Rock Ratio",
+    #     'default': lambda: water_volume / rock_mass if rock_mass > 0 else 0.0,  # Calculate water to rock ratio based on water_volume/rock_mass
+    #     'type': 'number',
+    #     'min_value': 0.0,
+    #     'step': 0.1,
+    #     'format': "%.2f",
+    #     'required': False,
+    #     'help': "Enter the mass ratio of water to rock (optional)."
+    # },
+    # 'catalyst_percentage': {
+    #     'label': "Catalyst Percentage (%)",
+    #     'default': 0.0,
+    #     'type': 'number',
+    #     'min_value': 0.0,
+    #     'max_value': 100.0,
+    #     'step': 0.1,
+    #     'format': "%.1f",
+    #     'required': False,
+    #     'help': "Enter the catalyst percentage relative to rock mass (optional)."
+    # },
+    'feedstock': {
+        'label': "Feedstock Type",
+        'type': 'select',
+        'options': FEEDSTOCK_TYPES,
+        'default': None,
         'required': False,
-        'help': "Enter the mass ratio of water to rock (optional)."
-    },
-    'catalyst_percentage': {
-        'label': "Catalyst Percentage (%)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'max_value': 100.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Enter the catalyst percentage relative to rock mass (optional)."
+        'help': "Feedstock type. Valid values: Nitrogen, Nitrate, or Blank."
     },
     'buffer_system': {
         'label': "Buffer System",
@@ -245,16 +246,6 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Enter the buffer concentration in millimolar (mM)."
     },
-    'flow_rate': {
-        'label': "Flow Rate (mL/min)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Specify the flow rate in mL/min (for flow-through experiments)."
-    },
     'initial_nitrate_concentration': {
         'label': "Initial Nitrate Concentration (mM)",
         'default': 0.0,
@@ -265,17 +256,18 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Enter the initial nitrate concentration in millimolar (mM)."
     },
-    'dissolved_oxygen': {
-        'label': "Dissolved Oxygen (ppm)",
+    'initial_dissolved_oxygen': {  # Renamed from 'dissolved_oxygen'
+        'label': "Initial Dissolved Oxygen (ppm)",
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
+        'max_value': 100.0,
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Specify the dissolved oxygen level in parts per million (ppm)."
+        'help': "Enter the initial dissolved oxygen concentration in parts per million (ppm)."
     },
-     'surfactant_type': {
+    'surfactant_type': {
         'label': "Surfactant Type",
         'default': '',
         'type': 'text',
@@ -288,30 +280,59 @@ FIELD_CONFIG = {
         'type': 'number',
         'min_value': 0.0,
         'step': 0.1,
-        'format': "%.2f", # Assuming potentially smaller concentrations
+        'format': "%.2f",
         'required': False,
         'help': "Enter the surfactant concentration (units depend on type)."
     },
-    'dissolved_oxygen': {
-        'label': "Dissolved Oxygen (ppm)",
-        'default': 0.0,
+    'stir_speed': {
+        'label': "Stir Speed (RPM)",
         'type': 'number',
+        'default': None,
         'min_value': 0.0,
-        'max_value': 100.0,
+        'step': 1.0,
+        'format': "%.0f",
+        'required': False,
+        'help': "Stir speed in rotations per minute (RPM)."
+    },
+    'initial_conductivity': {
+        'label': "Initial Conductivity (μS/cm)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Enter the dissolved oxygen concentration in parts per million (ppm)."
+        'help': "Initial conductivity measurement (microsiemens per centimeter)."
     },
-    'co2_partial_pressure': {
-        'label': "CO2 Partial Pressure (psi)",
-        'default': 0.0,
+    'initial_alkalinity': {
+        'label': "Initial Alkalinity (mg/L CaCO₃)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Initial alkalinity measurement (mg/L as CaCO₃)."
+    },
+    'room_temp_pressure': {  
+        'label': "Pressure at Room Temperature (psi)",
+        'default': 14.6959, # Standard atmospheric pressure
         'type': 'number',
         'min_value': 0.0,
         'step': 0.1,
         'format': "%.2f",
         'required': False,
-        'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
+        'help': "Specify the room temperature pressure in pounds per square inch (psi)."
+    },
+    'rxn_temp_pressure': {
+        'label': "Pressure at Reaction Temperature (psi)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Reaction temperature pressure (psi)."
     },
     'confining_pressure': {
         'label': "Confining Pressure (psi)",
@@ -332,47 +353,147 @@ FIELD_CONFIG = {
         'format': "%.2f",
         'required': False,
         'help': "Specify the pore pressure in psi (for core flood/HPHT)."
-    }
+    },
+    'core_height': {
+        'label': "Core Height (cm)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Core height (in centimeters)."
+    },
+    'core_width': {
+        'label': "Core Width (cm)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Core width (in centimeters)."
+    },
+    'core_volume': {
+        'label': "Core Volume (cm³)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Core volume (in cubic centimeters)."
+    },
+    'flow_rate': {
+        'label': "Flow Rate (mL/min)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Specify the flow rate in mL/min (for flow-through experiments)."
+    },
 }
 
-# Configuration for basic experiment results fields
+# Configuration for experiment results
 RESULTS_CONFIG = {
+    'ferrous_iron_yield': {  
+        'label': "Ferrous Iron Yield (%)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'max_value': 100.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the ferrous iron yield as a percentage (if measured)."
+    },
+    'grams_per_ton_yield': {
+        'label': "Yield (g NH3/ton rock)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the yield in grams per ton (if measured)."
+    },
+    'co2_partial_pressure': {
+        'label': "CO2 Partial Pressure (psi)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
+    },
     'final_ph': {
         'label': "Final pH",
         'type': 'number',
-        'required': False, # Assuming results might not always be complete
-        'default': None, # Use None as default, handle in form logic
+        'default': None,
         'min_value': 0.0,
         'max_value': 14.0,
         'step': 0.1,
         'format': "%.1f",
+        'required': False,
         'help': "Enter the final pH of the solution (if measured)."
     },
     'final_nitrate_concentration': {
         'label': "Final Nitrate Concentration (mM)",
         'type': 'number',
-        'required': False,
         'default': None,
         'min_value': 0.0,
         'step': 0.1,
         'format': "%.1f",
+        'required': False,
         'help': "Enter the final nitrate concentration in mM (if measured)."
     },
-    'yield_value': {
-        'label': "Yield Value (%)", # Assuming this is Ammonia Yield, adjust label if needed
+    'final_dissolved_oxygen': {
+        'label': "Final Dissolved Oxygen (ppm)",
         'type': 'number',
-        'required': False,
         'default': None,
         'min_value': 0.0,
-        'max_value': 100.0, # Or remove max_value if yield can exceed 100
         'step': 0.1,
         'format': "%.1f",
-        'help': "Enter the yield value as a percentage (if measured)."
+        'required': False,
+        'help': "Final dissolved oxygen concentration (ppm)."
+    },
+    'final_conductivity': {
+        'label': "Final Conductivity (μS/cm)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Final conductivity measurement (microsiemens per centimeter)."
+    },
+    'final_alkalinity': {
+        'label': "Final Alkalinity (mg/L CaCO₃)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Final alkalinity measurement (mg/L as CaCO₃)."
+    },
+    'sampling_volume': {
+        'label': "Sampling Volume (mL)",
+        'type': 'number',
+        'default': None,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Sampling volume in milliliters."
     },
     'time_post_reaction': {
         'label': "Time Post-Reaction (hours)",
         'type': 'number',
-        'required': True, # Make this required for new entries
+        'required': True,
         'default': 0.0,
         'min_value': 0.0,
         'step': 0.5,

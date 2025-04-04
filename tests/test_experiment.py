@@ -45,11 +45,11 @@ def mock_session_state():
             'temperature': 25.0,
             'buffer_system': 'Test Buffer',
             'buffer_concentration': 0.1,
-            'pressure': 14.7,
+            'room_temp_pressure': 14.7,
             'flow_rate': 1.0,
             'experiment_type': 'Serum',
             'initial_nitrate_concentration': 0.1,
-            'dissolved_oxygen': 8.0,
+            'initial_dissolved_oxygen': 8.0,
             'surfactant_type': 'Test Surfactant',
             'surfactant_concentration': 0.1,
             'co2_partial_pressure': 14.7,
@@ -102,11 +102,11 @@ def test_save_experiment_conditions(db_session, mock_session_state):
     assert conditions.temperature == 25.0
     assert conditions.buffer_system == 'Test Buffer'
     assert conditions.buffer_concentration == 0.1
-    assert conditions.pressure == 14.7
+    assert conditions.room_temp_pressure == 14.7
     assert conditions.flow_rate == 1.0
     assert conditions.experiment_type == 'Serum'
     assert conditions.initial_nitrate_concentration == 0.1
-    assert conditions.dissolved_oxygen == 8.0
+    assert conditions.initial_dissolved_oxygen == 8.0
     assert conditions.surfactant_type == 'Test Surfactant'
     assert conditions.surfactant_concentration == 0.1
     assert conditions.co2_partial_pressure == 14.7
@@ -168,4 +168,4 @@ def test_save_experiment_empty_conditions(db_session, mock_session_state):
     assert conditions.water_to_rock_ratio is None
     assert conditions.initial_ph == 7.0  # Default value
     assert conditions.temperature == 25.0  # Default value
-    assert conditions.pressure == 14.6959  # Default value 
+    assert conditions.room_temp_pressure == 14.6959  # Default value 
