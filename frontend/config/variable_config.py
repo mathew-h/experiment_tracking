@@ -11,7 +11,7 @@ EXPERIMENT_TYPES = ['Serum', 'Autoclave', 'HPHT', 'Core Flood']
 EXPERIMENT_STATUSES = ['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED']
 
 # Available external analysis types
-ANALYSIS_TYPES = ['XRD', 'SEM', 'Elemental', 'Other']
+ANALYSIS_TYPES = ['XRD', 'SEM', 'pXRF', 'Elemental', 'Other']
 
 # Feedstock types
 FEEDSTOCK_TYPES = ['Nitrogen', 'Nitrate', 'Blank']
@@ -25,12 +25,12 @@ ROCK_SAMPLE_CONFIG = {
         'default': '',
         'help': "Enter a unique identifier for this rock sample (e.g., 20UM21)"
     },
-    'rock_classification': {
-        'label': "Rock Classification",
+    'description': {
+        'label': "Sample Description",
         'type': 'text',
-        'required': True,
+        'required': False,
         'default': '',
-        'help': "Enter the rock type/classification"
+        'help': "Add any relevant details about the rock sample"
     },
     'state': {
         'label': "State/Province",
@@ -46,6 +46,13 @@ ROCK_SAMPLE_CONFIG = {
         'default': '',
         'help': "Enter the country where the sample was collected"
     },
+    'locality': {
+        'label': "Locality",
+        'type': 'text',
+        'required': False,
+        'default': '',
+        'help': "Enter the specific locality where the sample was collected"
+    },
     'latitude': {
         'label': "Latitude",
         'type': 'number',
@@ -55,7 +62,7 @@ ROCK_SAMPLE_CONFIG = {
         'max_value': 90.0,
         'step': 0.000001,
         'format': "%.6f",
-        'help': "Enter the latitude coordinate of the collection site"
+        'help': "Enter the latitude coordinate of the collection site (0.0 for unknown/unspecified location)"
     },
     'longitude': {
         'label': "Longitude",
@@ -66,15 +73,14 @@ ROCK_SAMPLE_CONFIG = {
         'max_value': 180.0,
         'step': 0.000001,
         'format': "%.6f",
-        'help': "Enter the longitude coordinate of the collection site"
+        'help': "Enter the longitude coordinate of the collection site (0.0 for unknown/unspecified location)"
     },
-    'description': {
-        'label': "Sample Description",
-        'type': 'text_area',
+        'rock_classification': {
+        'label': "Rock Classification",
+        'type': 'text',
         'required': False,
         'default': '',
-        'height': 100,
-        'help': "Add any relevant details about the rock sample"
+        'help': "Enter the rock type/classification"
     }
 }
 
@@ -88,18 +94,25 @@ EXTERNAL_ANALYSIS_CONFIG = {
         'required': True,
         'help': "Select the type of analysis performed"
     },
+    'pxrf_reading_no': { # New field
+        'label': "pXRF Reading No(s)",
+        'type': 'text',
+        'default': '',
+        'required': False, # Required conditionally in the UI, not always
+        'help': "Enter the pXRF reading number(s). Can be integers separated by commas (e.g., 1, 2, 5)."
+    },
     'laboratory': {
         'label': "Laboratory",
         'type': 'text',
         'default': '', # Default to empty string
-        'required': True,
+        'required': False,
         'help': "Enter the name of the laboratory performing the analysis"
     },
     'analyst': {
         'label': "Analyst",
         'type': 'text',
         'default': '', # Default to empty string
-        'required': True,
+        'required': False,
         'help': "Enter the name of the analyst"
     },
     'analysis_date': {
@@ -245,6 +258,16 @@ FIELD_CONFIG = {
         'format': "%.1f",
         'required': False,
         'help': "Enter the buffer concentration in millimolar (mM)."
+    },
+    'ammonium_chloride_concentration': {
+        'label': "Ammonium Chloride Concentration (mM)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the ammonium chloride concentration in millimolar (mM)."
     },
     'initial_nitrate_concentration': {
         'label': "Initial Nitrate Concentration (mM)",

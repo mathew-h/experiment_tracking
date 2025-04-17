@@ -6,6 +6,7 @@ import json
 import datetime
 from sqlalchemy.orm import selectinload
 import os
+from frontend.config.variable_config import ROCK_SAMPLE_CONFIG
 
 def delete_external_analysis(analysis_id):
     """
@@ -118,6 +119,7 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
             analysis_date=analysis_data.get('analysis_date'), # Ensure this is a datetime object or None
             laboratory=analysis_data.get('laboratory'),
             analyst=analysis_data.get('analyst'),
+            pxrf_reading_no=analysis_data.get('pxrf_reading_no'), # Include new field
             description=analysis_data.get('description'),
             analysis_metadata=json.dumps(analysis_data.get('analysis_metadata')) if analysis_data.get('analysis_metadata') else None
         )
@@ -172,6 +174,7 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
         log_values = analysis_data.copy()
         log_values['sample_id'] = user_sample_id # User string id
         log_values['sample_info_id'] = sample_info_primary_key_id # Integer id
+        # pxrf_reading_no should already be in analysis_data if provided
         if analysis_file_entries_info:
              log_values['analysis_files'] = analysis_file_entries_info
         
@@ -370,6 +373,61 @@ def delete_analysis_file(analysis_file_id):
     except Exception as e:
         if db: db.rollback()
         st.error(f"Error deleting analysis file: {str(e)}")
+        return False
+    finally:
+        if db and db.is_active:
+            db.close() 
+
+def update_sample_info(sample_id, form_values):
+    """
+    Update basic information for a rock sample.
+    
+    Args:
+        sample_id (str): The unique identifier of the sample to update
+        form_values (dict): Dictionary containing updated field values
+        
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
+    db = None
+    try:
+        db = SessionLocal()
+        
+        # Get the sample to update
+        sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
+        if not sample:
+            st.error(f"Sample with ID {sample_id} not found.")
+            return False
+            
+        # Store old values for logging
+        old_values = {
+            field: getattr(sample, field)
+            for field in ROCK_SAMPLE_CONFIG.keys()
+        }
+        
+        # Update fields
+        for field, value in form_values.items():
+            if field in ROCK_SAMPLE_CONFIG:
+                setattr(sample, field, value)
+        
+        # Log the modification
+        log_modification(
+            db=db,
+            experiment_id=None,  # Sample-level modification
+            modified_table="sample_info",
+            modification_type="update",
+            old_values=old_values,
+            new_values=form_values
+        )
+        
+        db.commit()
+        st.success("Sample information updated successfully!")
+        return True
+        
+    except Exception as e:
+        if db:
+            db.rollback()
+        st.error(f"Error updating sample information: {str(e)}")
         return False
     finally:
         if db and db.is_active:

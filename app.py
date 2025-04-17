@@ -7,6 +7,7 @@ from frontend.components.view_experiments import render_view_experiments
 from frontend.components.new_rock import render_new_rock_sample
 from frontend.components.view_samples import render_sample_inventory
 from frontend.components.auth_components import init_auth_state, render_login_page, render_logout_button
+from frontend.components.issue_submission import render_issue_submission_form
 import os
 import logging
 
@@ -63,6 +64,8 @@ def main():
             render_new_rock_sample()
         elif page == "View Sample Inventory":
             render_sample_inventory()
+        elif page == "Issue Submission":
+            render_issue_submission_form()
         # elif page == "Settings":
         #     render_settings()
     except Exception as e:

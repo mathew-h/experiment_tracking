@@ -13,7 +13,8 @@ from frontend.components.utils import (
 )
 from frontend.config.variable_config import (
     ANALYSIS_TYPES,
-    EXTERNAL_ANALYSIS_CONFIG
+    EXTERNAL_ANALYSIS_CONFIG,
+    ROCK_SAMPLE_CONFIG
 )
 # Import for eager loading
 from sqlalchemy.orm import selectinload
@@ -23,7 +24,8 @@ from frontend.components.edit_sample import (
     add_external_analysis, 
     add_sample_photo,        # <-- Import added function
     delete_sample_photo,     # <-- Import added function
-    delete_analysis_file     # <-- Import added function
+    delete_analysis_file,    # <-- Import added function
+    update_sample_info
 )
 
 def render_sample_inventory():
@@ -137,16 +139,54 @@ def display_sample_details(sample_id):
         with col1:
             # Basic Information
             st.markdown("### Basic Information")
+            
+            # Initialize session state for editing if not exists
+            if 'editing_sample' not in st.session_state:
+                st.session_state.editing_sample = False
+            
+            # Display current values
             info_data = {
-                "Sample ID": sample.sample_id,
-                "Rock Classification": sample.rock_classification,
-                "Location": f"{sample.state}, {sample.country}",
-                "Coordinates": f"({sample.latitude:.6f}, {sample.longitude:.6f})",
-                "Description": sample.description or "No description provided",
-                "Created": sample.created_at.strftime("%Y-%m-%d %H:%M") if sample.created_at else "N/A",
-                "Last Updated": sample.updated_at.strftime("%Y-%m-%d %H:%M") if sample.updated_at else "N/A"
+                ROCK_SAMPLE_CONFIG[field]['label']: getattr(sample, field) or "Not specified"
+                for field in ROCK_SAMPLE_CONFIG.keys()
             }
             st.table(pd.DataFrame([info_data]).T.rename(columns={0: "Value"}))
+            
+            # Add edit button if not already editing
+            if not st.session_state.editing_sample:
+                if st.button("Edit Sample Information"):
+                    st.session_state.editing_sample = True
+                    st.rerun()
+            
+            # Edit form if in editing mode
+            if st.session_state.editing_sample:
+                with st.form("edit_sample_form"):
+                    st.markdown("#### Edit Sample Information")
+                    
+                    # Generate form fields with current values
+                    current_values = {
+                        field: getattr(sample, field)
+                        for field in ROCK_SAMPLE_CONFIG.keys()
+                    }
+                    
+                    form_values = generate_form_fields(
+                        ROCK_SAMPLE_CONFIG,
+                        current_values,
+                        list(ROCK_SAMPLE_CONFIG.keys()),
+                        'edit_sample'
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("Save Changes"):
+                            # Update the sample
+                            if update_sample_info(sample_id, form_values):
+                                st.session_state.editing_sample = False
+                                st.rerun()
+                    
+                    with col2:
+                        if st.form_submit_button("Cancel"):
+                            st.session_state.editing_sample = False
+                            st.rerun()
             
             # External Analyses
             st.markdown("### External Analyses")
@@ -156,6 +196,9 @@ def display_sample_details(sample_id):
                     with st.expander(f"{analysis.analysis_type} ({analysis.laboratory} - {analysis.analysis_date.strftime('%Y-%m-%d')})"):
                         st.write(f"**Laboratory:** {analysis.laboratory}")
                         st.write(f"**Analyst:** {analysis.analyst}")
+                        # Display pXRF Reading No if it exists
+                        if analysis.pxrf_reading_no:
+                            st.write(f"**pXRF Reading No(s):** {analysis.pxrf_reading_no}")
                         if analysis.description:
                             st.write("**Description:**")
                             st.markdown(f"> {analysis.description}") # Use markdown for blockquote feel
@@ -294,9 +337,14 @@ def display_sample_details(sample_id):
                     
                     submitted = st.form_submit_button("Save Analysis Entry")
                     if submitted:
+                            # Base required fields from config
                             required_fields = [field for field, config in EXTERNAL_ANALYSIS_CONFIG.items() if config.get('required', False)]
-                            missing_fields = [field for field in required_fields if not form_values.get(field)]
+                            missing_fields = [EXTERNAL_ANALYSIS_CONFIG[field]['label'] for field in required_fields if not form_values.get(field)]
                             
+                            # Conditional requirement for pXRF Reading No
+                            if form_values.get('analysis_type') == 'pXRF' and not form_values.get('pxrf_reading_no'):
+                                missing_fields.append(EXTERNAL_ANALYSIS_CONFIG['pxrf_reading_no']['label'])
+
                             if missing_fields:
                                 st.error(f"Please fill in all required fields: {', '.join(missing_fields)}")
                             elif not uploaded_files:
@@ -308,6 +356,7 @@ def display_sample_details(sample_id):
                                     'laboratory': form_values['laboratory'],
                                     'analyst': form_values['analyst'],
                                     'analysis_date': form_values['analysis_date'], # Already a date object
+                                    'pxrf_reading_no': form_values.get('pxrf_reading_no'), # Add new field
                                     'description': form_values.get('description', ''),
                                     'analysis_metadata': None # Add logic here if metadata is captured in form
                                 }
@@ -359,33 +408,15 @@ def get_all_samples():
     Retrieve all rock samples from the database.
     
     Returns:
-        list: A list of dictionaries containing sample information, including:
-            - sample_id
-            - rock_classification
-            - state
-            - country
-            - latitude
-            - longitude
-            - description
-            - created_at
-            - updated_at
-            
-    The function handles database errors and ensures proper connection cleanup.
+        list: A list of dictionaries containing sample information with fields defined in ROCK_SAMPLE_CONFIG
     """
     try:
         db = SessionLocal()
         samples = db.query(SampleInfo).all()
         
         return [{
-            'sample_id': sample.sample_id,
-            'rock_classification': sample.rock_classification,
-            'state': sample.state,
-            'country': sample.country,
-            'latitude': sample.latitude,
-            'longitude': sample.longitude,
-            'description': sample.description,
-            'created_at': sample.created_at,
-            'updated_at': sample.updated_at
+            field: getattr(sample, field)
+            for field in ROCK_SAMPLE_CONFIG.keys()
         } for sample in samples]
     except Exception as e:
         st.error(f"Error retrieving samples: {str(e)}")

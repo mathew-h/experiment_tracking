@@ -1,0 +1,17 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Extract reusable logic into utils.py
+globs:
+  - "**/*.py"
+alwaysApply: false
+---
+
+- When logic is repeated across files, refactor it into a named function in `utils.py`.
+- Add a docstring explaining the function's purpose and inputs/outputs.
+- Replace all original inline code blocks with a call to the new function.
+- Prevent logic duplication and promote cleaner modules.
+[utils.py](mdc:frontend/components/utils.py)

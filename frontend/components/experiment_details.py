@@ -141,8 +141,8 @@ def display_experiment_details(experiment):
                 # Display Scalar Data Table
                 results_data = {}
                 for field_name, config in RESULTS_CONFIG.items():
-                    if field_name == 'time_post_reaction': continue
-                    value = getattr(result, field_name, None)
+                    # Use field_name which is the model attribute name
+                    value = getattr(result, field_name, None) 
                     label = config['label']
                     results_data[label] = format_value(value, config)
                 results_df = pd.DataFrame([results_data]).T.rename(columns={0: "Value"})
@@ -313,21 +313,50 @@ def display_experiment_details(experiment):
             # --- Display Scalar Fields (Inside Form) --- 
             form_values = {}
             field_keys_config = {}
-            for field_name, config in RESULTS_CONFIG.items():
+            # Use generate_form_fields for dynamic form creation
+            # Exclude 'time_post_reaction' when editing
+            fields_to_generate = list(RESULTS_CONFIG.keys())
+            if st.session_state.editing_result_id is not None and 'time_post_reaction' in fields_to_generate:
+                # Display time as disabled text input when editing
+                time_config = RESULTS_CONFIG['time_post_reaction']
+                time_label = time_config['label']
+                time_value = current_data.get('time_post_reaction')
+                time_key = f"results_time_post_reaction_{form_key}_scalar"
+                st.text_input(
+                    label=f"{time_label} (Cannot be changed)", 
+                    value=f"{time_value:.1f}" if time_value is not None else "N/A", 
+                    key=time_key, 
+                    disabled=True, 
+                    help=time_config.get('help', '') + " Time cannot be changed during edit."
+                )
+                form_values['time_post_reaction'] = time_value # Keep the original time value
+                fields_to_generate.remove('time_post_reaction') # Remove from dynamic generation
+                
+            # Generate the rest of the fields dynamically
+            generated_values = generate_form_fields(
+                field_config=RESULTS_CONFIG, 
+                current_data=current_data, 
+                field_names=fields_to_generate, 
+                key_prefix=f"results_{form_key}_scalar"
+            )
+            form_values.update(generated_values) # Merge generated values into form_values
+            
+            # --- Remove old static field generation logic --- 
+            # for field_name, config in RESULTS_CONFIG.items():
                 # Use form_key in scalar keys
-                field_key = f"results_{field_name}_{form_key}_scalar"
-                field_keys_config[field_name] = field_key
-                field_label = config['label']
-                field_type = config['type']
-                field_help = config.get('help', None)
-                current_value = current_data.get(field_name)
-                if field_name == 'time_post_reaction' and st.session_state.editing_result_id is not None:
-                     st.text_input(label=f"{field_label} (Cannot be changed)", value=f"{current_value:.1f}" if current_value is not None else "N/A", key=field_key, disabled=True, help=config.get('help', '') + " Time cannot be changed during edit.")
-                     form_values[field_name] = current_value 
-                elif field_type == 'number':
-                    form_values[field_name] = st.number_input(label=field_label, min_value=config.get('min_value'), max_value=config.get('max_value'), value=float(current_value) if current_value is not None else config.get('default'), step=config.get('step'), format=config.get('format', "%.2f"), key=field_key, help=field_help)
-                else:
-                     st.warning(f"Unsupported field type '{field_type}' for '{field_name}' in results form.")
+                # field_key = f"results_{field_name}_{form_key}_scalar"
+                # field_keys_config[field_name] = field_key
+                # field_label = config['label']
+                # field_type = config['type']
+                # field_help = config.get('help', None)
+                # current_value = current_data.get(field_name)
+                # if field_name == 'time_post_reaction' and st.session_state.editing_result_id is not None:
+                #      st.text_input(label=f"{field_label} (Cannot be changed)", value=f"{current_value:.1f}" if current_value is not None else "N/A", key=field_key, disabled=True, help=config.get('help', '') + " Time cannot be changed during edit.")
+                #      form_values[field_name] = current_value 
+                # elif field_type == 'number':
+                #     form_values[field_name] = st.number_input(label=field_label, min_value=config.get('min_value'), max_value=config.get('max_value'), value=float(current_value) if current_value is not None else config.get('default'), step=config.get('step'), format=config.get('format', "%.2f"), key=field_key, help=field_help)
+                # else:
+                #      st.warning(f"Unsupported field type '{field_type}' for '{field_name}' in results form.")
 
             # --- Save/Cancel Buttons (Inside Form) --- 
             col1, col2 = st.columns(2)
@@ -335,15 +364,14 @@ def display_experiment_details(experiment):
                 submitted = st.form_submit_button("Save Results")
                 if submitted:
                     # Get form values
-                    time_val = form_values.get('time_post_reaction')
-                    ph_val = form_values.get('final_ph')
-                    nitrate_val = form_values.get('final_nitrate_concentration')
-                    ferrous_iron_yield_val = form_values.get('ferrous_iron_yield')
-                    grams_per_ton_yield_val = form_values.get('grams_per_ton_yield')
-                    final_dissolved_oxygen_val = form_values.get('final_dissolved_oxygen')
-                    final_conductivity_val = form_values.get('final_conductivity')
-                    final_alkalinity_val = form_values.get('final_alkalinity')
-                    sampling_volume_val = form_values.get('sampling_volume')
+                    # Time value is already in form_values if editing, or from generate_form_fields if adding new
+                    time_val = form_values.get('time_post_reaction') 
+
+                    # Prepare the results_data dictionary from form_values using RESULTS_CONFIG keys
+                    results_to_save = {}
+                    for field_name in RESULTS_CONFIG.keys():
+                        if field_name != 'time_post_reaction': # Exclude time, it's a separate arg
+                            results_to_save[field_name] = form_values.get(field_name)
 
                     # File data comes from the buffer (accessed via file_buffer alias -> buffer_key)
                     files_to_save = []
@@ -360,18 +388,15 @@ def display_experiment_details(experiment):
                     else:
                         # Save logic
                         if st.session_state.editing_result_id is not None:
-                            pass 
+                            # When editing, time_val is fixed (read from form_values)
+                            pass # time_val is already set correctly
+                        # else: # When adding new, time_val comes from the form input
+                            # time_val is already set correctly from form_values
+
                         save_success = save_results(
                             experiment_id=experiment['id'],
                             time_post_reaction=time_val,
-                            final_ph=ph_val,
-                            final_nitrate=nitrate_val,
-                            ferrous_iron_yield=ferrous_iron_yield_val,
-                            grams_per_ton_yield=grams_per_ton_yield_val,
-                            final_dissolved_oxygen=final_dissolved_oxygen_val,
-                            final_conductivity=final_conductivity_val,
-                            final_alkalinity=final_alkalinity_val,
-                            sampling_volume=sampling_volume_val,
+                            results_data=results_to_save, # Pass the dictionary
                             uploaded_files_data=files_to_save
                         )
                         if save_success:

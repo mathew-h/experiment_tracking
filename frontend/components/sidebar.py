@@ -1,6 +1,7 @@
 import streamlit as st
 from database.database import SessionLocal
 from database.models import Experiment, SampleInfo
+from sqlalchemy import text
 
 def render_sidebar():
     with st.sidebar:
@@ -8,7 +9,7 @@ def render_sidebar():
         page = st.radio(
             "Go to",
             ["New Experiment", "View Experiments", 
-             "New Rock Sample", "View Sample Inventory", "Settings"]
+             "New Rock Sample", "View Sample Inventory", "Issue Submission"]
         )
          # Add some statistics or summary information
         st.markdown("### Quick Statistics")
@@ -27,7 +28,9 @@ def render_sidebar():
         with col2:
             try:
                 db = SessionLocal()
-                total_samples = db.query(SampleInfo).count()
+                # Use raw SQL to count samples without relying on the model
+                result = db.execute(text("SELECT COUNT(*) FROM sample_info"))
+                total_samples = result.scalar()
                 st.metric("Samples", total_samples)
             except Exception as e:
                 st.error(f"Error retrieving sample count: {str(e)}")

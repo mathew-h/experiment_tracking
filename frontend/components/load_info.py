@@ -1,6 +1,7 @@
 from database.database import SessionLocal
 from database.models import SampleInfo, ExternalAnalysis
 import streamlit as st
+from frontend.config.variable_config import ROCK_SAMPLE_CONFIG
 
 def get_sample_info(sample_id):
     """
@@ -10,37 +11,17 @@ def get_sample_info(sample_id):
         sample_id (str): The unique identifier of the sample to retrieve
         
     Returns:
-        dict: Dictionary containing sample information including:
-            - id: Database record ID
-            - sample_id: Unique sample identifier
-            - rock_classification: Type/classification of the rock
-            - state: State/Province of collection
-            - country: Country of collection
-            - latitude: Latitude coordinate
-            - longitude: Longitude coordinate
-            - description: Sample description
-            - created_at: Creation timestamp
-            - updated_at: Last update timestamp
-            
-    The function handles database errors and ensures proper connection cleanup.
-    Returns None if the sample is not found or if an error occurs.
+        dict: Dictionary containing sample information with fields defined in ROCK_SAMPLE_CONFIG
     """
     try:
         db = SessionLocal()
         sample_info = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
         
         if sample_info:
+            # Create dictionary using field names from ROCK_SAMPLE_CONFIG
             return {
-                'id': sample_info.id,
-                'sample_id': sample_info.sample_id,
-                'rock_classification': sample_info.rock_classification,
-                'state': sample_info.state,
-                'country': sample_info.country,
-                'latitude': sample_info.latitude,
-                'longitude': sample_info.longitude,
-                'description': sample_info.description,
-                'created_at': sample_info.created_at,
-                'updated_at': sample_info.updated_at
+                field: getattr(sample_info, field)
+                for field in ROCK_SAMPLE_CONFIG.keys()
             }
         return None
     except Exception as e:

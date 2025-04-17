@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Replace hardcoded values with centralized config
+globs:
+  - "**/*.py"
+alwaysApply: false
+---
+
+- When encountering hardcoded labels, units, types, or value ranges, check `variable_config.py` for a matching entry.
+- If found, replace the hardcoded value with a reference to the config dictionary.
+- If not found, suggest adding it to `variable_config.py`.
+- Prioritize centralized control of variable values for maintainability and consistency.
+
+[variable_config.py](mdc:frontend/config/variable_config.py)

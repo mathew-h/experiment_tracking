@@ -16,7 +16,7 @@ from database.models import (
 )
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields
-from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG
+from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG, RESULTS_CONFIG
 
 def edit_experiment(experiment):
     """
@@ -217,27 +217,20 @@ def update_experiment(experiment_id, data):
     finally:
         db.close()
             
-def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, ferrous_iron_yield, grams_per_ton_yield=None, final_dissolved_oxygen=None, final_conductivity=None, final_alkalinity=None, sampling_volume=None, uploaded_files_data=None):
+def save_results(experiment_id, time_post_reaction, results_data, uploaded_files_data=None):
     """
     Save or update experiment results for a specific time point, including scalar values and associated files.
     
     Args:
         experiment_id (int): The unique identifier of the experiment
         time_post_reaction (float): Time in hours post-reaction when results were measured.
-        final_ph (float): The final pH value at this time point
-        final_nitrate (float): The final nitrate concentration at this time point
-        ferrous_iron_yield (float): The ferrous iron yield percentage at this time point
-        grams_per_ton_yield (float, optional): The yield in g NH3/ton rock
-        final_dissolved_oxygen (float, optional): Final dissolved oxygen in ppm
-        final_conductivity (float, optional): Final conductivity in μS/cm
-        final_alkalinity (float, optional): Final alkalinity in mg/L CaCO₃
-        sampling_volume (float, optional): Volume of sample taken in mL
+        results_data (dict): Dictionary containing scalar result values keyed by field names from RESULTS_CONFIG.
         uploaded_files_data (list[dict], optional): List of dictionaries, each containing:
             {'file': UploadedFile, 'description': str}. Defaults to None.
             
     This function:
     - Checks if results exist for the experiment at the specified time_post_reaction
-    - Updates existing scalar results or creates a new results entry
+    - Updates existing scalar results or creates a new results entry using RESULTS_CONFIG
     - Handles file uploads: saves files and creates/updates ResultFiles entries
     - Creates modification log entries for scalar data changes
     - Handles database transactions and error cases
@@ -255,44 +248,25 @@ def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, fer
         
         modification_type = ""
         old_values = {}
-        new_values_log = {}
+        new_values_log = {'time_post_reaction': time_post_reaction} # Initialize with time
 
         if result:
             modification_type = "update"
-            # Prepare old values for logging
-            old_values = {
-                'time_post_reaction': result.time_post_reaction,
-                'final_ph': result.final_ph,
-                'final_nitrate_concentration': result.final_nitrate_concentration,
-                'ferrous_iron_yield': result.ferrous_iron_yield,
-                'grams_per_ton_yield': result.grams_per_ton_yield,
-                'final_dissolved_oxygen': result.final_dissolved_oxygen,
-                'final_conductivity': result.final_conductivity,
-                'final_alkalinity': result.final_alkalinity,
-                'sampling_volume': result.sampling_volume
-            }
-            # Update existing scalar results
-            result.final_ph = final_ph
-            result.final_nitrate_concentration = final_nitrate
-            result.ferrous_iron_yield = ferrous_iron_yield
-            result.grams_per_ton_yield = grams_per_ton_yield
-            result.final_dissolved_oxygen = final_dissolved_oxygen
-            result.final_conductivity = final_conductivity
-            result.final_alkalinity = final_alkalinity
-            result.sampling_volume = sampling_volume
-            result.data_type = 'SCALAR_RESULTS'
+            # Prepare old values for logging dynamically using RESULTS_CONFIG
+            old_values['time_post_reaction'] = result.time_post_reaction
+            for field_name in RESULTS_CONFIG.keys():
+                 # Use the actual model attribute name (field_name)
+                 if hasattr(result, field_name):
+                     old_values[field_name] = getattr(result, field_name)
             
-            new_values_log = {
-                'time_post_reaction': time_post_reaction,
-                'final_ph': final_ph,
-                'final_nitrate_concentration': final_nitrate,
-                'ferrous_iron_yield': ferrous_iron_yield,
-                'grams_per_ton_yield': grams_per_ton_yield,
-                'final_dissolved_oxygen': final_dissolved_oxygen,
-                'final_conductivity': final_conductivity,
-                'final_alkalinity': final_alkalinity,
-                'sampling_volume': sampling_volume
-            }
+            # Update existing scalar results dynamically using RESULTS_CONFIG
+            for field_name, value in results_data.items():
+                if field_name in RESULTS_CONFIG and hasattr(result, field_name):
+                    setattr(result, field_name, value)
+                    new_values_log[field_name] = value # Add to new values for logging
+
+            result.data_type = 'SCALAR_RESULTS' # Keep this
+            
             # Log the scalar update
             log_modification(
                 db=db,
@@ -305,34 +279,24 @@ def save_results(experiment_id, time_post_reaction, final_ph, final_nitrate, fer
 
         else:
             modification_type = "create"
-            # Create new results entry for the time point
-            result = ExperimentalResults(
-                experiment_id=experiment_id,
-                time_post_reaction=time_post_reaction,
-                final_ph=final_ph,
-                final_nitrate_concentration=final_nitrate,
-                ferrous_iron_yield=ferrous_iron_yield,
-                grams_per_ton_yield=grams_per_ton_yield,
-                final_dissolved_oxygen=final_dissolved_oxygen,
-                final_conductivity=final_conductivity,
-                final_alkalinity=final_alkalinity,
-                sampling_volume=sampling_volume,
-                data_type='SCALAR_RESULTS' 
-            )
-            db.add(result)
             
-            new_values_log = {
+            # Prepare data for new entry, including defaults from config if not provided
+            result_kwargs = {
+                'experiment_id': experiment_id,
                 'time_post_reaction': time_post_reaction,
-                'final_ph': final_ph,
-                'final_nitrate_concentration': final_nitrate,
-                'ferrous_iron_yield': ferrous_iron_yield,
-                'grams_per_ton_yield': grams_per_ton_yield,
-                'final_dissolved_oxygen': final_dissolved_oxygen,
-                'final_conductivity': final_conductivity,
-                'final_alkalinity': final_alkalinity,
-                'sampling_volume': sampling_volume,
                 'data_type': 'SCALAR_RESULTS'
             }
+            
+            for field_name, config in RESULTS_CONFIG.items():
+                 # Use field_name for model attribute
+                 result_kwargs[field_name] = results_data.get(field_name, config.get('default'))
+                 new_values_log[field_name] = result_kwargs[field_name] # Add to new values for logging
+                 
+            new_values_log['data_type'] = 'SCALAR_RESULTS' # Add data_type to log
+
+            # Create new results entry using unpacked kwargs
+            result = ExperimentalResults(**result_kwargs)
+            db.add(result)
             
             # --- Flush and Refresh to get result.id BEFORE saving files --- 
             try:
@@ -437,17 +401,12 @@ def delete_experimental_results(data_id):
         # Store old values for logging (only scalar data for the main log entry)
         old_values={
             'time_post_reaction': result_entry.time_post_reaction,
-            'final_ph': result_entry.final_ph,
-            'final_nitrate_concentration': result_entry.final_nitrate_concentration,
-            'ferrous_iron_yield': result_entry.ferrous_iron_yield,
-            'grams_per_ton_yield': result_entry.grams_per_ton_yield,
-            'final_dissolved_oxygen': result_entry.final_dissolved_oxygen,
-            'final_conductivity': result_entry.final_conductivity,
-            'final_alkalinity': result_entry.final_alkalinity,
-            'sampling_volume': result_entry.sampling_volume,
             'data_type': result_entry.data_type
-            # Add other scalar fields if necessary
+            # Add other scalar fields if necessary - dynamically using RESULTS_CONFIG
         }
+        for field_name in RESULTS_CONFIG.keys():
+            if hasattr(result_entry, field_name):
+                old_values[field_name] = getattr(result_entry, field_name)
 
         # --- Delete associated files first ---
         associated_files = db.query(ResultFiles).filter(ResultFiles.result_id == data_id).all()
@@ -488,105 +447,6 @@ def delete_experimental_results(data_id):
         db.rollback()
         st.error(f"Error deleting result entry (ID: {data_id}): {str(e)}")
         raise e # Re-raise after logging/rollback
-    finally:
-        db.close()
-
-def save_experimental_results(experiment_id, data_type, file=None, description=None, data_values=None):
-    """
-    Save experimental data to the database.
-    
-    Args:
-        experiment_id (int): The unique identifier of the experiment
-        data_type (str): Type of experimental data being saved
-        file (UploadedFile, optional): File containing experimental data
-        description (str, optional): Description of the experimental data
-        data_values (dict, optional): Dictionary containing experimental data values
-        
-    This function:
-    - Creates a new experimental data entry
-    - Handles file upload if present
-    - Creates a modification log entry
-    - Handles database transactions and error cases
-    """
-    try:
-        db = SessionLocal()
-        
-        file_path = None
-        file_name = None
-        file_type = None
-
-        # Handle file upload using utility
-        if file:
-            file_path = save_uploaded_file(
-                file=file, 
-                base_dir_name='experimental_results', 
-                filename_prefix=f"{experiment_id}"
-            )
-            if file_path: # Check if save was successful
-                file_name = file.name
-                file_type = file.type
-            else:
-                # Handle file save error (optional: raise exception or return False)
-                db.rollback()
-                st.error("Failed to save uploaded file.")
-                return False # Or raise?
-        
-        # Create a new experimental data entry
-        experimental_results = ExperimentalResults(
-            experiment_id=experiment_id,
-            data_type=data_type,
-            description=description,
-            data_values=json.dumps(data_values) if data_values else None,
-            file_path=file_path, # Use path from utility
-            file_name=file_name, # Use name from file object
-            file_type=file_type  # Use type from file object
-        )
-        
-        # No need to get user info here, log_modification handles it
-        # user = st.session_state.get('user', {})
-        # user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
-        
-        # Prepare new values for logging
-        new_values={
-            'data_type': data_type,
-            'description': description,
-            'data_values': data_values, # Pass the dict, log_modification will serialize
-            'file_path': file_path,
-            'file_name': file_name
-        }
-        
-        db.add(experimental_results)
-
-        # --- Flush and Refresh the new object BEFORE commit ---
-        try:
-            db.flush() # Assign ID to experimental_results without ending transaction
-            db.refresh(experimental_results) # Refresh its state from DB
-        except Exception as flush_refresh_err:
-            # Consider rolling back if this fails, as commit might have issues
-            db.rollback()
-            return False
-        # --- End Flush and Refresh ---
-
-        # Use utility for logging
-        log_modification(
-            db=db,
-            experiment_id=experiment_id,
-            modified_table="experimental_results",
-            modification_type="add",
-            new_values=new_values
-        )
-        
-        # Commit the transaction
-        db.commit()
-        
-        st.success("Experimental data saved successfully!")
-        return True # Explicitly return True on success
-        
-    except Exception as e:
-        db.rollback()
-        st.error(f"Error saving experimental data: {str(e)}")
-        # raise e # Consider if raising is needed, or just return False
-        return False # Explicitly return False on error
     finally:
         db.close()
 

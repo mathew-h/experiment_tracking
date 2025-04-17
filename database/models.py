@@ -57,6 +57,7 @@ class ExperimentalConditions(Base):
     co2_partial_pressure = Column(Float, nullable=True)  # in psi, optional
     confining_pressure = Column(Float, nullable=True)  # optional
     pore_pressure = Column(Float, nullable=True)  # optional
+    ammonium_chloride_concentration = Column(Float, nullable=True)  # optional
     rxn_temp_pressure = Column(Float, nullable=True)
     core_height = Column(Float, nullable=True)
     core_width = Column(Float, nullable=True)
@@ -84,6 +85,7 @@ class ExperimentalResults(Base):
     
     # New optional result fields
     final_dissolved_oxygen = Column(Float, nullable=True)
+    co2_partial_pressure = Column(Float, nullable=True)
     final_conductivity = Column(Float, nullable=True)
     final_alkalinity = Column(Float, nullable=True)
     sampling_volume = Column(Float, nullable=True)
@@ -183,6 +185,7 @@ class SampleInfo(Base):
     rock_classification = Column(String)
     state = Column(String)
     country = Column(String)
+    locality = Column(String)
     latitude = Column(Float)
     longitude = Column(Float)
     description = Column(Text)
@@ -220,6 +223,7 @@ class ExternalAnalysis(Base):
     analysis_date = Column(DateTime)
     laboratory = Column(String)
     analyst = Column(String)
+    pxrf_reading_no = Column(String, nullable=True) # New column
     description = Column(Text)
     analysis_metadata = Column(JSON)  # For storing additional analysis-specific data
     created_at = Column(DateTime, server_default=func.now())

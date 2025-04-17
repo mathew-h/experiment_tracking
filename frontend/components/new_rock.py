@@ -29,36 +29,15 @@ def render_new_rock_sample():
         )
         
         if st.form_submit_button("Save Rock Sample"):
-            # Validate required fields
-            required_fields = [field for field, config in ROCK_SAMPLE_CONFIG.items() if config.get('required', False)]
-            missing_fields = [field for field in required_fields if not form_values.get(field)]
-            
-            if missing_fields:
-                st.error(f"Please fill in all required fields: {', '.join(missing_fields)}")
-                return
-            
-            save_rock_sample(
-                sample_id=form_values['sample_id'],
-                rock_classification=form_values['rock_classification'],
-                state=form_values['state'],
-                country=form_values['country'],
-                latitude=form_values['latitude'],
-                longitude=form_values['longitude'],
-                description=form_values.get('description', '')
-            )
+            # Pass all form values to save_rock_sample
+            save_rock_sample(form_values)
 
-def save_rock_sample(sample_id, rock_classification, state, country, latitude, longitude, description):
+def save_rock_sample(form_values):
     """
     Save a new rock sample to the database (without initial photo).
     
     Args:
-        sample_id (str): Unique identifier for the rock sample
-        rock_classification (str): Type/classification of the rock
-        state (str): State/Province where the sample was collected
-        country (str): Country where the sample was collected
-        latitude (float): Latitude coordinate of collection site
-        longitude (float): Longitude coordinate of collection site
-        description (str): Description of the sample
+        form_values (dict): Dictionary containing all form field values from ROCK_SAMPLE_CONFIG
         
     This function:
     - Validates required fields
@@ -69,51 +48,62 @@ def save_rock_sample(sample_id, rock_classification, state, country, latitude, l
         ValueError: If required fields are missing
         DuplicateError: If sample_id already exists
     """
-    if not sample_id or not rock_classification:
-        st.error("Sample ID and Rock Classification are required")
+    # Validate required fields using ROCK_SAMPLE_CONFIG
+    required_fields = [field for field, config in ROCK_SAMPLE_CONFIG.items() if config.get('required', False)]
+    missing_fields = []
+    for field in required_fields:
+        value = form_values.get(field)
+        config = ROCK_SAMPLE_CONFIG[field]
+        is_missing = False
+        if config['type'] == 'number':
+            # For required numbers, only None is missing (assuming 0 is valid)
+            if value is None:
+                is_missing = True
+        else:
+            # For other required types (text, select, etc.), None or empty string is missing
+            if value is None or value == '':
+                is_missing = True
+
+        if is_missing:
+            missing_fields.append(config['label']) # Use label for error message
+
+    if missing_fields:
+        st.error(f"Please fill in all required fields: {', '.join(missing_fields)}")
         return
     
     try:
         db = SessionLocal()
         
         # Check if sample ID already exists
-        existing_sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
+        existing_sample = db.query(SampleInfo).filter(SampleInfo.sample_id == form_values['sample_id']).first()
         if existing_sample:
-            st.error(f"Sample ID {sample_id} already exists")
+            st.error(f"Sample ID {form_values['sample_id']} already exists")
             db.close()
             return
         
-        sample = SampleInfo(
-            sample_id=sample_id,
-            rock_classification=rock_classification,
-            state=state,
-            country=country,
-            latitude=latitude,
-            longitude=longitude,
-            description=description
-        )
+        # Create sample using all fields from ROCK_SAMPLE_CONFIG
+        sample = SampleInfo(**{
+            field: form_values.get(field)
+            for field in ROCK_SAMPLE_CONFIG.keys()
+        })
         
         db.add(sample)
         
+        # Log modification using all fields from ROCK_SAMPLE_CONFIG
         log_modification(
             db=db,
             experiment_id=None,
             modified_table="sample_info",
             modification_type="create",
             new_values={
-                'sample_id': sample.sample_id,
-                'rock_classification': sample.rock_classification,
-                'state': sample.state,
-                'country': sample.country,
-                'latitude': sample.latitude,
-                'longitude': sample.longitude,
-                'description': sample.description
+                field: getattr(sample, field)
+                for field in ROCK_SAMPLE_CONFIG.keys()
             }
         )
 
         db.commit()
         
-        st.success(f"Rock sample {sample_id} saved successfully!")
+        st.success(f"Rock sample {form_values['sample_id']} saved successfully!")
         
     except Exception as e:
         db.rollback()
