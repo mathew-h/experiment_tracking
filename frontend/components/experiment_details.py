@@ -12,13 +12,16 @@ from database.models import (
     ExperimentNotes,
     Experiment,
     ExperimentStatus,
-    ExperimentalConditions
+    ExperimentalConditions,
+    PXRFReading # May not be needed directly, but good practice
 )
 from frontend.config.variable_config import (
     FIELD_CONFIG,
     EXPERIMENT_TYPES,
     EXPERIMENT_STATUSES,
-    RESULTS_CONFIG
+    FEEDSTOCK_TYPES,
+    RESULTS_CONFIG,
+    PXRF_ELEMENT_COLUMNS
 )
 from frontend.components.utils import (
     split_conditions_for_display,
@@ -34,6 +37,7 @@ from frontend.components.edit_experiment import (
     submit_note_edit
 )
 from frontend.components.edit_sample import delete_external_analysis
+
 
 # --- Helper function for formatting display values --- 
 # Moved here to be defined before use
@@ -444,38 +448,139 @@ def display_experiment_details(experiment):
         
         if external_analyses:
             for analysis in external_analyses:
-                with st.expander(f"{analysis['analysis_type']} Analysis - {analysis['analysis_date'].strftime('%Y-%m-%d')}"):
-                    st.write(f"Laboratory: {analysis['laboratory']}")
-                    st.write(f"Analyst: {analysis['analyst']}")
-                    if analysis['description']:
-                        st.write("Description:")
-                        st.write(analysis['description'])
+                # Format the date safely, handling None case
+                date_str = analysis['analysis_date'].strftime('%Y-%m-%d') if analysis['analysis_date'] else 'Date not specified'
+                
+                with st.expander(f"{analysis['analysis_type']} Analysis - {date_str}"):
                     
-                    if analysis['report_file_path']:
-                        # Check if file exists before creating download button
-                        if os.path.exists(analysis['report_file_path']):
+                    # --- Conditional Display based on analysis_type ---
+                    if analysis['analysis_type'] == 'pXRF':
+                        pxrf_reading_nos_str = analysis.get('pxrf_reading_no', 'Not Specified')
+                        st.write(f"**pXRF Reading No(s):** {pxrf_reading_nos_str}")
+                        
+                        # Access the pre-fetched data from the database
+                        pxrf_readings_data = analysis.get('pxrf_readings')
+
+                        if pxrf_readings_data: # Check if the list is not empty
                             try:
-                                with open(analysis['report_file_path'], 'rb') as fp:
-                                    st.download_button(
-                                        f"Download {analysis['report_file_name']}",
-                                        fp.read(),
-                                        file_name=analysis['report_file_name'],
-                                        mime=analysis['report_file_type']
+                                readings_df = pd.DataFrame(pxrf_readings_data)
+                                element_cols_lower = [col.lower() for col in PXRF_ELEMENT_COLUMNS]
+                                display_cols = ['reading_no'] + element_cols_lower
+                                
+                                # --- FIX: Ensure numeric types --- 
+                                for col in element_cols_lower:
+                                    if col in readings_df.columns:
+                                        readings_df[col] = pd.to_numeric(readings_df[col], errors='coerce')
+                                    else:
+                                        # Add missing element columns defined in config with NaN
+                                        readings_df[col] = pd.NA 
+                                        
+                                # Define formatters for numeric columns only
+                                formatters = { 
+                                    col: "{:.2f}".format 
+                                    for col in element_cols_lower 
+                                    if col in readings_df.columns and pd.api.types.is_numeric_dtype(readings_df[col])
+                                }
+                                valid_display_cols = [col for col in display_cols if col in readings_df.columns]
+                                
+                                # Display individual readings table
+                                st.markdown("##### Individual Readings")
+                                st.dataframe(
+                                    # Apply formatting and handle NaN display
+                                    readings_df[valid_display_cols].style.format(formatters, na_rep='N/A'),
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+                                # Calculate and display averages (mean skips NaN)
+                                numeric_element_cols = [col for col in element_cols_lower if col in readings_df.columns and pd.api.types.is_numeric_dtype(readings_df[col])]
+                                if numeric_element_cols:
+                                    averages = readings_df[numeric_element_cols].mean().to_dict()
+                                    st.markdown("##### Average Values")
+                                    avg_df = pd.DataFrame([averages])
+                                    st.dataframe(
+                                        avg_df[numeric_element_cols].style.format("{:.2f}"),
+                                        use_container_width=True,
+                                        hide_index=True
                                     )
+                                else:
+                                    st.info("No numeric element data available to calculate averages.")
+                                    
                             except Exception as e:
-                                st.warning(f"Could not read analysis report file {analysis['report_file_name']}: {e}")
+                                st.error(f"Error displaying pXRF data: {e}")
+                                # Optionally show raw pxrf_readings data as fallback
+                                # st.write("Raw pXRF Data (Fallback):")
+                                # st.json(pxrf_readings_data)
+
                         else:
-                            st.warning(f"Analysis report file not found: {analysis['report_file_name']}")
-                    
-                    if analysis['analysis_metadata']:
-                        st.write("Additional Data:")
-                        st.json(analysis['analysis_metadata'])
-                    
-                    # Delete button
-                    if st.button("Delete Analysis", key=f"delete_analysis_{analysis['id']}"):
-                        delete_external_analysis(analysis['id'])
-                        st.session_state.experiment_updated = True # Flag sample update
-                        st.rerun()
+                            # This means either no readings were associated OR DB query failed/returned empty
+                            if analysis.get('pxrf_reading_no'):
+                                 st.info(f"No pXRF data found in the database for Reading No(s): {analysis['pxrf_reading_no']}")
+                            else:
+                                 st.warning("pXRF analysis selected, but no Reading Number(s) were associated with this analysis record.")
+                                 # Optionally display raw metadata if it exists as a fallback
+                                 if analysis.get('analysis_metadata'):
+                                      st.write("Raw Metadata (Fallback):")
+                                      try:
+                                          metadata = json.loads(analysis['analysis_metadata']) if isinstance(analysis['analysis_metadata'], str) else analysis['analysis_metadata']
+                                          st.json(metadata)
+                                      except:
+                                          st.text(analysis['analysis_metadata'])
+                                          
+                        # Always show description if available for pXRF
+                        if analysis['description']:
+                            st.write("Description:")
+                            st.write(analysis['description'])
+
+                    else: # For other analysis types
+                        st.write(f"Laboratory: {analysis.get('laboratory', 'N/A')}")
+                        st.write(f"Analyst: {analysis.get('analyst', 'N/A')}")
+                        if analysis['description']:
+                            st.write("Description:")
+                            st.write(analysis['description'])
+                        if analysis['analysis_metadata']:
+                             st.write("Additional Data:")
+                             try:
+                                 # Attempt to parse and display JSON metadata
+                                 metadata_dict = json.loads(analysis['analysis_metadata'])
+                                 st.json(metadata_dict)
+                             except (json.JSONDecodeError, TypeError):
+                                 # Fallback for non-JSON or unparsable metadata
+                                 st.write(str(analysis['analysis_metadata']))
+
+                    # --- Common Section: Display Files (for all types) ---
+                    if analysis['analysis_files']:
+                        st.write("Analysis Files:")
+                        for file in analysis['analysis_files']:
+                            file_col1, file_col2 = st.columns([3, 1]) # Adjust columns if needed
+                            with file_col1:
+                                st.write(f"- {file['file_name']}")
+                            with file_col2:
+                                if file['file_path'] and os.path.exists(file['file_path']):
+                                    try:
+                                        with open(file['file_path'], 'rb') as fp:
+                                            st.download_button(
+                                                f"Download", # Simpler label
+                                                fp.read(),
+                                                file_name=file['file_name'],
+                                                mime=file.get('file_type', 'application/octet-stream'), # Default MIME type
+                                                key=f"download_analysis_{file['id']}" # Unique key
+                                            )
+                                    except Exception as e:
+                                        st.warning(f"Could not read analysis file {file['file_name']}: {e}")
+                                else:
+                                    st.warning(f"File not found: {file['file_name']}")
+                    else:
+                        # Only show this if not pXRF or if pXRF has no files either
+                        if analysis['analysis_type'] != 'pXRF' or not analysis.get('pxrf_readings'): # Changed check
+                             st.info("No analysis files available for this analysis.")
+
+                    # --- REMOVED Delete button ---
+                    # Delete button was here, now removed for this view
+                    # if st.button("Delete Analysis", key=f"delete_analysis_{analysis['id']}"):
+                    #    delete_external_analysis(analysis['id'])
+                    #    st.session_state.experiment_updated = True # Flag sample update
+                    #    st.rerun()
         else:
             st.info("No external analyses recorded for this sample.")
     else:

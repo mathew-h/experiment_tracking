@@ -15,8 +15,8 @@ class Experiment(Base):
     __tablename__ = "experiments"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_number = Column(Integer, unique=True, nullable=False)
-    experiment_id = Column(String, unique=True)
+    experiment_id = Column(String, unique=True, nullable=False, index=True)  # User-defined experiment identifier
+    experiment_number = Column(Integer, unique=True, nullable=False)  # Auto-incrementing number
     sample_id = Column(String)
     researcher = Column(String)
     date = Column(DateTime)
@@ -35,7 +35,7 @@ class ExperimentalConditions(Base):
     __tablename__ = "experimental_conditions"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_id = Column(Integer, ForeignKey("experiments.id"))
+    experiment_id = Column(String, ForeignKey("experiments.experiment_id"), nullable=False)
     particle_size = Column(Float)
     initial_ph = Column(Float)
     catalyst = Column(String)
@@ -75,7 +75,7 @@ class ExperimentalResults(Base):
     __tablename__ = "experimental_results"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_id = Column(Integer, ForeignKey("experiments.id"), nullable=False)
+    experiment_id = Column(String, ForeignKey("experiments.experiment_id"), nullable=False)
     
     # Results data
     ferrous_iron_yield = Column(Float, nullable=True)  # in percentage
@@ -143,7 +143,7 @@ class ExperimentNotes(Base):
     __tablename__ = "experiment_notes"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_id = Column(Integer, ForeignKey("experiments.id"))
+    experiment_id = Column(String, ForeignKey("experiments.experiment_id"), nullable=False)
     note_text = Column(Text)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
@@ -154,7 +154,7 @@ class ModificationsLog(Base):
     __tablename__ = "modifications_log"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_id = Column(Integer, ForeignKey("experiments.id"))
+    experiment_id = Column(String, ForeignKey("experiments.experiment_id"), nullable=False)
     modified_by = Column(String)  # Username or identifier of who made the change
     modification_type = Column(String)  # e.g., 'create', 'update', 'delete'
     modified_table = Column(String)  # Which table was modified
@@ -223,7 +223,7 @@ class ExternalAnalysis(Base):
     analysis_date = Column(DateTime)
     laboratory = Column(String)
     analyst = Column(String)
-    pxrf_reading_no = Column(String, nullable=True) # New column
+    pxrf_reading_no = Column(String, nullable=True) # Link to PXRFReading table via this field
     description = Column(Text)
     analysis_metadata = Column(JSON)  # For storing additional analysis-specific data
     created_at = Column(DateTime, server_default=func.now())
@@ -231,8 +231,32 @@ class ExternalAnalysis(Base):
 
     # Relationships
     sample_info = relationship(
-        "SampleInfo", 
+        "SampleInfo",
         back_populates="external_analyses",
         foreign_keys=[sample_info_id] # Specify the correct FK column
     )
-    analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan") 
+    analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan")
+
+class PXRFReading(Base):
+    __tablename__ = "pxrf_readings"
+
+    # Using Reading No as the primary key - ensure it's treated as string consistently
+    reading_no = Column(String, primary_key=True, index=True)
+
+    # Elemental data columns - nullable allows for missing data in source
+    fe = Column(Float, name="Fe", nullable=True)
+    mg = Column(Float, name="Mg", nullable=True)
+    ni = Column(Float, name="Ni", nullable=True)
+    cu = Column(Float, name="Cu", nullable=True)
+    si = Column(Float, name="Si", nullable=True)
+    co = Column(Float, name="Co", nullable=True)
+    mo = Column(Float, name="Mo", nullable=True)
+    al = Column(Float, name="Al", nullable=True)
+    # Add other elements as needed, matching REQUIRED_COLUMNS in ingestion script
+
+    # Timestamps for tracking ingestion
+    ingested_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+
+    def __repr__(self):
+        return f"<PXRFReading(reading_no='{self.reading_no}')>" 

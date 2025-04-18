@@ -68,6 +68,24 @@ migrations/
 logs/
 log/
 
+# Data directory
+data/
+data/**/*.xlsx
+data/**/*.xls
+data/**/*.csv
+data/**/*.json
+data/**/*.parquet
+data/**/*.h5
+data/**/*.hdf5
+data/**/*.txt
+data/**/*.dat
+data/**/*.pkl
+data/**/*.pickle
+data/**/*.npy
+data/**/*.npz
+!data/.gitkeep
+!data/README.md
+
 # Uploads and user data
 uploads/
 sample_photos/

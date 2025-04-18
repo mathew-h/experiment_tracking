@@ -2,7 +2,13 @@
 Configuration file containing all experiment-related constants and defaults.
 """
 
+import os # Add os import if not present
 import datetime # Make sure datetime is imported if needed for date default
+
+# Path configuration
+DATA_DIR = 'data'
+PXRF_DATA_FILENAME = 'pXRF_data.xlsx'
+PXRF_DATA_PATH = os.path.join(DATA_DIR, PXRF_DATA_FILENAME)
 
 # Available experiment types
 EXPERIMENT_TYPES = ['Serum', 'Autoclave', 'HPHT', 'Core Flood']
@@ -11,10 +17,14 @@ EXPERIMENT_TYPES = ['Serum', 'Autoclave', 'HPHT', 'Core Flood']
 EXPERIMENT_STATUSES = ['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED']
 
 # Available external analysis types
-ANALYSIS_TYPES = ['XRD', 'SEM', 'pXRF', 'Elemental', 'Other']
+ANALYSIS_TYPES = ['pXRF', 'XRD', 'SEM', 'Elemental', 'Other']
 
 # Feedstock types
 FEEDSTOCK_TYPES = ['Nitrogen', 'Nitrate', 'Blank']
+
+# Expected columns in the pXRF data file
+PXRF_REQUIRED_COLUMNS = {'Reading No', 'Fe', 'Mg', 'Ni', 'Cu', 'Si', 'Co', 'Mo', 'Al'}
+PXRF_ELEMENT_COLUMNS = PXRF_REQUIRED_COLUMNS - {'Reading No'}
 
 # Configuration for rock sample form fields
 ROCK_SAMPLE_CONFIG = {
@@ -119,7 +129,7 @@ EXTERNAL_ANALYSIS_CONFIG = {
         'label': "Analysis Date",
         'type': 'date',
         'default': None, # Default to None for date input
-        'required': True,
+        'required': False,
         'help': "Select the date when the analysis was performed"
     },
     'description': {

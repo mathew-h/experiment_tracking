@@ -92,13 +92,26 @@ def render_experiment_list():
     Renders the list view of all experiments with filtering options.
     
     This function:
-    1. Fetches all experiments from the database
+    1. Fetches all experiments from the database with pagination
     2. Provides filtering options (search, status, date range, conditions)
     3. Displays experiments in a formatted table
     4. Handles navigation to experiment details
     """
-    # Get all experiments from database
-    experiments = get_all_experiments()
+    # Initialize pagination state
+    if 'experiments_page' not in st.session_state:
+        st.session_state.experiments_page = 1
+    if 'experiments_per_page' not in st.session_state:
+        st.session_state.experiments_per_page = 10
+
+    # Get total count for pagination
+    total_experiments = get_total_experiments_count()
+    total_pages = (total_experiments + st.session_state.experiments_per_page - 1) // st.session_state.experiments_per_page
+    
+    # Get paginated experiments from database
+    experiments = get_all_experiments(
+        page=st.session_state.experiments_page,
+        per_page=st.session_state.experiments_per_page
+    )
     
     # Create filter/search options
     st.markdown("### Search and Filter Experiments")
@@ -201,47 +214,7 @@ def render_experiment_list():
     if not filtered_experiments:
         st.info("No experiments found matching the selected criteria.")
     else:
-        # Get detailed experiment data for filtering by conditions
-        detailed_experiments = []
-        for exp in filtered_experiments:
-            detailed_exp = get_experiment_by_id(exp['id'])
-            if detailed_exp:
-                detailed_experiments.append(detailed_exp)
-        
-        # Apply experimental conditions filters
-        if catalyst_filter:
-            detailed_experiments = [exp for exp in detailed_experiments if 
-                                  exp['conditions'].get('catalyst', '').lower() == catalyst_filter.lower()]
-        
-        if buffer_filter:
-            detailed_experiments = [exp for exp in detailed_experiments if 
-                                  exp['conditions'].get('buffer_system', '').lower() == buffer_filter.lower()]
-        
-        if min_temp is not None:
-            detailed_experiments = [exp for exp in detailed_experiments if 
-                                  exp['conditions'].get('temperature', 0) >= min_temp]
-        
-        if max_temp is not None:
-            detailed_experiments = [exp for exp in detailed_experiments if 
-                                  exp['conditions'].get('temperature', 0) <= max_temp]
-        
-        if min_ph is not None:
-            detailed_experiments = [exp for exp in detailed_experiments if 
-                                  exp['conditions'].get('initial_ph', 0) >= min_ph]
-        
-        if max_ph is not None:
-            detailed_experiments = [exp for exp in detailed_experiments if 
-                                  exp['conditions'].get('initial_ph', 0) <= max_ph]
-        
         # Display experiments in a table
-        exp_df = pd.DataFrame(detailed_experiments)
-        exp_df = exp_df[['experiment_id', 'sample_id', 'researcher', 'date', 'status']]
-        exp_df.columns = ['Experiment ID', 'Sample ID', 'Researcher', 'Date', 'Status']
-        
-        # Format date for display
-        exp_df['Date'] = pd.to_datetime(exp_df['Date']).dt.strftime('%Y-%m-%d %H:%M')
-        
-        # Make the table interactive with clickable rows
         st.markdown("### Experiments")
         st.markdown("Click 'View Details' to see experiment information")
         
@@ -265,26 +238,53 @@ def render_experiment_list():
         st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
         
         # Data rows
-        for index, row in exp_df.iterrows():
+        for index, exp in enumerate(filtered_experiments):
             with st.container():
                 col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 1])
                 
                 with col1:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{row['Experiment ID']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['experiment_id']}</div>", unsafe_allow_html=True)
                 with col2:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{row['Sample ID']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['sample_id']}</div>", unsafe_allow_html=True)
                 with col3:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{row['Researcher']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['researcher']}</div>", unsafe_allow_html=True)
                 with col4:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{row['Date']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['date'].strftime('%Y-%m-%d %H:%M')}</div>", unsafe_allow_html=True)
                 with col5:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{row['Status']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['status']}</div>", unsafe_allow_html=True)
                 with col6:
                     if st.button("View Details", key=f"view_{index}"):
-                        st.session_state.view_experiment_id = row['Experiment ID']
+                        st.session_state.view_experiment_id = exp['experiment_id']
                         st.rerun()
                 
                 st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
+        
+        # Pagination controls
+        st.markdown("---")
+        pagination_cols = st.columns([1, 2, 1])
+        
+        with pagination_cols[0]:
+            if st.session_state.experiments_page > 1:
+                if st.button("← Previous"):
+                    st.session_state.experiments_page -= 1
+                    st.rerun()
+                    
+        with pagination_cols[1]:
+            st.markdown(f"<div style='text-align: center'>Page {st.session_state.experiments_page} of {total_pages}</div>", unsafe_allow_html=True)
+            
+        with pagination_cols[2]:
+            if st.session_state.experiments_page < total_pages:
+                if st.button("Next →"):
+                    st.session_state.experiments_page += 1
+                    st.rerun()
+                    
+        # Items per page selector
+        st.selectbox(
+            "Items per page",
+            options=[10, 25, 50],
+            key="experiments_per_page",
+            on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
+        )
 
 def render_experiment_detail():
     """
@@ -346,16 +346,36 @@ def render_experiment_detail():
             # Edit mode - show editable form
             edit_experiment(experiment)
 
-def get_all_experiments():
+def get_total_experiments_count(db=None):
     """
-    Retrieves all experiments from the database.
+    Get total count of experiments for pagination.
+    """
+    try:
+        if db is None:
+            db = SessionLocal()
+        return db.query(Experiment).count()
+    except Exception as e:
+        st.error(f"Error getting experiment count: {str(e)}")
+        return 0
+    finally:
+        if db:
+            db.close()
+
+def get_all_experiments(page=1, per_page=10):
+    """
+    Retrieves experiments from the database with pagination.
     
+    Args:
+        page (int): Current page number (1-based)
+        per_page (int): Number of items per page
+        
     Returns:
         list: List of dictionaries containing basic experiment information
     """
     try:
         db = SessionLocal()
-        experiments_query = db.query(Experiment).order_by(Experiment.date.desc()).all()
+        offset = (page - 1) * per_page
+        experiments_query = db.query(Experiment).order_by(Experiment.date.desc()).offset(offset).limit(per_page).all()
         
         # Convert to list of dictionaries for easy display
         experiments = []

@@ -7,6 +7,11 @@ from database.models import ModificationsLog
 import json # Added for JSON serialization in logging
 import datetime # Added for timestamp in logging and date input
 from database.database import SessionLocal
+import pandas as pd
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_condition_display_dict(conditions):
     """
@@ -375,3 +380,214 @@ def extract_conditions(conditions_obj):
         value = getattr(conditions_obj, field_name, None)
         extracted[field_name] = value if value is not None else config['default']
     return extracted
+
+def remove_duplicate_samples(excel_path: str = "data/20250404_Master Data Migration Sheet.xlsx") -> None:
+    """
+    Reads the sample_info sheet from the Excel file, identifies and removes rows with duplicate sample_ids.
+    Keeps the first occurrence of each sample_id and removes subsequent duplicates.
+    Saves the modified Excel file with '_cleaned' suffix.
+    
+    Args:
+        excel_path (str): Path to the Excel file
+    """
+    try:
+        # Read the Excel file
+        excel_file = pd.ExcelFile(excel_path)
+        
+        # Check if sample_info sheet exists
+        if 'sample_info' not in excel_file.sheet_names:
+            logger.error("No 'sample_info' sheet found in the Excel file")
+            return
+        
+        # Read all sheets into a dictionary
+        all_sheets = {}
+        for sheet_name in excel_file.sheet_names:
+            all_sheets[sheet_name] = pd.read_excel(excel_file, sheet_name=sheet_name)
+        
+        # Get the sample_info sheet
+        sample_df = all_sheets['sample_info']
+        
+        # Check if sample_id column exists
+        if 'sample_id' not in sample_df.columns:
+            logger.error("No 'sample_id' column found in sample_info sheet")
+            return
+        
+        # Find duplicates
+        duplicates = sample_df[sample_df['sample_id'].duplicated()]['sample_id'].unique()
+        
+        if len(duplicates) == 0:
+            logger.info("No duplicate sample_ids found")
+            return
+        
+        # Log the duplicates found
+        logger.info(f"Found {len(duplicates)} duplicate sample_ids: {', '.join(str(d) for d in duplicates)}")
+        
+        # Keep first occurrence of each sample_id
+        original_count = len(sample_df)
+        sample_df = sample_df.drop_duplicates(subset=['sample_id'], keep='first')
+        removed_count = original_count - len(sample_df)
+        
+        # Update the dictionary with cleaned sample_info
+        all_sheets['sample_info'] = sample_df
+        
+        # Create new filename with '_cleaned' suffix
+        file_path = Path(excel_path)
+        new_path = file_path.parent / f"{file_path.stem}_cleaned{file_path.suffix}"
+        
+        # Save all sheets to new Excel file
+        with pd.ExcelWriter(new_path) as writer:
+            for sheet_name, df in all_sheets.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        logger.info(f"Removed {removed_count} duplicate rows")
+        logger.info(f"Saved cleaned file to: {new_path}")
+        
+    except Exception as e:
+        logger.error(f"Error processing Excel file: {str(e)}")
+        raise
+
+def check_experiment_duplicates(excel_path: str = "data/20250404_Master Data Migration Sheet.xlsx") -> None:
+    """
+    Checks for duplicate experiment_numbers and experiment_ids in the experiments sheet.
+    
+    Args:
+        excel_path (str): Path to the Excel file
+    """
+    try:
+        # Read the Excel file
+        excel_file = pd.ExcelFile(excel_path)
+        
+        # Check if experiments sheet exists
+        if 'experiments' not in excel_file.sheet_names:
+            logger.error("No 'experiments' sheet found in the Excel file")
+            return
+        
+        # Read experiments sheet
+        df = pd.read_excel(excel_file, sheet_name='experiments')
+        
+        # Check for experiment_number duplicates
+        if 'experiment_number' in df.columns:
+            num_duplicates = df[df['experiment_number'].duplicated()]
+            if not num_duplicates.empty:
+                logger.error("\nDuplicate experiment_numbers found:")
+                for _, row in num_duplicates.iterrows():
+                    logger.error(f"experiment_number {row['experiment_number']} is duplicated (experiment_id: {row['experiment_id']})")
+        else:
+            logger.error("No 'experiment_number' column found")
+            
+        # Check for experiment_id duplicates
+        if 'experiment_id' in df.columns:
+            id_duplicates = df[df['experiment_id'].duplicated()]
+            if not id_duplicates.empty:
+                logger.error("\nDuplicate experiment_ids found:")
+                for _, row in id_duplicates.iterrows():
+                    logger.error(f"experiment_id {row['experiment_id']} is duplicated (experiment_number: {row['experiment_number']})")
+        else:
+            logger.error("No 'experiment_id' column found")
+            
+        # Show all experiment records for verification
+        logger.info("\nAll experiments in sheet:")
+        for _, row in df.iterrows():
+            logger.info(f"experiment_number: {row['experiment_number']}, experiment_id: {row['experiment_id']}")
+            
+    except Exception as e:
+        logger.error(f"Error checking experiment duplicates: {str(e)}")
+        raise
+
+def clean_external_analyses(excel_path: str = "data/20250404_Master Data Migration Sheet.xlsx") -> None:
+    """
+    Reads the external_analyses sheet from the Excel file, removes rows where pxrf_reading_no is blank,
+    and ensures proper sample_info_id relationships are maintained.
+    Saves the modified Excel file with '_cleaned' suffix.
+    
+    Args:
+        excel_path (str): Path to the Excel file
+    """
+    try:
+        # Read the Excel file
+        excel_file = pd.ExcelFile(excel_path)
+        
+        # Check if required sheets exist
+        required_sheets = {'external_analyses', 'sample_info'}
+        missing_sheets = required_sheets - set(excel_file.sheet_names)
+        if missing_sheets:
+            logger.error(f"Missing required sheets: {', '.join(missing_sheets)}")
+            return
+        
+        # Read all sheets into a dictionary
+        all_sheets = {}
+        for sheet_name in excel_file.sheet_names:
+            all_sheets[sheet_name] = pd.read_excel(excel_file, sheet_name=sheet_name)
+        
+        # Get the relevant sheets
+        analyses_df = all_sheets['external_analyses']
+        sample_info_df = all_sheets['sample_info']
+        
+        # Check if required columns exist
+        if 'pxrf_reading_no' not in analyses_df.columns:
+            logger.error("No 'pxrf_reading_no' column found in external_analyses sheet")
+            return
+        if 'sample_id' not in analyses_df.columns or 'sample_id' not in sample_info_df.columns:
+            logger.error("'sample_id' column missing in one or both sheets")
+            return
+            
+        # Count rows before cleaning
+        original_count = len(analyses_df)
+        
+        # Remove rows where pxrf_reading_no is blank (NaN, None, or empty string)
+        analyses_df = analyses_df.dropna(subset=['pxrf_reading_no'])
+        analyses_df = analyses_df[analyses_df['pxrf_reading_no'].astype(str).str.strip() != '']
+        
+        # Create a mapping of sample_id to auto-incrementing sample_info_id
+        sample_id_mapping = {row['sample_id']: idx + 1 
+                           for idx, row in sample_info_df.iterrows()}
+        
+        # Add/update sample_info_id based on sample_id
+        analyses_df['sample_info_id'] = analyses_df['sample_id'].map(sample_id_mapping)
+        
+        # Remove rows where we couldn't find a matching sample_info_id
+        invalid_samples = analyses_df[analyses_df['sample_info_id'].isna()]['sample_id'].unique()
+        if len(invalid_samples) > 0:
+            logger.warning(f"Found {len(invalid_samples)} samples in external_analyses with no matching sample_info: {invalid_samples}")
+            
+        analyses_df = analyses_df.dropna(subset=['sample_info_id'])
+        
+        # Convert sample_info_id to integer
+        analyses_df['sample_info_id'] = analyses_df['sample_info_id'].astype(int)
+        
+        # Count removed rows
+        removed_count = original_count - len(analyses_df)
+        
+        # Update the dictionary with cleaned external_analyses
+        all_sheets['external_analyses'] = analyses_df
+        
+        # Create new filename with '_cleaned' suffix
+        file_path = Path(excel_path)
+        new_path = file_path.parent / f"{file_path.stem}_cleaned{file_path.suffix}"
+        
+        # Save all sheets to new Excel file
+        with pd.ExcelWriter(new_path) as writer:
+            for sheet_name, df in all_sheets.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        logger.info(f"Removed {removed_count} rows with blank pxrf_reading_no values or invalid sample_ids")
+        logger.info(f"Successfully mapped sample_info_ids for {len(analyses_df)} rows")
+        logger.info(f"Saved cleaned file to: {new_path}")
+        
+    except Exception as e:
+        logger.error(f"Error cleaning external_analyses sheet: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
+    # Run the duplicate checks
+    # check_experiment_duplicates()
+    # Run the sample duplicate removal if needed
+    # remove_duplicate_samples()
+    # Clean external analyses if needed
+    clean_external_analyses()
