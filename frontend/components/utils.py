@@ -10,6 +10,8 @@ from database.database import SessionLocal
 import pandas as pd
 from pathlib import Path
 import logging
+# Import the centralized storage functions
+from utils.storage import save_file, get_file, delete_file
 
 logger = logging.getLogger(__name__)
 
@@ -87,144 +89,66 @@ def build_conditions(data, experiment_id):
     
     return conditions
 
-# --- Cloud Storage Abstraction ---
-class FileStorage:
-    """
-    Abstract file storage interface that supports both local and cloud storage.
-    """
-    def __init__(self, storage_type='local', **kwargs):
-        """
-        Initialize the storage backend.
-        
-        Args:
-            storage_type (str): Type of storage ('local', 's3', 'gcs', 'azure')
-            **kwargs: Additional configuration for the specific storage type
-        """
-        self.storage_type = storage_type
-        self.config = kwargs
-        
-    def get_upload_path(self, base_dir_name):
-        """
-        Get the appropriate upload path for the storage type.
-        """
-        if self.storage_type == 'local':
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            upload_dir = os.path.join(project_root, 'uploads', base_dir_name)
-            os.makedirs(upload_dir, exist_ok=True)
-            return upload_dir
-        else:
-            # For cloud storage, return the virtual path
-            return f"{base_dir_name}/"
-            
-    def save_file(self, file, base_dir_name, filename_prefix):
-        """
-        Save a file using the appropriate storage backend.
-        """
-        if self.storage_type == 'local':
-            return self._save_local(file, base_dir_name, filename_prefix)
-        elif self.storage_type == 's3':
-            return self._save_s3(file, base_dir_name, filename_prefix)
-        elif self.storage_type == 'gcs':
-            return self._save_gcs(file, base_dir_name, filename_prefix)
-        elif self.storage_type == 'azure':
-            return self._save_azure(file, base_dir_name, filename_prefix)
-        else:
-            raise ValueError(f"Unsupported storage type: {self.storage_type}")
-            
-    def delete_file(self, file_path):
-        """
-        Delete a file using the appropriate storage backend.
-        """
-        if self.storage_type == 'local':
-            return self._delete_local(file_path)
-        elif self.storage_type == 's3':
-            return self._delete_s3(file_path)
-        elif self.storage_type == 'gcs':
-            return self._delete_gcs(file_path)
-        elif self.storage_type == 'azure':
-            return self._delete_azure(file_path)
-        else:
-            raise ValueError(f"Unsupported storage type: {self.storage_type}")
-            
-    def _save_local(self, file, base_dir_name, filename_prefix):
-        """Local filesystem implementation"""
-        if not file:
-            return None
-            
-        try:
-            upload_dir = self.get_upload_path(base_dir_name)
-            safe_filename = os.path.basename(file.name).replace(" ", "_")
-            file_path = os.path.join(upload_dir, f"{filename_prefix}_{safe_filename}")
-            
-            with open(file_path, 'wb') as f:
-                f.write(file.getvalue())
-            return file_path
-        except Exception as e:
-            st.error(f"Error saving file {file.name}: {str(e)}")
-            return None
-            
-    def _delete_local(self, file_path):
-        """Local filesystem implementation"""
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                return True
-            except OSError as e:
-                st.warning(f"Could not delete file {file_path}: {e}")
-                return False
-        return True
-        
-    def _save_s3(self, file, base_dir_name, filename_prefix):
-        """AWS S3 implementation"""
-        # TODO: Implement S3 storage
-        raise NotImplementedError("S3 storage not yet implemented")
-        
-    def _delete_s3(self, file_path):
-        """AWS S3 implementation"""
-        # TODO: Implement S3 deletion
-        raise NotImplementedError("S3 deletion not yet implemented")
-        
-    def _save_gcs(self, file, base_dir_name, filename_prefix):
-        """Google Cloud Storage implementation"""
-        # TODO: Implement GCS storage
-        raise NotImplementedError("GCS storage not yet implemented")
-        
-    def _delete_gcs(self, file_path):
-        """Google Cloud Storage implementation"""
-        # TODO: Implement GCS deletion
-        raise NotImplementedError("GCS deletion not yet implemented")
-        
-    def _save_azure(self, file, base_dir_name, filename_prefix):
-        """Azure Blob Storage implementation"""
-        # TODO: Implement Azure storage
-        raise NotImplementedError("Azure storage not yet implemented")
-        
-    def _delete_azure(self, file_path):
-        """Azure Blob Storage implementation"""
-        # TODO: Implement Azure deletion
-        raise NotImplementedError("Azure deletion not yet implemented")
+# --- File Storage Helpers (Using utils.storage) ---
 
-# Initialize the file storage with default local storage
-file_storage = FileStorage()
+# Removed the FileStorage class and get_upload_dir function
 
-# Update the existing functions to use the FileStorage class
-def get_upload_dir(base_dir_name):
+def save_uploaded_file(file, storage_folder, filename_prefix):
     """
-    Constructs the path to an upload directory and ensures it exists.
-    """
-    return file_storage.get_upload_path(base_dir_name)
+    Saves an uploaded file using the centralized utils.storage.save_file.
 
-def save_uploaded_file(file, base_dir_name, filename_prefix):
+    Args:
+        file (UploadedFile): The file object from st.file_uploader.
+        storage_folder (str): The target folder/prefix in the storage backend (e.g., "photos/sample_123").
+        filename_prefix (str): A prefix to potentially add to the original filename (often not needed when using folders).
+
+    Returns:
+        str or None: The storage path/URL of the saved file, or None if error.
     """
-    Saves an uploaded file using the configured storage backend.
-    """
-    return file_storage.save_file(file, base_dir_name, filename_prefix)
+    if not file:
+        return None
+
+    try:
+        file_bytes = file.getvalue()
+        original_filename = file.name
+        # Note: filename_prefix might be redundant if storage_folder provides uniqueness
+        # Construct the final file name (e.g., keep original name within the folder)
+        final_file_name = os.path.basename(original_filename).replace(" ", "_") 
+
+        # Use the centralized save_file function
+        file_path_url = save_file(
+            file_data=file_bytes,
+            file_name=final_file_name, # Use the cleaned original filename
+            folder=storage_folder
+        )
+        return file_path_url
+    except Exception as e:
+        st.error(f"Error saving file {file.name}: {str(e)}")
+        logger.error(f"Error in save_uploaded_file: {e}", exc_info=True)
+        return None
 
 def delete_file_if_exists(file_path):
     """
-    Deletes a file using the configured storage backend.
+    Deletes a file using the centralized utils.storage.delete_file.
+
+    Args:
+        file_path (str): The storage path/URL of the file to delete.
+
+    Returns:
+        bool: True if deletion was successful or file didn't exist, False otherwise.
     """
-    return file_storage.delete_file(file_path)
+    if not file_path:
+        return True # Nothing to delete
+    try:
+        delete_file(file_path)
+        return True
+    except FileNotFoundError:
+        logger.warning(f"File not found for deletion (already deleted?): {file_path}")
+        return True # Consider file not found as success in deletion context
+    except Exception as e:
+        st.warning(f"Could not delete file {file_path}: {e}")
+        logger.error(f"Error in delete_file_if_exists: {e}", exc_info=True)
+        return False
 
 # --- New Form Generation Utility ---
 def generate_form_fields(field_config, current_data, field_names, key_prefix):

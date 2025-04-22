@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+from azure.storage.blob import BlobServiceClient, BlobClient
 
 from database.models import Base, PXRFReading
 

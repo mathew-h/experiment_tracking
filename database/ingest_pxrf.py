@@ -8,6 +8,7 @@ import numpy as np
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, text
 import argparse
+import io # Added for BytesIO
 
 # --- Adjust path to import from parent directory --- 
 # Get the absolute path of the directory containing this script
@@ -17,10 +18,11 @@ project_root = os.path.dirname(script_dir)
 # Add the project root to the Python path
 sys.path.insert(0, project_root)
 
-# --- Database and Model Imports --- 
+# --- Database, Model and Storage Imports --- 
 from database.database import engine, SessionLocal, init_db
 from database.models import PXRFReading, ExternalAnalysis
-from frontend.config.variable_config import PXRF_DATA_PATH, PXRF_REQUIRED_COLUMNS
+from frontend.config.variable_config import PXRF_REQUIRED_COLUMNS
+from utils.storage import get_file # Added storage utility import
 
 # --- Configuration --- 
 # Map Excel column names to model attribute names (case-sensitive)
@@ -73,15 +75,16 @@ def find_matching_columns(df_columns, target_elements):
     return matches
 
 # --- Ingestion Function --- 
-def ingest_pxrf_data(file_path: str = PXRF_DATA_PATH, update_existing: bool = False):
+def run_pxrf_ingestion(file_source: str, update_existing: bool = False):
     """
-    Reads the pXRF Excel file, cleans data, and upserts into the PXRFReading table.
+    Reads the pXRF Excel file from a source (local path or cloud URL),
+    cleans data, and upserts into the PXRFReading table.
 
     Args:
-        file_path (str): Path to the Excel file.
+        file_source (str): Path or URL to the Excel file.
         update_existing (bool): If True, update existing entries. If False, skip them.
     """
-    print(f"Starting pXRF data ingestion from: {file_path}")
+    print(f"Starting pXRF data ingestion from source: {file_source}")
     
     # Debug: Verify database connection and check existing data
     try:
@@ -106,15 +109,16 @@ def ingest_pxrf_data(file_path: str = PXRF_DATA_PATH, update_existing: bool = Fa
         print(f"Database connection error: {e}")
         return
 
-    # --- 1. Load Excel File --- 
+    # --- 1. Load Excel Data from Source --- 
     try:
-        if not os.path.exists(file_path):
-            print(f"Error: pXRF data file not found at {file_path}")
-            return
-            
-        # Read the Excel file
-        df = pd.read_excel(file_path)
-        print("\nAnalyzing Excel file:")
+        # Get file content (bytes) from local path or cloud URL using the utility
+        print(f"Attempting to retrieve file from: {file_source}")
+        file_bytes = get_file(file_source)
+        print(f"Successfully retrieved {len(file_bytes)} bytes from source.")
+
+        # Read Excel data from bytes using io.BytesIO
+        df = pd.read_excel(io.BytesIO(file_bytes))
+        print("\nAnalyzing Excel data:")
         print("Available columns:", df.columns.tolist())
         
         # Check for required columns
@@ -125,15 +129,18 @@ def ingest_pxrf_data(file_path: str = PXRF_DATA_PATH, update_existing: bool = Fa
             print("\nPlease ensure your Excel file has these exact column names.")
             return
             
-        print(f"\nSuccessfully loaded {len(df)} rows from Excel.")
+        print(f"\nSuccessfully loaded {len(df)} rows from Excel data.")
         
         # Debug: Show first few rows of key columns
         print("\nFirst few rows of data:")
         print(df[list(PXRF_REQUIRED_COLUMNS)].head())
         
+    except FileNotFoundError:
+         print(f"Error: Source file/blob not found at {file_source}")
+         return # Stop execution if file not found
     except Exception as e:
-        print(f"Error loading Excel file: {e}")
-        return
+        print(f"Error loading or processing file source: {e}")
+        return # Stop execution on other errors
 
     # --- 2. Clean Data --- 
     try:
@@ -230,7 +237,9 @@ if __name__ == "__main__":
     print("Running pXRF Ingestion Script...")
     
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Ingest pXRF data into the database.')
+    parser = argparse.ArgumentParser(description='Ingest pXRF data into the database from a specified source.')
+    # Add argument for the file source (path or URL)
+    parser.add_argument('file_source', type=str, help='Path or URL to the pXRF Excel file') 
     parser.add_argument('--update-existing', action='store_true',
                       help='Update existing readings with new data')
     args = parser.parse_args()
@@ -238,6 +247,6 @@ if __name__ == "__main__":
     # Initialize database if needed
     init_db()
     
-    # Use the parsed argument for update_existing
-    ingest_pxrf_data(update_existing=args.update_existing)
+    # Use the parsed arguments
+    run_pxrf_ingestion(file_source=args.file_source, update_existing=args.update_existing)
     print("Script finished.") 

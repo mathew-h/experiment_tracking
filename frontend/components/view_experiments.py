@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import json
 import datetime
+import re  # Add re module for regex support
 from database.database import SessionLocal
 from database.models import (
     Experiment, 
@@ -30,6 +31,7 @@ from frontend.config.variable_config import (
 )
 
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_, func
 
 def render_view_experiments():
     """
@@ -103,16 +105,6 @@ def render_experiment_list():
     if 'experiments_per_page' not in st.session_state:
         st.session_state.experiments_per_page = 10
 
-    # Get total count for pagination
-    total_experiments = get_total_experiments_count()
-    total_pages = (total_experiments + st.session_state.experiments_per_page - 1) // st.session_state.experiments_per_page
-    
-    # Get paginated experiments from database
-    experiments = get_all_experiments(
-        page=st.session_state.experiments_page,
-        per_page=st.session_state.experiments_per_page
-    )
-    
     # Create filter/search options
     st.markdown("### Search and Filter Experiments")
     
@@ -121,7 +113,8 @@ def render_experiment_list():
     
     with col1:
         # Basic filters
-        search_term = st.text_input("Search by Sample ID or Researcher:", "")
+        search_term = st.text_input("Search by Sample ID, Experiment ID or Researcher (supports regex):", "")
+        use_regex = st.checkbox("Use regex pattern matching", value=True)
         status_filter = st.selectbox(
             "Filter by Status:",
             ["All"] + [status.name for status in ExperimentStatus]
@@ -193,15 +186,18 @@ def render_experiment_list():
                         max_value=config.get('max_value', 14.0)
                     )
     
-    # Apply filters
+    # Get experiments with search applied at database level
+    experiments, total_count = get_all_experiments(
+        page=st.session_state.experiments_page,
+        per_page=st.session_state.experiments_per_page,
+        search_term=search_term if use_regex or not search_term else re.escape(search_term)
+    )
+    
+    # Calculate total pages based on filtered count
+    total_pages = (total_count + st.session_state.experiments_per_page - 1) // st.session_state.experiments_per_page
+    
+    # Apply remaining filters in memory (status filter)
     filtered_experiments = experiments
-    
-    if search_term:
-        filtered_experiments = [exp for exp in filtered_experiments if 
-                      search_term.lower() in exp['sample_id'].lower() or 
-                      search_term.lower() in exp['researcher'].lower() or
-                      (exp['experiment_id'] and search_term.lower() in exp['experiment_id'].lower())]
-    
     if status_filter != "All":
         filtered_experiments = [exp for exp in filtered_experiments if exp['status'] == status_filter]
     
@@ -213,6 +209,10 @@ def render_experiment_list():
     
     if not filtered_experiments:
         st.info("No experiments found matching the selected criteria.")
+        # Reset pagination if no results found
+        if st.session_state.experiments_page > 1:
+            st.session_state.experiments_page = 1
+            st.rerun()
     else:
         # Display experiments in a table
         st.markdown("### Experiments")
@@ -361,21 +361,53 @@ def get_total_experiments_count(db=None):
         if db:
             db.close()
 
-def get_all_experiments(page=1, per_page=10):
+def get_all_experiments(page=1, per_page=10, search_term=None):
     """
-    Retrieves experiments from the database with pagination.
+    Retrieves experiments from the database with pagination and filtering.
     
     Args:
         page (int): Current page number (1-based)
         per_page (int): Number of items per page
+        search_term (str): Optional search term for filtering
         
     Returns:
         list: List of dictionaries containing basic experiment information
     """
     try:
         db = SessionLocal()
+        query = db.query(Experiment)
+
+        # Apply search filter at database level if provided
+        if search_term:
+            try:
+                pattern = re.compile(search_term, re.IGNORECASE)
+                # For regex pattern, we need to use custom SQL for regex matching
+                # SQLite doesn't support regex directly, so we'll use LIKE with wildcards
+                search_pattern = f"%{search_term}%"
+                query = query.filter(
+                    or_(
+                        Experiment.sample_id.like(search_pattern),
+                        Experiment.researcher.like(search_pattern),
+                        Experiment.experiment_id.like(search_pattern)
+                    )
+                )
+            except re.error:
+                # If invalid regex, fall back to simple LIKE search
+                search_term_lower = f"%{search_term.lower()}%"
+                query = query.filter(
+                    or_(
+                        func.lower(Experiment.sample_id).like(search_term_lower),
+                        func.lower(Experiment.researcher).like(search_term_lower),
+                        func.lower(Experiment.experiment_id).like(search_term_lower)
+                    )
+                )
+
+        # Get total count for pagination after applying filters
+        total_count = query.count()
+        
+        # Apply ordering and pagination
         offset = (page - 1) * per_page
-        experiments_query = db.query(Experiment).order_by(Experiment.date.desc()).offset(offset).limit(per_page).all()
+        experiments_query = query.order_by(Experiment.date.desc()).offset(offset).limit(per_page).all()
         
         # Convert to list of dictionaries for easy display
         experiments = []
@@ -389,10 +421,10 @@ def get_all_experiments(page=1, per_page=10):
                 'status': exp.status.name
             })
         
-        return experiments
+        return experiments, total_count
     except Exception as e:
         st.error(f"Error retrieving experiments: {str(e)}")
-        return []
+        return [], 0
     finally:
         db.close()
 

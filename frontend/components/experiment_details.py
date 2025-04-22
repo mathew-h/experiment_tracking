@@ -29,13 +29,18 @@ from frontend.components.utils import (
     generate_form_fields
 )
 from frontend.components.load_info import get_sample_info, get_external_analyses
+
+# Updated imports: Keep note functions from edit_experiment, get result functions from experimental_results
 from frontend.components.edit_experiment import (
-    save_results,
-    delete_experimental_results,
-    delete_result_file,
     save_note,
     submit_note_edit
 )
+from frontend.components.experimental_results import (
+    save_results,
+    delete_experimental_results,
+    delete_result_file
+)
+
 from frontend.components.edit_sample import delete_external_analysis
 
 

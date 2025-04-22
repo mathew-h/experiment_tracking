@@ -154,7 +154,7 @@ class ModificationsLog(Base):
     __tablename__ = "modifications_log"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_id = Column(String, ForeignKey("experiments.experiment_id"), nullable=False)
+    experiment_id = Column(String, ForeignKey("experiments.experiment_id"), nullable=True)
     modified_by = Column(String)  # Username or identifier of who made the change
     modification_type = Column(String)  # e.g., 'create', 'update', 'delete'
     modified_table = Column(String)  # Which table was modified

@@ -21,7 +21,7 @@ from frontend.config.variable_config import (
 
 # Import for eager loading
 from sqlalchemy.orm import selectinload, joinedload
-from sqlalchemy import func # For potential averaging in DB
+from sqlalchemy import func, or_ # For potential averaging in DB
 # Import functions moved to edit_sample.py
 from frontend.components.edit_sample import (
     delete_external_analysis, 
@@ -48,37 +48,97 @@ def render_sample_inventory():
     if 'samples_per_page' not in st.session_state:
         st.session_state.samples_per_page = 10
 
-    # Get total count for pagination
-    total_samples = get_total_samples_count()
-    total_pages = (total_samples + st.session_state.samples_per_page - 1) // st.session_state.samples_per_page
-    
+    # Initialize session state for sorting if not exists
+    if 'sort_elements' not in st.session_state:
+        st.session_state.sort_elements = []
+    if 'sort_directions' not in st.session_state:
+        st.session_state.sort_directions = {}
+
     # Add search and filter options
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
         search_term = st.text_input("Search by Sample ID or Classification:")
         
     with col2:
-        location_filter = st.text_input("Filter by Location (State/Country):")
-    
-    # Get sample data including calculated pXRF averages with pagination
-    samples_with_pxrf_avg = get_all_samples_with_pxrf_averages(
+        location_filter = st.text_input("Filter by Location (State/Country):", 
+            help="Enter location (e.g., 'NM' for New Mexico, or multiple locations separated by commas)")
+
+    with col3:
+        st.markdown("### Sort Options")
+        # Multi-select for elements
+        selected_elements = st.multiselect(
+            "Sort by Elements (in priority order)",
+            [f"{el.title()} Avg" for el in PXRF_ELEMENT_COLUMNS],
+            key="sort_elements_select"
+        )
+        
+        # Update session state for selected elements
+        st.session_state.sort_elements = selected_elements
+        
+        # Create sort direction controls for each selected element
+        if selected_elements:
+            st.markdown("#### Sort Directions")
+            for element in selected_elements:
+                direction = st.radio(
+                    f"Sort Direction for {element}",
+                    ["Ascending", "Descending"],
+                    key=f"sort_direction_{element}"
+                )
+                st.session_state.sort_directions[element] = direction == "Ascending"
+            
+            if st.button("Clear Sort"):
+                st.session_state.sort_elements = []
+                st.session_state.sort_directions = {}
+                st.rerun()
+
+    # Get sample data with filters applied at database level
+    filtered_samples, total_samples = get_all_samples_with_pxrf_averages(
         page=st.session_state.samples_page,
-        per_page=st.session_state.samples_per_page
+        per_page=st.session_state.samples_per_page,
+        search_term=search_term,
+        location_filter=location_filter
     )
 
-    # Apply filters to the enriched data
-    filtered_samples = samples_with_pxrf_avg
-    if search_term:
-        filtered_samples = [s for s in filtered_samples if (
-            search_term.lower() in s['sample_id'].lower() or
-            (s['rock_classification'] and search_term.lower() in s['rock_classification'].lower()) # Handle potential None
-        )]
+    # Calculate total pages based on filtered count
+    total_pages = (total_samples + st.session_state.samples_per_page - 1) // st.session_state.samples_per_page
 
-    if location_filter:
-        filtered_samples = [s for s in filtered_samples if (
-            (s['state'] and location_filter.lower() in s['state'].lower()) or
-            (s['country'] and location_filter.lower() in s['country'].lower()) # Handle potential None
-        )]
+    # If no results found and not on first page, reset to first page
+    if not filtered_samples and st.session_state.samples_page > 1:
+        st.session_state.samples_page = 1
+        st.rerun()
+
+    # Apply sorting if elements are selected (this remains in memory as it depends on calculated averages)
+    if st.session_state.sort_elements and filtered_samples:
+        def multi_sort_key(sample):
+            sort_keys = []
+            for element in st.session_state.sort_elements:
+                element_name = element.split()[0].lower()
+                sort_key = f"{element_name}_avg"
+                value = sample[sort_key]
+                sort_keys.append((value is None, value if value is not None else float('-inf')))
+            return tuple(sort_keys)
+
+        filtered_samples.sort(
+            key=multi_sort_key,
+            reverse=False
+        )
+
+        for idx, element in enumerate(st.session_state.sort_elements):
+            if not st.session_state.sort_directions[element]:
+                filtered_samples = list(reversed(filtered_samples))
+                break
+
+        sort_desc = " → ".join([
+            f"{el} ({'↑' if st.session_state.sort_directions[el] else '↓'})"
+            for el in st.session_state.sort_elements
+        ])
+        if sort_desc:
+            st.info(f"Sorting by: {sort_desc}")
+
+        if any(sample[f"{el.split()[0].lower()}_avg"] is None 
+               for sample in filtered_samples 
+               for el in st.session_state.sort_elements):
+            st.info("Note: Samples with no data for a selected element will appear first in ascending sort, last in descending sort.")
 
     # Display samples in a table
     if filtered_samples:
@@ -545,25 +605,57 @@ def get_total_samples_count(db=None):
         if db:
             db.close()
 
-def get_all_samples_with_pxrf_averages(page=1, per_page=10):
+def get_all_samples_with_pxrf_averages(page=1, per_page=10, search_term=None, location_filter=None):
     """
     Retrieve paginated samples and calculate average pXRF values from linked readings in the DB.
 
     Args:
         page (int): Current page number (1-based)
         per_page (int): Number of items per page
+        search_term (str): Optional search term for filtering
+        location_filter (str): Optional location filter
 
     Returns:
-        list: A list of dictionaries, each representing a sample with added 
-              '<element>_avg' keys for calculated pXRF averages.
+        tuple: (list of sample dictionaries with pXRF averages, total count after filtering)
     """
     db = None
     try:
         db = SessionLocal()
-        offset = (page - 1) * per_page
-        samples = db.query(SampleInfo).options(
+        # Start with base query
+        query = db.query(SampleInfo).options(
             selectinload(SampleInfo.external_analyses)
-        ).offset(offset).limit(per_page).all()
+        )
+
+        # Apply search filter at database level if provided
+        if search_term:
+            search_pattern = f"%{search_term.lower()}%"
+            query = query.filter(
+                or_(
+                    func.lower(SampleInfo.sample_id).like(search_pattern),
+                    func.lower(SampleInfo.rock_classification).like(search_pattern)
+                )
+            )
+
+        # Apply location filter at database level if provided
+        if location_filter:
+            location_terms = [term.strip().lower() for term in location_filter.split(',')]
+            location_conditions = []
+            for term in location_terms:
+                term_pattern = f"%{term}%"
+                location_conditions.extend([
+                    func.lower(SampleInfo.state).like(term_pattern),
+                    func.lower(SampleInfo.country).like(term_pattern),
+                    # Add exact matches for state abbreviations
+                    func.lower(func.substr(SampleInfo.state, 1, 2)) == term
+                ])
+            query = query.filter(or_(*location_conditions))
+
+        # Get total count for pagination after filters
+        total_count = query.count()
+
+        # Apply pagination
+        offset = (page - 1) * per_page
+        samples = query.offset(offset).limit(per_page).all()
 
         results = []
         all_reading_nos_needed = set()
@@ -634,11 +726,11 @@ def get_all_samples_with_pxrf_averages(page=1, per_page=10):
                     avg = sum(values) / len(values)
                     sample_data[f"{element.lower()}_avg"] = avg
                     
-        return results
+        return results, total_count
 
     except Exception as e:
         st.error(f"Error retrieving samples with pXRF averages: {str(e)}")
-        return []
+        return [], 0
     finally:
         if db and db.is_active:
             db.close()
