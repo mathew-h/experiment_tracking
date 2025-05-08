@@ -18,7 +18,7 @@ alwaysApply: true
 - Use `variable_config.py` to centralize variable d for form rendering, field types, and default values.
 - Abstract reusable logic into `utils.py` instead of duplicating across files.
 - Ensure changes align with these roles to maintain modularity and clarity.
-
+- Do not suggest alembic migration files, we will automatically generate migration scripts 
 [app.py](mdc:app.py)
 [models.py](mdc:database/models.py)
 [variable_config.py](mdc:frontend/config/variable_config.py)

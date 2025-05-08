@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import json
-import datetime
+from datetime import datetime, date, time
 import re  # Add re module for regex support
 from database.database import SessionLocal
 from database.models import (
@@ -13,7 +13,8 @@ from database.models import (
     ExperimentalConditions, 
     ModificationsLog,
     SampleInfo,
-    ExternalAnalysis
+    ExternalAnalysis,
+    ResultType
 )
 
 from frontend.components.experiment_details import display_experiment_details
@@ -27,7 +28,9 @@ from frontend.components.utils import (
 from frontend.config.variable_config import (
     FIELD_CONFIG,
     EXPERIMENT_TYPES,
-    EXPERIMENT_STATUSES
+    EXPERIMENT_STATUSES,
+    SCALAR_RESULTS_CONFIG,
+    NMR_RESULTS_CONFIG
 )
 
 from sqlalchemy.orm import selectinload
@@ -65,7 +68,7 @@ def render_view_experiments():
         st.session_state.experiment_updated = False
         st.rerun()
 
-    st.header("View Experiments")
+    st.markdown("### View Experiments")
     
     # Initialize session state for experiment viewing
     if 'view_experiment_id' not in st.session_state:
@@ -75,11 +78,17 @@ def render_view_experiments():
         st.session_state.edit_mode = False
     
     # Quick access section for direct experiment lookup
-    st.markdown("### Quick Access")
-    exp_id = st.text_input("Enter Experiment ID to view details directly:")
-    if st.button("View Experiment") and exp_id:
-        st.session_state.view_experiment_id = exp_id
-        st.rerun()
+    st.markdown("#### Quick Access")
+    quick_col1, quick_col2, quick_col3 = st.columns([0.9, 3, 1])
+    with quick_col1:
+        st.markdown("<div style='margin-top: 7px;'>Search by Experiment ID:</div>", unsafe_allow_html=True)
+    with quick_col2:
+        exp_id = st.text_input("Experiment ID Search", key="quick_search", label_visibility="collapsed")
+    with quick_col3:
+
+        if st.button("View Experiment", key="quick_view", use_container_width=True) and exp_id:
+            st.session_state.view_experiment_id = exp_id
+            st.rerun()
 
     # Main view logic
     if st.session_state.view_experiment_id is None:
@@ -95,7 +104,7 @@ def render_experiment_list():
     
     This function:
     1. Fetches all experiments from the database with pagination
-    2. Provides filtering options (search, status, date range, conditions)
+    2. Provides filtering options (search, status, date range)
     3. Displays experiments in a formatted table
     4. Handles navigation to experiment details
     """
@@ -106,108 +115,61 @@ def render_experiment_list():
         st.session_state.experiments_per_page = 10
 
     # Create filter/search options
-    st.markdown("### Search and Filter Experiments")
+    st.markdown("#### Search and Filter Experiments")
     
     # Create columns for filters
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Basic filters
-        search_term = st.text_input("Search by Sample ID, Experiment ID or Researcher (supports regex):", "")
+        # Search filter
+        search_term = st.text_input(
+            "Search: Sample ID, Experiment ID or Researcher:", 
+            "",
+            key="search_term",
+            on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
+        )
         use_regex = st.checkbox("Use regex pattern matching", value=True)
+    with col2:
+        # Status filter
         status_filter = st.selectbox(
             "Filter by Status:",
-            ["All"] + [status.name for status in ExperimentStatus]
+            ["All"] + [status.name for status in ExperimentStatus],
+            key="status_filter",
+            on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
         )
-        
+    
+    with col3:
         # Date range filter
-        st.markdown("#### Date Range")
         date_col1, date_col2 = st.columns(2)
         with date_col1:
-            start_date = st.date_input("Start Date", value=None)
+            start_date = st.date_input(
+                "Start Date Range", 
+                value=None,
+                key="start_date",
+                on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
+            )
         with date_col2:
-            end_date = st.date_input("End Date", value=None)
+            end_date = st.date_input(
+                "End Date Range", 
+                value=None,
+                key="end_date",
+                on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
+            )
     
-    with col2:
-        # Experimental conditions filters
-        st.markdown("#### Experimental Conditions")
-        
-        # Get numeric fields from FIELD_CONFIG for filtering
-        numeric_fields = [
-            (field_name, config) 
-            for field_name, config in FIELD_CONFIG.items() 
-            if config['type'] == 'number'
-        ]
-        
-        # Get text fields from FIELD_CONFIG for filtering
-        text_fields = [
-            (field_name, config) 
-            for field_name, config in FIELD_CONFIG.items() 
-            if config['type'] == 'text'
-        ]
-        
-        # Create filters for text fields
-        for field_name, config in text_fields:
-            if field_name == 'catalyst':  # Special case for catalyst filter
-                catalyst_filter = st.text_input(f"Filter by {config['label']}:", "")
-            elif field_name == 'buffer_system':  # Special case for buffer system filter
-                buffer_filter = st.text_input(f"Filter by {config['label']}:", "")
-        
-        # Create filters for numeric fields with ranges
-        for field_name, config in numeric_fields:
-            if field_name == 'temperature':  # Special case for temperature filter
-                temp_col1, temp_col2 = st.columns(2)
-                with temp_col1:
-                    min_temp = st.number_input(
-                        f"Min {config['label']}", 
-                        value=None, 
-                        min_value=config.get('min_value', -273.15)
-                    )
-                with temp_col2:
-                    max_temp = st.number_input(
-                        f"Max {config['label']}", 
-                        value=None, 
-                        min_value=config.get('min_value', -273.15)
-                    )
-            elif field_name == 'initial_ph':  # Special case for pH filter
-                ph_col1, ph_col2 = st.columns(2)
-                with ph_col1:
-                    min_ph = st.number_input(
-                        f"Min {config['label']}", 
-                        value=None, 
-                        min_value=config.get('min_value', 0.0),
-                        max_value=config.get('max_value', 14.0)
-                    )
-                with ph_col2:
-                    max_ph = st.number_input(
-                        f"Max {config['label']}", 
-                        value=None, 
-                        min_value=config.get('min_value', 0.0),
-                        max_value=config.get('max_value', 14.0)
-                    )
-    
-    # Get experiments with search applied at database level
+    # Get experiments with search and filters applied at database level
     experiments, total_count = get_all_experiments(
         page=st.session_state.experiments_page,
         per_page=st.session_state.experiments_per_page,
-        search_term=search_term if use_regex or not search_term else re.escape(search_term)
+        search_term=search_term if use_regex or not search_term else re.escape(search_term),
+        status_filter=status_filter if status_filter != "All" else None,
+        start_date=start_date,
+        end_date=end_date
     )
     
     # Calculate total pages based on filtered count
     total_pages = (total_count + st.session_state.experiments_per_page - 1) // st.session_state.experiments_per_page
     
-    # Apply remaining filters in memory (status filter)
-    filtered_experiments = experiments
-    if status_filter != "All":
-        filtered_experiments = [exp for exp in filtered_experiments if exp['status'] == status_filter]
-    
-    if start_date:
-        filtered_experiments = [exp for exp in filtered_experiments if exp['date'].date() >= start_date]
-    
-    if end_date:
-        filtered_experiments = [exp for exp in filtered_experiments if exp['date'].date() <= end_date]
-    
-    if not filtered_experiments:
+    if not experiments:
         st.info("No experiments found matching the selected criteria.")
         # Reset pagination if no results found
         if st.session_state.experiments_page > 1:
@@ -215,8 +177,7 @@ def render_experiment_list():
             st.rerun()
     else:
         # Display experiments in a table
-        st.markdown("### Experiments")
-        st.markdown("Click 'View Details' to see experiment information")
+        st.markdown("#### Experiments")
         
         # Create a custom table layout with headers
         col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 1])
@@ -238,7 +199,7 @@ def render_experiment_list():
         st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
         
         # Data rows
-        for index, exp in enumerate(filtered_experiments):
+        for index, exp in enumerate(experiments):
             with st.container():
                 col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 1])
                 
@@ -306,24 +267,12 @@ def render_experiment_detail():
             st.session_state.edit_mode = False
             st.rerun() # Rerun to go back to the list
     else:
-        # Navigation buttons
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            if st.button("← Back to List"):
-                st.session_state.view_experiment_id = None
-                st.session_state.edit_mode = False
-                st.rerun() # Rerun to go back to the list
-
-        with col3:
-            if not st.session_state.edit_mode:
-                if st.button("Edit Experiment"):
-                    st.session_state.edit_mode = True
-                    st.rerun() # Rerun to switch to edit mode
-            else:
-                if st.button("Cancel Edit"):
-                    st.session_state.edit_mode = False
-                    st.rerun() # Rerun to switch back to view mode
-
+        # Back to List button - Place it consistently at the top left
+        if st.button("← Back to List"):
+            st.session_state.view_experiment_id = None
+            st.session_state.edit_mode = False
+            st.rerun() # Rerun to go back to the list
+        
         # --- Refetch the experiment data HERE ---
         # This ensures we have the latest data before displaying/editing,
         # especially after a rerun triggered by saving sub-components like notes or data.
@@ -342,9 +291,19 @@ def render_experiment_detail():
         if not st.session_state.edit_mode:
             # View mode - display experiment details
             display_experiment_details(experiment)
+            
+            # Place Edit button *after* details in view mode
+            if st.button("Edit Experiment"):
+                st.session_state.edit_mode = True
+                st.rerun() # Rerun to switch to edit mode
         else:
             # Edit mode - show editable form
             edit_experiment(experiment)
+            
+            # Place Cancel button *after* edit form in edit mode
+            if st.button("Cancel Edit"):
+                st.session_state.edit_mode = False
+                st.rerun() # Rerun to switch back to view mode
 
 def get_total_experiments_count(db=None):
     """
@@ -361,7 +320,7 @@ def get_total_experiments_count(db=None):
         if db:
             db.close()
 
-def get_all_experiments(page=1, per_page=10, search_term=None):
+def get_all_experiments(page=1, per_page=10, search_term=None, status_filter=None, start_date=None, end_date=None):
     """
     Retrieves experiments from the database with pagination and filtering.
     
@@ -369,6 +328,9 @@ def get_all_experiments(page=1, per_page=10, search_term=None):
         page (int): Current page number (1-based)
         per_page (int): Number of items per page
         search_term (str): Optional search term for filtering
+        status_filter (str): Optional status filter
+        start_date (date): Optional start date for date range filter
+        end_date (date): Optional end date for date range filter
         
     Returns:
         list: List of dictionaries containing basic experiment information
@@ -401,6 +363,16 @@ def get_all_experiments(page=1, per_page=10, search_term=None):
                         func.lower(Experiment.experiment_id).like(search_term_lower)
                     )
                 )
+
+        # Apply status filter if provided
+        if status_filter:
+            query = query.filter(Experiment.status == status_filter)
+
+        # Apply date range filter if provided
+        if start_date:
+            query = query.filter(Experiment.date >= datetime.combine(start_date, time.min))
+        if end_date:
+            query = query.filter(Experiment.date <= datetime.combine(end_date, time.max))
 
         # Get total count for pagination after applying filters
         total_count = query.count()
@@ -445,9 +417,23 @@ def get_experiment_by_id(experiment_id):
         db = SessionLocal()
         # Check if input is a string (experiment_id) or integer (database id)
         if isinstance(experiment_id, str):
-            experiment = db.query(Experiment).options(selectinload(Experiment.results), selectinload(Experiment.notes), selectinload(Experiment.modifications), selectinload(Experiment.conditions)).filter(Experiment.experiment_id == experiment_id).first()
+            experiment = db.query(Experiment).options(
+                selectinload(Experiment.conditions),
+                selectinload(Experiment.notes),
+                selectinload(Experiment.modifications),
+                selectinload(Experiment.results).selectinload(ExperimentalResults.scalar_data), # Eager load scalar data
+                selectinload(Experiment.results).selectinload(ExperimentalResults.nmr_data),    # Eager load NMR data
+                selectinload(Experiment.results).selectinload(ExperimentalResults.files)       # Eager load files
+            ).filter(Experiment.experiment_id == experiment_id).first()
         else:
-            experiment = db.query(Experiment).options(selectinload(Experiment.results), selectinload(Experiment.notes), selectinload(Experiment.modifications), selectinload(Experiment.conditions)).filter(Experiment.id == experiment_id).first()
+            experiment = db.query(Experiment).options(
+                selectinload(Experiment.conditions),
+                selectinload(Experiment.notes),
+                selectinload(Experiment.modifications),
+                selectinload(Experiment.results).selectinload(ExperimentalResults.scalar_data), # Eager load scalar data
+                selectinload(Experiment.results).selectinload(ExperimentalResults.nmr_data),    # Eager load NMR data
+                selectinload(Experiment.results).selectinload(ExperimentalResults.files)       # Eager load files
+            ).filter(Experiment.id == experiment_id).first()
         
         if experiment is None:
             return None
@@ -508,23 +494,53 @@ def get_experiment_by_id(experiment_id):
         
         # Add experimental data if they exist
         if results:
-            exp_dict['experimental_results'] = [] # Ensure it starts empty
-            for data in results:
-                exp_dict['experimental_results'].append(
-                    {
-                        'id': data.id,
-                        'data_type': data.data_type,
-                        'file_path': data.file_path,
-                        'file_name': data.file_name,
-                        'file_type': data.file_type,
-                        'data_values': data.data_values,
-                        'description': data.description,
-                        'created_at': data.created_at,
-                        'updated_at': data.updated_at
-                    }
-                )
+            exp_dict['experimental_results'] = [] # Initialize list
+            for data in results: # data is an ExperimentalResults object
+                result_item = {
+                    'id': data.id,
+                    'time_post_reaction': data.time_post_reaction,
+                    'result_type': data.result_type.name if data.result_type else None,
+                    'description': data.description,
+                    'created_at': data.created_at,
+                    'updated_at': data.updated_at,
+                    'scalar_data': None, # Placeholder for scalar data
+                    'nmr_data': None,    # Placeholder for NMR data
+                    # Add placeholders for other data types (GC, PXRF, etc.) as needed
+                    'files': []          # List to hold associated files
+                }
+
+                # Extract scalar data if present (independent of primary result type)
+                if data.scalar_data:
+                    scalar_dict = {}
+                    for field_name in SCALAR_RESULTS_CONFIG.keys():
+                        if hasattr(data.scalar_data, field_name):
+                            scalar_dict[field_name] = getattr(data.scalar_data, field_name)
+                    result_item['scalar_data'] = scalar_dict
+
+                # Extract primary result type data
+                if data.result_type == ResultType.NMR and data.nmr_data:
+                    nmr_dict = {}
+                    for field_name in NMR_RESULTS_CONFIG.keys():
+                        if hasattr(data.nmr_data, field_name):
+                            nmr_dict[field_name] = getattr(data.nmr_data, field_name)
+                    result_item['nmr_data'] = nmr_dict
+                # Add elif blocks for other primary result types (GC, PXRF, etc.) as they are implemented
+
+                # Extract files if they exist
+                if data.files:
+                    for file_obj in data.files:
+                        result_item['files'].append({
+                            'id': file_obj.id,
+                            'file_path': file_obj.file_path,
+                            'file_name': file_obj.file_name,
+                            'file_type': file_obj.file_type,
+                            'description': file_obj.description,
+                            'created_at': file_obj.created_at
+                        })
+
+                exp_dict['experimental_results'].append(result_item)
         else:
-            pass # Add pass to fix empty block linting error
+            pass # No results to process
             
         return exp_dict
     except Exception as e:

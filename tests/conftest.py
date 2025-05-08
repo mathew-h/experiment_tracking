@@ -3,8 +3,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from azure.storage.blob import BlobServiceClient, BlobClient
+import datetime
 
-from database.models import Base, PXRFReading
+from database.models import Base, PXRFReading, Experiment, ExperimentalConditions, ExperimentalResults, ResultType, NMRResults, ScalarResults
 
 @pytest.fixture
 def test_db() -> Session:
@@ -48,3 +49,93 @@ def pxrf_reading(test_db):
     test_db.add(reading)
     test_db.commit()
     return reading 
+
+@pytest.fixture
+def test_experiment(test_db: Session) -> Experiment:
+    """Create a sample Experiment with basic conditions."""
+    conditions = ExperimentalConditions(
+        experiment_id="YIELD_TEST_001",
+        rock_mass=100.0,  # grams
+        water_volume=500.0, # mL
+        temperature=25.0,
+        room_temp_pressure=14.7, # Using a valid pressure field (psi)
+        stir_speed=300          # Corrected field name (RPM)
+    )
+    experiment = Experiment(
+        experiment_id="YIELD_TEST_001",
+        date=datetime.date.today(),
+    )
+    # Link conditions to experiment correctly
+    experiment.conditions = conditions
+    # Set required fields for Experiment that were missing
+    experiment.experiment_number = 1 # Assign a dummy number for test
+    experiment.status = 'PLANNED' # Assign default status
+
+    test_db.add(experiment) # Add experiment first to get ID
+    test_db.flush() # Flush to get the experiment.id
+
+    # Set the foreign key and string ID on conditions *after* experiment has ID
+    conditions.experiment_fk = experiment.id
+    conditions.experiment_id = experiment.experiment_id
+
+    test_db.commit()
+    test_db.refresh(experiment)
+    test_db.refresh(conditions)
+    return experiment
+
+@pytest.fixture
+def test_experimental_result(test_db: Session, test_experiment: Experiment) -> ExperimentalResults:
+    """Create a base ExperimentalResults entry linked to the test experiment."""
+    result_entry = ExperimentalResults(
+        experiment_id=test_experiment.experiment_id,
+        experiment_fk=test_experiment.id,
+        time_post_reaction=1.0, # 1 hour
+        result_type=ResultType.NMR, # Assign a default type, can be overridden
+        description="Test result entry"
+    )
+    test_db.add(result_entry)
+    test_db.commit()
+    test_db.refresh(result_entry)
+    return result_entry
+
+@pytest.fixture
+def test_scalar_result(test_db: Session, test_experimental_result: ExperimentalResults, test_nmr_result: NMRResults) -> ScalarResults:
+    """Create a ScalarResults entry linked to the test ExperimentalResults,
+       ensuring associated NMR data exists via fixture dependency."""
+    # test_experimental_result already has nmr_data linked by test_nmr_result fixture
+    scalar_data = ScalarResults(
+        result_id=test_experimental_result.id,
+        final_ph=7.0 # Add some dummy data
+    )
+    # Manually link back (SQLAlchemy doesn't always do this automatically before commit)
+    test_experimental_result.scalar_data = scalar_data
+    test_db.add(scalar_data)
+    test_db.commit()
+    test_db.refresh(scalar_data)
+    test_db.refresh(test_experimental_result) # Refresh parent too
+    return scalar_data
+
+@pytest.fixture
+def test_nmr_result(test_db: Session, test_experimental_result: ExperimentalResults) -> NMRResults:
+    """Create an NMRResults entry linked to the test ExperimentalResults with some data."""
+    # Ensure the parent result type is NMR if creating NMR data
+    if test_experimental_result.result_type != ResultType.NMR:
+        test_experimental_result.result_type = ResultType.NMR
+        test_db.commit()
+        test_db.refresh(test_experimental_result)
+
+    nmr_data = NMRResults(
+        result_id=test_experimental_result.id,
+        is_concentration_mm=0.025,
+        is_protons=2,
+        sampled_rxn_volume_ul=500.0,
+        nmr_total_volume_ul=700.0,
+        nh4_peak_area_1=1.5
+    )
+    # Manually link back
+    test_experimental_result.nmr_data = nmr_data
+    test_db.add(nmr_data)
+    test_db.commit()
+    test_db.refresh(nmr_data)
+    test_db.refresh(test_experimental_result)
+    return nmr_data 

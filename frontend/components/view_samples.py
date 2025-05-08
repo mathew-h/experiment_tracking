@@ -64,7 +64,6 @@ def render_sample_inventory():
             help="Enter location (e.g., 'NM' for New Mexico, or multiple locations separated by commas)")
 
     with col3:
-        st.markdown("### Sort Options")
         # Multi-select for elements
         selected_elements = st.multiselect(
             "Sort by Elements (in priority order)",
@@ -667,7 +666,7 @@ def get_all_samples_with_pxrf_averages(page=1, per_page=10, search_term=None, lo
                 field: getattr(sample, field)
                 for field in ROCK_SAMPLE_CONFIG.keys()
             }
-            sample_data['id'] = sample.id
+            sample_data['sample_id'] = sample.sample_id  # Use sample_id instead of id
             
             sample_reading_nos = set()
             for analysis in sample.external_analyses:

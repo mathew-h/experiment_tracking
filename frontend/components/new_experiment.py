@@ -4,6 +4,8 @@ from database.database import SessionLocal
 from database.models import Experiment, ExperimentalConditions, ExperimentNotes, ExperimentStatus
 from frontend.components.utils import log_modification, generate_form_fields
 from frontend.config.variable_config import FIELD_CONFIG, EXPERIMENT_STATUSES
+# Import the new service
+from backend.services.experimental_conditions_service import ExperimentalConditionsService
 
 # Helper function to get default values from FIELD_CONFIG
 def get_default_conditions():
@@ -85,8 +87,17 @@ def render_new_experiment():
                     key_prefix="new_req"
                 )
                 
+                # --- Moved Initial Notes Section Here ---
+                st.markdown("#### Initial Notes") # Keep header for clarity within column
+                initial_note = st.text_area(
+                    "Lab Note",
+                    value=st.session_state.experiment_data.get('initial_note', ''),
+                    height=150,
+                    help="Add any initial lab notes for this experiment. You can add more notes later."
+                )
+                
             with col2:
-                st.markdown("### Optional Parameters")
+                st.markdown("#### Optional Parameters")
                 # Get optional field names from FIELD_CONFIG
                 optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False)]
                 optional_values = generate_form_fields(
@@ -99,16 +110,6 @@ def render_new_experiment():
             # Combine required and optional values into a single dictionary
             all_condition_values = {**required_values, **optional_values}
             
-            # --- Initial Notes Section ---
-            st.markdown("---") # Separator
-            st.markdown("### Initial Notes")
-            initial_note = st.text_area(
-                 "Lab Note",
-                 value=st.session_state.experiment_data.get('initial_note', ''), # Allow pre-filling if needed later
-                 height=150,
-                 help="Add any initial lab notes for this experiment. You can add more notes later."
-             )
-
             # --- Form Submission ---
             st.markdown("---") # Separator
             submit_button = st.form_submit_button("💾 Save Experiment")
@@ -131,9 +132,11 @@ def render_new_experiment():
                     })
                     
                     # Call save_experiment
-                    save_experiment() # No need to pass data, it reads from session state
-                    # Go to step 2 if save is successful (save_experiment handles success/error messages)
-                    # The save_experiment function will now implicitly move to step 2 on success by setting session state.
+                    success = save_experiment() # No need to pass data, it reads from session state
+                    # Success/error messages are handled within save_experiment
+                    # If successful, save_experiment sets step to 2 and reruns
+                    if success:
+                        st.rerun()
 
     # STEP 2: Show a success message and allow another experiment
     elif st.session_state.step == 2:
@@ -157,27 +160,9 @@ def render_new_experiment():
 
 def save_experiment():
     """
-    Save the new experiment data to the database.
-    
-    This function:
-    - Generates a new experiment number
-    - Creates a new experiment record
-    - Sets up experimental conditions
-    - Adds any initial notes
-    - Handles database transactions and error cases
-    
-    The function reads the data stored in st.session_state.experiment_data
-    and ensures all required fields are present with appropriate defaults.
-    
-    On success:
-    - Updates session state with the new experiment number and ID
-    - Shows a success message
-    - Moves to step 2 of the form
-    
-    On failure:
-    - Rolls back database changes
-    - Displays an error message
+    Save the new experiment data to the database using services.
     """
+    db = None # Initialize db to None
     try:
         # Create a database session
         db = SessionLocal()
@@ -201,29 +186,42 @@ def save_experiment():
         
         # Add the experiment to the session
         db.add(experiment)
-        db.flush()  # Flush to get the experiment ID
+        # *** Don't flush yet, let the service handle conditions first ***
         
-        # Create experimental conditions directly from the collected form data
+        # --- Use the Service to Create Experimental Conditions --- 
         conditions_data = exp_data['conditions'].copy() # Get condition values
-        conditions_data['experiment_id'] = experiment.id # Add the foreign key
-        conditions = ExperimentalConditions(**conditions_data)
-        
-        # Add the conditions to the session
-        db.add(conditions)
+        # The service expects the string experiment_id
+        conditions = ExperimentalConditionsService.create_experimental_conditions(
+            db=db, 
+            experiment_id=experiment.experiment_id, # Pass the string ID
+            conditions_data=conditions_data
+        )
+
+        if conditions is None:
+            # Handle error if conditions couldn't be created (e.g., experiment not found by service)
+            # This case might be redundant if experiment is created right above, but good practice
+            raise Exception(f"Failed to create experimental conditions for {experiment.experiment_id}")
+        # Note: The service adds 'conditions' to the session and calls calculate_derived_conditions
+        # --- End Service Usage ---
         
         # Add initial notes if any
         initial_note_text = exp_data.get('initial_note')
         if initial_note_text:
+            # Ensure experiment has an ID before associating note if FK is on Experiment.id
+            # If FK is on experiment_id (string), this flush isn't strictly needed here
+            # db.flush() # Uncomment if ExperimentNotes.experiment_id links to Experiment.id (PK)
             note = ExperimentNotes(
-                experiment_id=experiment.id,
+                experiment_id=experiment.experiment_id, # Assuming FK is on the string ID
                 note_text=initial_note_text
             )
             db.add(note)
         
         # Log the creation of the experiment and its related data
+        # Ensure experiment has an ID before logging if FK is on Experiment.id
+        # db.flush() # Uncomment if ModificationsLog.experiment_id links to Experiment.id (PK)
         log_modification(
             db=db,
-            experiment_id=experiment.id,
+            experiment_id=experiment.experiment_id, # Assuming FK is on the string ID
             modified_table="experiments",
             modification_type="create",
             new_values={
@@ -233,8 +231,11 @@ def save_experiment():
                 'researcher': experiment.researcher,
                 'date': experiment.date.isoformat(),
                 'status': experiment.status.name,
-                'conditions': exp_data['conditions'], # Log the full conditions dict used
-                'notes': [initial_note_text] # Log the initial note
+                # Log the conditions *after* potential calculation by the service
+                # Need to refresh 'conditions' to get calculated values if service doesn't refresh
+                # The service currently does refresh, so this should be fine
+                'conditions': {c.key: getattr(conditions, c.key) for c in conditions.__table__.columns if c.key != 'id' and c.key != 'experiment_id'},
+                'initial_note': initial_note_text if initial_note_text else None
             }
         )
 
@@ -250,8 +251,10 @@ def save_experiment():
         return True # Indicate success
         
     except Exception as e:
-        db.rollback()
+        if db: # Check if db was initialized before trying to rollback
+            db.rollback()
         st.error(f"Error saving experiment: {str(e)}")
         return False # Indicate failure
     finally:
-        db.close()
+        if db: # Check if db was initialized before trying to close
+            db.close()

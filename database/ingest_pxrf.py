@@ -117,7 +117,7 @@ def run_pxrf_ingestion(file_source: str, update_existing: bool = False):
         print(f"Successfully retrieved {len(file_bytes)} bytes from source.")
 
         # Read Excel data from bytes using io.BytesIO
-        df = pd.read_excel(io.BytesIO(file_bytes))
+        df = pd.read_excel(io.BytesIO(file_bytes), engine='openpyxl')
         print("\nAnalyzing Excel data:")
         print("Available columns:", df.columns.tolist())
         

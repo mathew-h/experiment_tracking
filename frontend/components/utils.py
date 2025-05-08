@@ -12,6 +12,8 @@ from pathlib import Path
 import logging
 # Import the centralized storage functions
 from utils.storage import save_file, get_file, delete_file
+from sqlalchemy.orm import Session, joinedload
+from database.models import ExperimentalResults, NMRResults, ScalarResults, ExperimentalConditions, Experiment
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +152,22 @@ def delete_file_if_exists(file_path):
         logger.error(f"Error in delete_file_if_exists: {e}", exc_info=True)
         return False
 
+# --- Formatting Utility ---
+
+def format_value(value, config):
+    """Formats a value based on its config (type, format string)."""
+    if value is None:
+        return "N/A"
+    if config['type'] == 'number' and config.get('format') and isinstance(value, (int, float)):
+        try:
+           return config['format'] % float(value)
+        except (ValueError, TypeError):
+           # Fallback if format string fails
+           return str(value)
+    else:
+        # Handle non-numeric types or numbers without specific format
+        return str(value)
+
 # --- New Form Generation Utility ---
 def generate_form_fields(field_config, current_data, field_names, key_prefix):
     """
@@ -180,17 +198,29 @@ def generate_form_fields(field_config, current_data, field_names, key_prefix):
         key = f"{key_prefix}_{field_name}"
         help_text = config.get('help')
 
-        # Handle numeric fields with None values
+        # Handle numeric fields with None values and ensure type consistency
         if field_type == 'number':
+            step = config.get('step') # Get the step value
+            is_int_step = isinstance(step, int) # Check if step is integer
+
             try:
-                # If current_value is None, use 0.0 as default
+                # Set default based on step type if current_value is None
                 if current_value is None:
-                    current_value = 0.0
-                # Convert to float if it's a string or number
-                current_value = float(current_value)
+                    current_value = 0 if is_int_step else 0.0
+
+                # Convert to the appropriate type (int or float)
+                if is_int_step:
+                    # Allow float input but convert final value to int if step is int
+                    # st.number_input handles intermediate float values during input
+                    # We just need to ensure the initial value matches step type if possible
+                    current_value = int(float(current_value))
+                else:
+                    # Ensure it's a float if step is float
+                    current_value = float(current_value)
+
             except (ValueError, TypeError):
-                # If conversion fails, use 0.0 as fallback
-                current_value = 0.0
+                # Fallback to 0 or 0.0 based on step type
+                current_value = 0 if is_int_step else 0.0
 
         if field_type == 'text':
             form_values[field_name] = st.text_input(
@@ -249,7 +279,7 @@ def generate_form_fields(field_config, current_data, field_names, key_prefix):
 
 # --- Modification Logging Utility ---
 
-def log_modification(db, experiment_id, modified_table, modification_type, old_values=None, new_values=None):
+def log_modification(db, experiment_id, modified_table, modification_type, old_values=None, new_values=None, related_id=None):
     """
     Creates and adds a modification log entry to the database session.
     
@@ -260,6 +290,7 @@ def log_modification(db, experiment_id, modified_table, modification_type, old_v
         modification_type (str): Type of modification ('create', 'update', 'delete', 'add').
         old_values (dict, optional): Dictionary of values before the change (for update/delete).
         new_values (dict, optional): Dictionary of values after the change (for create/update/add).
+        related_id (int, optional): ID of a related record (e.g., result_id for files) for additional context.
     """
     try:
         # Get user identifier from session state
@@ -269,6 +300,17 @@ def log_modification(db, experiment_id, modified_table, modification_type, old_v
         # Serialize dicts to JSON strings if they exist
         old_values_json = json.dumps(old_values) if old_values else None
         new_values_json = json.dumps(new_values, default=str) if new_values else None # Use default=str for non-serializable types like datetime
+            
+        # If related_id is provided, include it in the values
+        if related_id is not None:
+            if old_values_json:
+                old_values_dict = json.loads(old_values_json)
+                old_values_dict['related_id'] = related_id
+                old_values_json = json.dumps(old_values_dict)
+            if new_values_json:
+                new_values_dict = json.loads(new_values_json)
+                new_values_dict['related_id'] = related_id
+                new_values_json = json.dumps(new_values_dict)
             
         modification = ModificationsLog(
             experiment_id=experiment_id,
@@ -326,7 +368,7 @@ def remove_duplicate_samples(excel_path: str = "data/20250404_Master Data Migrat
         # Read all sheets into a dictionary
         all_sheets = {}
         for sheet_name in excel_file.sheet_names:
-            all_sheets[sheet_name] = pd.read_excel(excel_file, sheet_name=sheet_name)
+            all_sheets[sheet_name] = pd.read_excel(excel_file, sheet_name=sheet_name, engine='openpyxl')
         
         # Get the sample_info sheet
         sample_df = all_sheets['sample_info']
@@ -387,7 +429,7 @@ def check_experiment_duplicates(excel_path: str = "data/20250404_Master Data Mig
             return
         
         # Read experiments sheet
-        df = pd.read_excel(excel_file, sheet_name='experiments')
+        df = pd.read_excel(excel_file, sheet_name='experiments', engine='openpyxl')
         
         # Check for experiment_number duplicates
         if 'experiment_number' in df.columns:
@@ -441,7 +483,7 @@ def clean_external_analyses(excel_path: str = "data/20250404_Master Data Migrati
         # Read all sheets into a dictionary
         all_sheets = {}
         for sheet_name in excel_file.sheet_names:
-            all_sheets[sheet_name] = pd.read_excel(excel_file, sheet_name=sheet_name)
+            all_sheets[sheet_name] = pd.read_excel(excel_file, sheet_name=sheet_name, engine='openpyxl')
         
         # Get the relevant sheets
         analyses_df = all_sheets['external_analyses']
@@ -501,6 +543,130 @@ def clean_external_analyses(excel_path: str = "data/20250404_Master Data Migrati
     except Exception as e:
         logger.error(f"Error cleaning external_analyses sheet: {str(e)}")
         raise
+
+def backfill_calculated_fields(db: Session):
+    """
+    Iterates through results and conditions, recalculating derived fields.
+    Commits changes to the database if any updates were made.
+    """
+    print("Starting backfill of calculated fields...")
+    updated_count = 0 # Track total updates across all types
+
+    # 1. Backfill ExperimentalConditions derived fields
+    # Fetch conditions where calculation inputs are present but outputs might be null
+    conditions_to_update = db.query(ExperimentalConditions).filter(
+        (
+            (ExperimentalConditions.water_to_rock_ratio == None) &
+            (ExperimentalConditions.water_volume != None) &
+            (ExperimentalConditions.rock_mass != None) &
+            (ExperimentalConditions.rock_mass > 0)
+        ) |
+        (
+            (ExperimentalConditions.catalyst_percentage == None) &
+            (ExperimentalConditions.catalyst != None) &
+            (ExperimentalConditions.catalyst_mass != None) &
+            (ExperimentalConditions.rock_mass != None) &
+            (ExperimentalConditions.rock_mass > 0)
+        )
+        # Add other conditions if more derived fields are added
+    ).all()
+    
+    updated_conditions_count = 0
+    if conditions_to_update:
+        print(f"Checking {len(conditions_to_update)} ExperimentalConditions entries for potential updates...")
+        for condition in conditions_to_update:
+            # Store original values to check if anything changed
+            original_wtr = condition.water_to_rock_ratio
+            original_cat_perc = condition.catalyst_percentage
+            condition.calculate_derived_conditions() # Attempt calculation
+            if (condition.water_to_rock_ratio != original_wtr or
+                condition.catalyst_percentage != original_cat_perc):
+                updated_conditions_count += 1
+                # No need to explicitly add, SQLAlchemy tracks changes within the session
+        if updated_conditions_count > 0:
+            print(f"Updated derived fields for {updated_conditions_count} ExperimentalConditions entries.")
+            updated_count += updated_conditions_count
+
+    # 2. Backfill NMRResults calculated fields
+    # It's often simplest to recalculate all, assuming inputs might have changed
+    # Load related experiment and conditions data needed for ammonia_mass_g calculation
+    nmr_results_to_update = db.query(NMRResults).options(
+        joinedload(NMRResults.result_entry)
+            .joinedload(ExperimentalResults.experiment)
+            .joinedload(Experiment.conditions)
+    ).all()
+    
+    updated_nmr_count = 0
+    if nmr_results_to_update:
+        print(f"Checking {len(nmr_results_to_update)} NMRResults entries for potential updates...")
+        for nmr_result in nmr_results_to_update:
+            # Store original values
+            original_total_area = nmr_result.total_nh4_peak_area
+            original_conc_mm = nmr_result.ammonium_concentration_mm
+            original_mass_g = nmr_result.ammonia_mass_g
+            nmr_result.calculate_values() # Recalculate
+            if (nmr_result.total_nh4_peak_area != original_total_area or
+                nmr_result.ammonium_concentration_mm != original_conc_mm or
+                nmr_result.ammonia_mass_g != original_mass_g):
+                 updated_nmr_count += 1
+                 # No need to explicitly add
+        if updated_nmr_count > 0:
+             print(f"Recalculated values for {updated_nmr_count} NMRResults entries.")
+             updated_count += updated_nmr_count
+
+    # 3. Backfill ScalarResults calculated fields (yields)
+    # Fetch Scalar results, ensuring related NMR data and conditions are loaded for yield calculation
+    scalar_results_to_update = db.query(ScalarResults).options(
+        joinedload(ScalarResults.result_entry).joinedload(ExperimentalResults.nmr_data),
+        joinedload(ScalarResults.result_entry).joinedload(ExperimentalResults.experiment).joinedload(Experiment.conditions)
+    ).all()
+    
+    updated_scalar_count = 0
+    if scalar_results_to_update:
+        print(f"Checking {len(scalar_results_to_update)} ScalarResults entries for potential updates...")
+        for scalar_result in scalar_results_to_update:
+            # Store original values
+            original_g_per_ton = scalar_result.grams_per_ton_yield
+            # original_fe_yield = scalar_result.ferrous_iron_yield # If/when calculated
+            scalar_result.calculate_yields() # Recalculate
+            # Check if g_per_ton changed (and potentially fe_yield later)
+            if scalar_result.grams_per_ton_yield != original_g_per_ton: # or scalar_result.ferrous_iron_yield != original_fe_yield:
+                updated_scalar_count += 1
+                # No need to explicitly add
+        if updated_scalar_count > 0:
+            print(f"Recalculated yields for {updated_scalar_count} ScalarResults entries.")
+            updated_count += updated_scalar_count
+
+    # Commit changes if any updates were made
+    if updated_count > 0:
+        print(f"Committing {updated_count} total updates...")
+        db.commit()
+        print("Backfill commit successful.")
+    else:
+        print("No calculated fields needed updating.")
+
+    print("Backfill process finished.")
+
+# --- How to run this --- #
+# This function needs to be called from a script or an admin interface.
+# Example (in a separate script like scripts/run_backfill.py):
+#
+# from sqlalchemy.orm import Session
+# from database.database import SessionLocal
+# from frontend.components.utils import backfill_calculated_fields
+#
+# if __name__ == "__main__":
+#     db: Session = SessionLocal()
+#     try:
+#         print("Running database calculation backfill...")
+#         backfill_calculated_fields(db)
+#         print("Backfill complete.")
+#     except Exception as e:
+#         print(f"An error occurred during backfill: {e}")
+#         db.rollback() # Rollback in case of error during commit
+#     finally:
+#         print("Closing database session.")
+#         db.close()
 
 if __name__ == "__main__":
     # Set up logging

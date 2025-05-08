@@ -26,20 +26,20 @@ def test_file_exists():
 def test_file_readable():
     """Test that the Excel file can be read"""
     try:
-        df = pd.read_excel(PXRF_DATA_PATH)
+        df = pd.read_excel(PXRF_DATA_PATH, engine='openpyxl')
         assert df is not None, "Failed to read Excel file"
     except Exception as e:
         pytest.fail(f"Error reading Excel file: {str(e)}")
 
 def test_required_columns():
     """Test that all required columns are present in the Excel file"""
-    df = pd.read_excel(PXRF_DATA_PATH)
+    df = pd.read_excel(PXRF_DATA_PATH, engine='openpyxl')
     missing_cols = REQUIRED_COLUMNS - set(df.columns)
     assert not missing_cols, f"Missing required columns: {missing_cols}"
 
 def test_reading_no_format():
     """Test the format of Reading No column"""
-    df = pd.read_excel(PXRF_DATA_PATH)
+    df = pd.read_excel(PXRF_DATA_PATH, engine='openpyxl')
     # Check if Reading No column exists
     assert 'Reading No' in df.columns, "Reading No column not found"
     
@@ -56,7 +56,7 @@ def test_reading_no_format():
 
 def test_element_columns_format():
     """Test the format of element columns"""
-    df = pd.read_excel(PXRF_DATA_PATH)
+    df = pd.read_excel(PXRF_DATA_PATH, engine='openpyxl')
     
     for element in ELEMENT_COLUMNS:
         print(f"\nTesting {element} column:")

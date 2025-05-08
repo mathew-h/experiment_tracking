@@ -14,7 +14,7 @@ from database.models import (
 )
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields
-from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG, RESULTS_CONFIG
+from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG, SCALAR_RESULTS_CONFIG, NMR_RESULTS_CONFIG
 
 def edit_experiment(experiment):
     """
