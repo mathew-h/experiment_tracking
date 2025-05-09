@@ -165,7 +165,7 @@ def _save_or_update_primary(db: Session, result: ExperimentalResults, primary_da
 
 
 # --- Main Save Function (Refactored) ---
-def save_results(experiment_id, time_post_reaction, result_type, scalar_data, primary_data, uploaded_files_data=None, result_id_to_edit=None):
+def save_results(experiment_id, time_post_reaction, result_type, result_description, scalar_data, primary_data, uploaded_files_data=None, result_id_to_edit=None):
     """
     Save or update experiment results for a specific time point.
     Handles creation/update of ExperimentalResults, ScalarResults, and primary result data (NMR, GC, etc.).
@@ -174,6 +174,7 @@ def save_results(experiment_id, time_post_reaction, result_type, scalar_data, pr
         experiment_id (int): The primary key (DB ID) of the experiment.
         time_post_reaction (float): Time in hours post-reaction.
         result_type (ResultType): The PRIMARY type of result being saved (Enum member, e.g., NMR).
+        result_description (str): The description for this result entry.
         scalar_data (dict): Dictionary of scalar field values.
         primary_data (dict): Dictionary containing data for the primary result type.
         uploaded_files_data (list[dict], optional): List of file upload data.
@@ -199,6 +200,19 @@ def save_results(experiment_id, time_post_reaction, result_type, scalar_data, pr
             if result.result_type != result_type:
                  st.error(f"Cannot change primary result type during edit (Existing: {result.result_type.name}, Attempted: {result_type.name}).")
                  return False
+            # Update description if it has changed
+            if result.description != result_description:
+                old_desc = result.description
+                result.description = result_description
+                log_modification(
+                    db=db,
+                    experiment_id=result.experiment.experiment_id,
+                    modified_table=ExperimentalResults.__tablename__,
+                    modification_type="update",
+                    old_values={"description": old_desc},
+                    new_values={"description": result_description},
+                    related_id=result.id
+                )
             # No need to log main entry update unless fields on ExperimentalResults itself change
 
         else:
@@ -224,11 +238,24 @@ def save_results(experiment_id, time_post_reaction, result_type, scalar_data, pr
                 experiment=parent_experiment, # Relationship
                 experiment_fk=parent_experiment.id, # Foreign Key
                 time_post_reaction=time_post_reaction,
-                result_type=result_type # Set the PRIMARY type
+                result_type=result_type, # Set the PRIMARY type
+                description=result_description # Set the description
             )
             db.add(result)
             # Log creation of the main entry? Optional, depends on desired log granularity.
-            # log_modification(db, parent_experiment.experiment_id, "experimental_results", "create", new_values={'time': time_post_reaction, 'type': result_type.name}, related_id=None) # Example
+            log_modification(
+                db=db,
+                experiment_id=parent_experiment.experiment_id,
+                modified_table=ExperimentalResults.__tablename__,
+                modification_type="create",
+                new_values={
+                    'time_post_reaction': time_post_reaction,
+                    'result_type': result_type.name,
+                    'description': result_description,
+                    'experiment_fk': parent_experiment.id
+                },
+                related_id=None # For new entry, related_id might be result.id after flush if preferred
+            ) # Example
 
             # Flush to get the result.id needed for related tables
             db.flush()

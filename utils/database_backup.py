@@ -1,0 +1,166 @@
+import os
+import shutil
+import logging
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
+from config import DATABASE_URL
+from config.storage import get_storage_config
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def backup_database(backup_dir=None):
+    """
+    Create a backup of the database file.
+    
+    Args:
+        backup_dir (str, optional): Directory where backups should be stored.
+            If not provided, will use the backup_directory from storage config.
+        
+    Returns:
+        str: Path to the created backup file
+        
+    Raises:
+        ValueError: If database URL is invalid or backup fails
+    """
+    try:
+        # Get the backup directory from config if not provided
+        if backup_dir is None:
+            config = get_storage_config()
+            if 'backup_directory' not in config:
+                raise ValueError("Backup directory not configured")
+            backup_dir = config['backup_directory']
+            
+        # Parse database URL
+        db_url = urlparse(DATABASE_URL)
+        
+        if db_url.scheme != 'sqlite':
+            logger.warning(f"Database backup currently only supports SQLite databases. Found: {db_url.scheme}")
+            logger.warning("For non-SQLite databases, please set up a proper backup solution using database tools.")
+            return None
+            
+        # Get the database file path
+        db_path = db_url.path
+        if db_path.startswith('/'):
+            db_path = db_path[1:]  # Remove leading slash for Windows compatibility
+            
+        if not os.path.exists(db_path):
+            raise ValueError(f"Database file not found at: {db_path}")
+            
+        # Create backup directory if it doesn't exist
+        backup_path = Path(backup_dir)
+        backup_path.mkdir(parents=True, exist_ok=True)
+        
+        # Generate backup filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"experiments_backup_{timestamp}.db"
+        backup_filepath = backup_path / backup_filename
+        
+        # Create the backup
+        shutil.copy2(db_path, backup_filepath)
+        
+        logger.info(f"Database backup created successfully at: {backup_filepath}")
+        return str(backup_filepath)
+        
+    except Exception as e:
+        logger.error(f"Failed to create database backup: {str(e)}")
+        raise ValueError(f"Database backup failed: {str(e)}")
+
+def copy_to_public_location():
+    """
+    Create a copy of the database file in the public sharepoint location.
+    This creates a public copy that users can interact with directly.
+    
+    The public location is specified by the PUBLIC_DATABASE environment variable.
+    The database file will maintain the original name (experiments.db).
+    
+    Returns:
+        str: Path to the public copy if successful, None otherwise
+        
+    Raises:
+        ValueError: If the database URL is invalid or copy fails
+    """
+    try:
+        # Get the public sharepoint directory from environment variable
+        public_dir = os.environ.get("PUBLIC_DATABASE")
+        if not public_dir:
+            logger.warning("PUBLIC_DATABASE environment variable not set, skipping public copy")
+            return None
+            
+        # Parse database URL to get the source file path
+        db_url = urlparse(DATABASE_URL)
+        
+        if db_url.scheme != 'sqlite':
+            logger.warning(f"Public database copy only supports SQLite databases. Found: {db_url.scheme}")
+            return None
+            
+        # Get the database file path
+        db_path = db_url.path
+        if db_path.startswith('/'):
+            db_path = db_path[1:]  # Remove leading slash for Windows compatibility
+            
+        if not os.path.exists(db_path):
+            raise ValueError(f"Database file not found at: {db_path}")
+            
+        # Create target directory if it doesn't exist
+        public_path = Path(public_dir)
+        public_path.mkdir(parents=True, exist_ok=True)
+        
+        # Get the database filename from the path
+        db_filename = Path(db_path).name
+        # If no specific filename, use the default "experiments.db"
+        if not db_filename or db_filename == '':
+            db_filename = "experiments.db"
+        
+        # Create the public copy path
+        public_db_path = public_path / db_filename
+        
+        # Create the public copy
+        shutil.copy2(db_path, public_db_path)
+        
+        logger.info(f"Public database copy created successfully at: {public_db_path}")
+        return str(public_db_path)
+        
+    except Exception as e:
+        logger.error(f"Failed to create public database copy: {str(e)}")
+        return None
+
+def cleanup_old_backups(backup_dir=None, keep_last_n=5):
+    """
+    Remove old backup files, keeping only the most recent N backups.
+    
+    Args:
+        backup_dir (str, optional): Directory containing backup files.
+            If not provided, will use the backup_directory from storage config.
+        keep_last_n (int): Number of most recent backups to keep
+    """
+    try:
+        # Get the backup directory from config if not provided
+        if backup_dir is None:
+            config = get_storage_config()
+            if 'backup_directory' not in config:
+                logger.warning("Backup directory not configured, skipping cleanup")
+                return
+            backup_dir = config['backup_directory']
+            
+        backup_path = Path(backup_dir)
+        if not backup_path.exists():
+            logger.warning(f"Backup directory does not exist: {backup_dir}")
+            return
+            
+        # Get all backup files and sort by modification time
+        backup_files = sorted(
+            [f for f in backup_path.glob("experiments_backup_*.db")],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )
+        
+        # Remove old backups
+        for old_backup in backup_files[keep_last_n:]:
+            old_backup.unlink()
+            logger.info(f"Removed old backup: {old_backup}")
+            
+    except Exception as e:
+        logger.error(f"Failed to cleanup old backups: {str(e)}")

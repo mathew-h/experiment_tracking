@@ -7,6 +7,7 @@ load_dotenv()
 # Storage configuration
 STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")  # "local" or "s3" or "gcs"
 STORAGE_BUCKET = os.getenv("STORAGE_BUCKET", "")
+BACKUP_DIRECTORY = os.getenv("BACKUP_DIRECTORY", os.path.join(os.path.dirname(os.path.dirname(__file__)), "backups"))
 
 # AWS S3 configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -25,17 +26,20 @@ def get_storage_config():
             "bucket": STORAGE_BUCKET,
             "aws_access_key_id": AWS_ACCESS_KEY_ID,
             "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
-            "region": AWS_REGION
+            "region": AWS_REGION,
+            "backup_directory": BACKUP_DIRECTORY
         }
     elif STORAGE_TYPE == "gcs":
         return {
             "type": "gcs",
             "bucket": STORAGE_BUCKET,
             "project": GOOGLE_CLOUD_PROJECT,
-            "credentials_path": GOOGLE_APPLICATION_CREDENTIALS
+            "credentials_path": GOOGLE_APPLICATION_CREDENTIALS,
+            "backup_directory": BACKUP_DIRECTORY
         }
     else:
         return {
             "type": "local",
-            "base_path": os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+            "base_path": os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"),
+            "backup_directory": BACKUP_DIRECTORY
         } 

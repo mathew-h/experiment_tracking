@@ -1,21 +1,39 @@
 import os
+import shutil
 import boto3
 from google.cloud import storage
 from azure.storage.blob import BlobServiceClient, BlobClient
 from config.storage import get_storage_config
 
-def save_file(file_data, file_name, folder="general"):
-    """Save a file to the configured storage system."""
+def save_file(file_data, file_name, folder="general", create_backup=True):
+    """Save a file to the configured storage system.
+    
+    Args:
+        file_data: The binary data of the file to save
+        file_name: The name of the file
+        folder: The folder within the storage system to save the file
+        create_backup: Whether to create a backup copy in the backup directory
+        
+    Returns:
+        str: Path or URL to the saved file
+    """
     config = get_storage_config()
     
+    # Save file to primary storage
     if config["type"] == "s3":
-        return save_to_s3(file_data, file_name, folder, config)
+        primary_path = save_to_s3(file_data, file_name, folder, config)
     elif config["type"] == "gcs":
-        return save_to_gcs(file_data, file_name, folder, config)
+        primary_path = save_to_gcs(file_data, file_name, folder, config)
     elif config["type"] == "azure":
-        return save_to_azure(file_data, file_name, folder, config)
+        primary_path = save_to_azure(file_data, file_name, folder, config)
     else:
-        return save_to_local(file_data, file_name, folder, config)
+        primary_path = save_to_local(file_data, file_name, folder, config)
+    
+    # Create backup if requested
+    if create_backup:
+        backup_path = save_to_backup(file_data, file_name, folder, config)
+    
+    return primary_path
 
 def get_file(file_path):
     """Retrieve a file from the configured storage system."""
@@ -212,4 +230,20 @@ def get_from_local(file_path, config):
 def delete_from_local(file_path, config):
     """Delete a file from local storage."""
     if os.path.exists(file_path):
-        os.remove(file_path) 
+        os.remove(file_path)
+
+def save_to_backup(file_data, file_name, folder, config):
+    """Save a file to the backup directory."""
+    if 'backup_directory' not in config:
+        print("Warning: Backup directory not configured, skipping backup")
+        return None
+        
+    backup_folder_path = os.path.join(config['backup_directory'], folder)
+    os.makedirs(backup_folder_path, exist_ok=True)
+    
+    backup_file_path = os.path.join(backup_folder_path, file_name)
+    with open(backup_file_path, 'wb') as f:
+        f.write(file_data)
+    
+    print(f"Backup created at: {backup_file_path}")
+    return backup_file_path 

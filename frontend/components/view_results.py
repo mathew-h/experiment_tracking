@@ -251,6 +251,7 @@ def render_results_form(experiment_db_id):
                 form_title = f"Edit {primary_result_type.name} Results at {result_to_edit.time_post_reaction:.1f} hours"
                 editing_time = result_to_edit.time_post_reaction
                 current_data['time_post_reaction'] = editing_time # Pre-populate time
+                current_data['description'] = result_to_edit.description # Pre-populate description
 
                 # Pre-populate from ScalarResults first
                 if result_to_edit.scalar_data:
@@ -305,6 +306,7 @@ def render_results_form(experiment_db_id):
         # Use defaults from SCALAR config
         for field_name, config in SCALAR_RESULTS_CONFIG.items():
             current_data[field_name] = config['default']
+        current_data['description'] = "" # Default to empty for new results
         # Use defaults from the default primary type's config
         if primary_result_type and primary_result_type.name in RESULT_TYPE_FIELDS:
             primary_config = RESULT_TYPE_FIELDS[primary_result_type.name].get('config', {})
@@ -398,6 +400,17 @@ def render_results_form(experiment_db_id):
             st.text_input("Primary Result Type", value=primary_result_type.name, disabled=True)
             current_primary_result_type = primary_result_type # Use the type being edited
 
+        # --- Result Description Field ---
+        description_label = "Result Description"
+        description_value = current_data.get('description', "") # Get from current_data or default to empty
+        description_key = f"results_description_{form_key}"
+        form_values['description'] = st.text_area(
+            label=description_label,
+            value=description_value,
+            key=description_key,
+            help="Add a general description for this result time point."
+        )
+
         # --- Time Post-Reaction Field (remains mostly the same) ---
         time_config = SCALAR_RESULTS_CONFIG['time_post_reaction'] # Still defined in scalar
         time_label = time_config['label']
@@ -483,12 +496,15 @@ def render_results_form(experiment_db_id):
                     # *** IMPORTANT: Need to update save_results function ***
                     # It should now accept 'scalar_data' and 'primary_data' dictionaries
                     # Prepare scalar data dict (excluding time)
-                    scalar_data_to_save = {k: v for k, v in form_values.items() if k != 'time_post_reaction'}
+                    scalar_data_to_save = {k: v for k, v in form_values.items() if k != 'time_post_reaction' and k != 'description'}
+                    # Get the description from form_values
+                    result_description = form_values.get('description', "")
 
                     save_success = save_results(
                         experiment_id=experiment_db_id,
                         time_post_reaction=time_val,
                         result_type=current_primary_result_type, # Pass the PRIMARY ResultType Enum
+                        result_description=result_description, # Pass the new description
                         scalar_data=scalar_data_to_save,      # Pass the dict of scalar values
                         primary_data=primary_specific_data_values, # Pass the dict for the primary type
                         uploaded_files_data=files_to_save,
