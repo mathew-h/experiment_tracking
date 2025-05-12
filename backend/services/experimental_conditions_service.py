@@ -31,9 +31,16 @@ class ExperimentalConditionsService:
         # If your model expects the string experiment_id directly (less common for FKs but check your model):
         # conditions_data['experiment_id'] = experiment_id 
         # Let's assume the FK links to Experiment.id based on standard practice
-        conditions_data['experiment_id'] = experiment.experiment_id # Correct based on model definition
-
-        conditions = ExperimentalConditions(**conditions_data)
+        
+        # Create the ExperimentalConditions instance, ensuring the foreign key is correctly set.
+        # We use experiment_fk = experiment.id, assuming 'experiment_fk' is the name of the 
+        # foreign key column in ExperimentalConditions linking to Experiment.id (PK).
+        # The string experiment_id (e.g., "SERUM_MH_027") is also stored for convenience/denormalization.
+        conditions = ExperimentalConditions(
+            **conditions_data, 
+            experiment_fk=experiment.id,  # Assign the integer PK of the experiment
+            experiment_id=experiment.experiment_id # Keep the string ID as well if the model has it
+        )
         
         # *** Call the method to calculate derived fields ***
         conditions.calculate_derived_conditions()

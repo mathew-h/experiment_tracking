@@ -186,9 +186,9 @@ def save_experiment():
         
         # Add the experiment to the session
         db.add(experiment)
-        # *** Don't flush yet, let the service handle conditions first ***
+        db.flush() # Flush to ensure experiment exists in the transaction before service query
         
-        # --- Use the Service to Create Experimental Conditions --- 
+        # --- Use the Service to Create Experimental Conditions ---
         conditions_data = exp_data['conditions'].copy() # Get condition values
         # The service expects the string experiment_id
         conditions = ExperimentalConditionsService.create_experimental_conditions(
@@ -209,9 +209,10 @@ def save_experiment():
         if initial_note_text:
             # Ensure experiment has an ID before associating note if FK is on Experiment.id
             # If FK is on experiment_id (string), this flush isn't strictly needed here
-            # db.flush() # Uncomment if ExperimentNotes.experiment_id links to Experiment.id (PK)
+            # db.flush() # Uncomment if ExperimentNotes.experiment_id links to Experiment.id (PK) -> Already flushed earlier
             note = ExperimentNotes(
-                experiment_id=experiment.experiment_id, # Assuming FK is on the string ID
+                experiment_fk=experiment.id, # Assign the integer PK of the experiment
+                experiment_id=experiment.experiment_id, # Assuming FK is on the string ID -> Keep string ID too
                 note_text=initial_note_text
             )
             db.add(note)
