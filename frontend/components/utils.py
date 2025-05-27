@@ -3,7 +3,7 @@ from frontend.config.variable_config import (
 )
 import os
 import streamlit as st
-from database.models import ModificationsLog
+from database.models import ModificationsLog, SampleInfo
 import json # Added for JSON serialization in logging
 import datetime # Added for timestamp in logging and date input
 from database.database import SessionLocal
@@ -14,6 +14,7 @@ import logging
 from utils.storage import save_file, get_file, delete_file
 from sqlalchemy.orm import Session, joinedload
 from database.models import ExperimentalResults, NMRResults, ScalarResults, ExperimentalConditions, Experiment
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -169,161 +170,79 @@ def format_value(value, config):
         return str(value)
 
 # --- New Form Generation Utility ---
-def generate_form_fields(field_config, current_data, field_names, key_prefix):
+def generate_form_fields(field_config, current_values, field_names, key_prefix=""):
     """
-    Generates Streamlit form input elements based on configuration.
-
-    Args:
-        field_config (dict): The FIELD_CONFIG dictionary from variable_config.py.
-        current_data (dict): Dictionary containing the current values for the fields 
-                             (e.g., from session_state or an existing experiment record).
-        field_names (list): A list of field names (keys from field_config) to generate inputs for.
-        key_prefix (str): A unique prefix for Streamlit widget keys to avoid conflicts.
-
-    Returns:
-        dict: A dictionary where keys are field names and values are the 
-              current values entered/selected by the user in the generated widgets.
+    Generate form fields based on configuration.
     """
-    form_values = {}
+    values = {}
     for field_name in field_names:
-        if field_name not in field_config:
-            st.warning(f"Configuration for field '{field_name}' not found. Skipping.")
-            continue
-
-        config = field_config[field_name]
-        label = config['label']
-        field_type = config['type']
-        # Get current value, falling back to default if not present in current_data
-        current_value = current_data.get(field_name, config.get('default')) # Use .get for default
-        key = f"{key_prefix}_{field_name}"
-        help_text = config.get('help')
-
-        # Handle numeric fields with None values and ensure type consistency
-        if field_type == 'number':
-            step = config.get('step') # Get the step value
-            is_int_step = isinstance(step, int) # Check if step is integer
-
-            try:
-                # Set default based on step type if current_value is None
-                if current_value is None:
-                    current_value = 0 if is_int_step else 0.0
-
-                # Convert to the appropriate type (int or float)
-                if is_int_step:
-                    # Allow float input but convert final value to int if step is int
-                    # st.number_input handles intermediate float values during input
-                    # We just need to ensure the initial value matches step type if possible
-                    current_value = int(float(current_value))
-                else:
-                    # Ensure it's a float if step is float
-                    current_value = float(current_value)
-
-            except (ValueError, TypeError):
-                # Fallback to 0 or 0.0 based on step type
-                current_value = 0 if is_int_step else 0.0
-
-        if field_type == 'text':
-            form_values[field_name] = st.text_input(
-                label=label,
-                value=str(current_value) if current_value is not None else '',
-                key=key,
-                help=help_text
+        config = field_config.get(field_name, {})
+        current_value = current_values.get(field_name)
+        
+        # Handle date fields
+        if config.get('type') == 'date':
+            # Ensure value passed is either None or a datetime.date/datetime.datetime
+            date_value = current_value if isinstance(current_value, (datetime.date, datetime.datetime)) else None
+            if isinstance(date_value, datetime.datetime):
+                if date_value.tzinfo is None:
+                    date_value = date_value.replace(tzinfo=pytz.UTC)
+                # Convert to EST for display
+                est = pytz.timezone('US/Eastern')
+                date_value = date_value.astimezone(est)
+            
+            values[field_name] = st.date_input(
+                config.get('label', field_name),
+                value=date_value,
+                key=f"{key_prefix}_{field_name}"
             )
-        elif field_type == 'number':
-            form_values[field_name] = st.number_input(
-                label=label,
-                min_value=config.get('min_value'),
-                max_value=config.get('max_value'),
-                value=current_value,
-                step=config.get('step'),
-                format=config.get('format'),
-                key=key,
-                help=help_text
-            )
-        elif field_type == 'select':
-             # Find index for selectbox, default to 0 if not found or invalid
-            try:
-                index = config['options'].index(current_value) if current_value in config['options'] else 0
-            except ValueError:
-                index = 0 # Default to first option if value not in list
-            form_values[field_name] = st.selectbox(
-                label=label,
-                options=config['options'],
-                index=index, 
-                key=key,
-                help=help_text
-            )
-        elif field_type == 'text_area': # Added for notes or descriptions
-             form_values[field_name] = st.text_area(
-                 label=label,
-                 value=str(current_value) if current_value is not None else '',
-                 height=config.get('height', 100), # Optional height
-                 key=key,
-                 help=help_text
-             )
-        elif field_type == 'date':
-             # st.date_input handles None value correctly (shows current date by default)
-             # Ensure value passed is either None or a datetime.date/datetime.datetime
-             date_value = current_value if isinstance(current_value, (datetime.date, datetime.datetime)) else None
-             form_values[field_name] = st.date_input(
-                 label=label,
-                 value=date_value, 
-                 key=key,
-                 help=help_text
-             )
-        # Add more types (e.g., date, file_uploader) as needed
         else:
-            st.warning(f"Unsupported field type '{field_type}' for field '{field_name}'. Skipping.")
-
-    return form_values
+            # Handle other field types as before
+            values[field_name] = st.text_input(
+                config.get('label', field_name),
+                value=str(current_value) if current_value is not None else "",
+                key=f"{key_prefix}_{field_name}"
+            )
+    
+    return values
 
 # --- Modification Logging Utility ---
 
-def log_modification(db, experiment_id, modified_table, modification_type, old_values=None, new_values=None, related_id=None):
+def log_modification(db, experiment_id, modified_table, modification_type, old_values=None, new_values=None):
     """
-    Creates and adds a modification log entry to the database session.
-    
-    Args:
-        db (Session): The SQLAlchemy database session.
-        experiment_id (int or None): The ID of the related experiment (None for sample-level changes).
-        modified_table (str): The name of the table that was modified.
-        modification_type (str): Type of modification ('create', 'update', 'delete', 'add').
-        old_values (dict, optional): Dictionary of values before the change (for update/delete).
-        new_values (dict, optional): Dictionary of values after the change (for create/update/add).
-        related_id (int, optional): ID of a related record (e.g., result_id for files) for additional context.
+    Log a modification to the database.
     """
     try:
-        # Get user identifier from session state
-        user = st.session_state.get('user', {})
-        user_identifier = user.get('email', 'Unknown User') if isinstance(user, dict) else 'Unknown User'
+        # Convert any datetime objects to UTC before JSON serialization
+        if old_values:
+            for key, value in old_values.items():
+                if isinstance(value, datetime.datetime):
+                    if value.tzinfo is None:
+                        value = value.replace(tzinfo=pytz.UTC)
+                    old_values[key] = value.isoformat()
         
-        # Serialize dicts to JSON strings if they exist
-        old_values_json = json.dumps(old_values) if old_values else None
-        new_values_json = json.dumps(new_values, default=str) if new_values else None # Use default=str for non-serializable types like datetime
-            
-        # If related_id is provided, include it in the values
-        if related_id is not None:
-            if old_values_json:
-                old_values_dict = json.loads(old_values_json)
-                old_values_dict['related_id'] = related_id
-                old_values_json = json.dumps(old_values_dict)
-            if new_values_json:
-                new_values_dict = json.loads(new_values_json)
-                new_values_dict['related_id'] = related_id
-                new_values_json = json.dumps(new_values_dict)
-            
-        modification = ModificationsLog(
+        if new_values:
+            for key, value in new_values.items():
+                if isinstance(value, datetime.datetime):
+                    if value.tzinfo is None:
+                        value = value.replace(tzinfo=pytz.UTC)
+                    new_values[key] = value.isoformat()
+        
+        # Create the log entry
+        log_entry = ModificationsLog(
             experiment_id=experiment_id,
-            modified_by=user_identifier,
-            modification_type=modification_type,
             modified_table=modified_table,
-            old_values=old_values_json,
-            new_values=new_values_json
+            modification_type=modification_type,
+            old_values=old_values,
+            new_values=new_values
         )
-        db.add(modification)
+        
+        db.add(log_entry)
+        db.commit()
+        
     except Exception as e:
-        # Log the error but don't crash the main operation
-        st.error(f"Error creating modification log: {str(e)}")
+        db.rollback()
+        st.error(f"Error logging modification: {str(e)}")
+        raise e
 
 # --- Moved from view_experiments.py ---
 def extract_conditions(conditions_obj):
@@ -667,6 +586,72 @@ def backfill_calculated_fields(db: Session):
 #     finally:
 #         print("Closing database session.")
 #         db.close()
+
+def get_sample_options():
+    """
+    Fetch all samples from the database and format them for the selectbox.
+    
+    This function queries the SampleInfo table to retrieve all available samples
+    and formats them into a user-friendly display format that includes sample ID,
+    rock classification, and location information.
+    
+    Returns:
+        tuple: A tuple containing:
+            - options_list (list): List of formatted display strings for the selectbox
+            - sample_dict (dict): Dictionary mapping display text to sample_id
+    """
+    try:
+        with SessionLocal() as db:
+            samples = db.query(
+                SampleInfo.sample_id,
+                SampleInfo.rock_classification,
+                SampleInfo.locality,
+                SampleInfo.state,
+                SampleInfo.country
+            ).order_by(SampleInfo.sample_id).all()
+            
+            if not samples:
+                logger.info("No samples found in database")
+                return [""], {}
+            
+            # Create formatted options and mapping dictionary
+            options = [""]  # Empty option for no selection
+            sample_dict = {"": ""}  # Map empty option to empty string
+            
+            for sample in samples:
+                # Ensure sample_id is not None or empty
+                if not sample.sample_id or not sample.sample_id.strip():
+                    logger.warning(f"Skipping sample with empty sample_id: {sample}")
+                    continue
+                
+                # Create a descriptive display text
+                display_parts = [sample.sample_id.strip()]
+                
+                if sample.rock_classification and sample.rock_classification.strip():
+                    display_parts.append(sample.rock_classification.strip())
+                
+                if sample.locality and sample.locality.strip():
+                    location_parts = [sample.locality.strip()]
+                    if sample.state and sample.state.strip():
+                        location_parts.append(sample.state.strip())
+                    if sample.country and sample.country.strip():
+                        location_parts.append(sample.country.strip())
+                    display_parts.append(f"({', '.join(location_parts)})")
+                
+                display_text = " - ".join(display_parts)
+                options.append(display_text)
+                sample_dict[display_text] = sample.sample_id.strip()
+                
+                # Debug logging for the first few samples
+                if len(options) <= 4:  # Log first 3 samples (plus empty option)
+                    logger.debug(f"Sample mapping: '{display_text}' -> '{sample.sample_id.strip()}'")
+            
+            logger.info(f"Loaded {len(samples)} samples for selection")
+            return options, sample_dict
+    except Exception as e:
+        st.error(f"Error loading samples: {str(e)}")
+        logger.error(f"Error in get_sample_options: {e}", exc_info=True)
+        return [""], {}
 
 if __name__ == "__main__":
     # Set up logging

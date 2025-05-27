@@ -1,12 +1,14 @@
 import streamlit as st
 import pandas as pd
 import io
+from datetime import datetime, timedelta
 from database.database import SessionLocal
 from database.models import (
     Experiment, SampleInfo, ExperimentalConditions, ExperimentNotes,
-    ExperimentalResults, NMRResults, ScalarResults, ExternalAnalysis, PXRFReading
+    ExperimentalResults, NMRResults, ScalarResults, ExternalAnalysis, PXRFReading,
+    ModificationsLog
 )
-from sqlalchemy import text
+from sqlalchemy import text, and_
 
 def download_database_as_excel():
     """
@@ -50,6 +52,88 @@ def download_database_as_excel():
     finally:
         db.close()
 
+def generate_weekly_log():
+    """
+    Generates a CSV file containing all database modifications from the last 7 days.
+    """
+    db = SessionLocal()
+    try:
+        # Calculate date 7 days ago
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        
+        # Get modifications log entries
+        modifications = db.query(ModificationsLog).filter(
+            ModificationsLog.created_at >= seven_days_ago
+        ).all()
+        
+        # Get new experiments
+        new_experiments = db.query(Experiment).filter(
+            Experiment.created_at >= seven_days_ago
+        ).all()
+        
+        # Get new sample entries
+        new_samples = db.query(SampleInfo).filter(
+            SampleInfo.created_at >= seven_days_ago
+        ).all()
+        
+        # Get new experimental results
+        new_results = db.query(ExperimentalResults).filter(
+            ExperimentalResults.created_at >= seven_days_ago
+        ).all()
+        
+        # Prepare data for CSV
+        log_data = []
+        
+        # Add modifications log entries
+        for mod in modifications:
+            log_data.append({
+                'ID': mod.experiment_id or 'N/A',
+                'Type': f'Modification - {mod.modification_type}',
+                'Description': f'Modified {mod.modified_table}',
+                'Date': mod.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        # Add new experiments
+        for exp in new_experiments:
+            log_data.append({
+                'ID': exp.experiment_id,
+                'Type': 'New Experiment',
+                'Description': f'Status: {exp.status.value}',
+                'Date': exp.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        # Add new samples
+        for sample in new_samples:
+            log_data.append({
+                'ID': sample.sample_id,
+                'Type': 'New Sample',
+                'Description': f'Rock Classification: {sample.rock_classification}',
+                'Date': sample.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        # Add new results
+        for result in new_results:
+            log_data.append({
+                'ID': result.experiment_id,
+                'Type': f'New Result - {result.result_type.value}',
+                'Description': result.description or 'No description',
+                'Date': result.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        # Sort by date
+        log_data.sort(key=lambda x: x['Date'], reverse=True)
+        
+        # Convert to DataFrame and then to CSV
+        df = pd.DataFrame(log_data)
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        return output.getvalue()
+    except Exception as e:
+        st.error(f"Error generating weekly log: {str(e)}")
+        return None
+    finally:
+        db.close()
+
 def render_sidebar():
     with st.sidebar:
         st.title("Navigation")
@@ -86,6 +170,16 @@ def render_sidebar():
                 db.close()
 
         st.markdown("---") # Separator
+        
+        # Add weekly log download button
+        weekly_log_data = generate_weekly_log()
+        if weekly_log_data:
+            st.download_button(
+                label="Download Weekly Log",
+                data=weekly_log_data,
+                file_name=f"weekly_log_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
         
         excel_data = download_database_as_excel()
         if excel_data:

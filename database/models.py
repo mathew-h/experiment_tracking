@@ -26,10 +26,10 @@ class Experiment(Base):
     experiment_number = Column(Integer, unique=True, nullable=False)  # Auto-incrementing number
     sample_id = Column(String, ForeignKey("sample_info.sample_id", ondelete="SET NULL"), nullable=True) # Foreign key to SampleInfo, SET NULL on delete
     researcher = Column(String)
-    date = Column(DateTime)
+    date = Column(DateTime(timezone=True))
     status = Column(SQLEnum(ExperimentStatus))
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     conditions = relationship("ExperimentalConditions", back_populates="experiment", uselist=False, cascade="all, delete-orphan")
     notes = relationship("ExperimentNotes", back_populates="experiment", cascade="all, delete-orphan")
@@ -73,8 +73,8 @@ class ExperimentalConditions(Base):
     initial_conductivity = Column(Float, nullable=True)
     initial_alkalinity = Column(Float, nullable=True)
     feedstock = Column(String, nullable=True)  # Valid values: "Nitrogen", "Nitrate", "Blank"
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     experiment = relationship("Experiment", back_populates="conditions", foreign_keys=[experiment_fk])
 
@@ -312,8 +312,8 @@ class ExperimentNotes(Base):
     experiment_id = Column(String, nullable=False, index=True) # Human-readable ID
     experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False) # FK to Experiment PK
     note_text = Column(Text)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     experiment = relationship("Experiment", back_populates="notes", foreign_keys=[experiment_fk])
 
@@ -328,7 +328,7 @@ class ModificationsLog(Base):
     modified_table = Column(String)  # Which table was modified
     old_values = Column(JSON)  # Previous values
     new_values = Column(JSON)  # New values
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     experiment = relationship("Experiment", back_populates="modifications", foreign_keys=[experiment_fk])
 
@@ -357,8 +357,8 @@ class SampleInfo(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     description = Column(Text)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     experiments = relationship("Experiment", back_populates="sample_info", foreign_keys="[Experiment.sample_id]")
@@ -389,15 +389,15 @@ class ExternalAnalysis(Base):
     # Add ondelete="CASCADE"
     sample_id = Column(String, ForeignKey("sample_info.sample_id", ondelete="CASCADE"), nullable=False, index=True)
     analysis_type = Column(String)  # General type/category (e.g., 'Elemental Scan', 'Mineralogy')
-    analysis_date = Column(DateTime)
+    analysis_date = Column(DateTime(timezone=True))
     laboratory = Column(String)
     analyst = Column(String)
     # Link to PXRFReading table via this field, with SET NULL on delete
     pxrf_reading_no = Column(String, ForeignKey("pxrf_readings.reading_no", ondelete="SET NULL"), nullable=True, index=True)
     description = Column(Text)
     analysis_metadata = Column(JSON)  # For storing additional analysis-specific data
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     # Updated sample_info relationship
@@ -428,8 +428,8 @@ class PXRFReading(Base):
     # Add other elements as needed, matching REQUIRED_COLUMNS in ingestion script
 
     # Timestamps for tracking ingestion
-    ingested_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Add relationship back to ExternalAnalysis
     external_analyses = relationship("ExternalAnalysis", back_populates="pxrf_reading")

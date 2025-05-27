@@ -1,0 +1,52 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Deployment Workflow
+
+## Development Environment (Personal Work Computer)
+- Primary development and code changes happen here
+- Changes are committed and pushed to GitHub
+- Local database is used for development and testing
+- Environment variables should be configured for local development
+
+## Production Environment (Lab PC)
+- Acts as the production server hosting the Streamlit app
+- Pulls changes from GitHub to update the application
+- Maintains the production database
+- Runs automated backups and public database copies
+- Environment variables should be configured for production
+
+## Database Management
+- Lab PC maintains the production database (experiments.db)
+- Personal computer uses a separate development database
+- Never directly modify the production database on the lab PC
+- All database changes must go through migrations
+
+## Backup Strategy
+- Lab PC runs automated backups every 48 hours
+- Public database copies are created every 12 hours
+- Backup location is configured via BACKUP_DIRECTORY environment variable
+- Public copy location is configured via PUBLIC_DATABASE environment variable
+
+## Deployment Process
+1. Make changes on personal work computer
+2. Test changes locally
+3. Commit and push to GitHub
+4. Pull changes on lab PC
+5. Run any new migrations
+6. Restart the Streamlit app if necessary
+
+## Environment Variables
+- Keep sensitive configuration in environment variables
+- Use different .env files for development and production
+- Never commit .env files to GitHub
+- Document required environment variables in README.md
+
+## Important Notes
+- Always pull latest changes before starting new development
+- Test database migrations locally before deploying
+- Keep backup and public copy locations synchronized between environments
+- Monitor backup logs for any issues
+

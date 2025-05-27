@@ -164,6 +164,16 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Specify the starting pH of the solution."
     },
+    'rock_mass': {
+        'label': "Rock Mass (g)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'step': 0.001,
+        'format': "%.3f",
+        'required': True,
+        'help': "Enter the mass of the rock sample in grams."
+    },
     'catalyst': {
         'label': "Catalyst",
         'default': '',
@@ -180,16 +190,6 @@ FIELD_CONFIG = {
         'format': "%.4f",
         'required': True,
         'help': "Enter the mass of catalyst used in grams."
-    },
-    'rock_mass': {
-        'label': "Rock Mass (g)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.001,
-        'format': "%.3f",
-        'required': True,
-        'help': "Enter the mass of the rock sample in grams."
     },
     'water_volume': {
         'label': "Water Volume (mL)",
@@ -225,13 +225,14 @@ FIELD_CONFIG = {
     },
     'water_to_rock_ratio': {
         'label': "Water to Rock Ratio",
-        'default': lambda: water_volume / rock_mass if rock_mass > 0 else 0.0,  # Calculate water to rock ratio based on water_volume/rock_mass
+        'default': 0.0,  # Simple default value instead of lambda
         'type': 'number',
         'min_value': 0.0,
         'step': 0.1,
         'format': "%.2f",
         'required': False,
-        'help': "Enter the mass ratio of water to rock (optional)."
+        'help': "This is automatically calculated based on rock mass and water volume.",
+        'readonly': True # Make this field read-only
     },
     'catalyst_percentage': {
         'label': "Catalyst Percentage (%)",
@@ -248,7 +249,7 @@ FIELD_CONFIG = {
         'label': "Feedstock Type",
         'type': 'select',
         'options': FEEDSTOCK_TYPES,
-        'default': None,
+        'default': 'Nitrate',
         'required': False,
         'help': "Feedstock type. Valid values: Nitrogen, Nitrate, or Blank."
     },
@@ -281,7 +282,7 @@ FIELD_CONFIG = {
     },
     'initial_nitrate_concentration': {
         'label': "Initial Nitrate Concentration (mM)",
-        'default': 0.0,
+        'default': 50.0,
         'type': 'number',
         'min_value': 0.0,
         'step': 0.1,

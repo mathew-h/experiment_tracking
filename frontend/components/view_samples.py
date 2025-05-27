@@ -46,9 +46,7 @@ def render_sample_inventory():
     if 'samples_page' not in st.session_state:
         st.session_state.samples_page = 1
     if 'samples_per_page' not in st.session_state:
-        st.session_state.samples_per_page = 10
-
-    # Initialize session state for sorting if not exists
+        st.session_state.samples_per_page = 25
     if 'sort_elements' not in st.session_state:
         st.session_state.sort_elements = []
     if 'sort_directions' not in st.session_state:
@@ -219,13 +217,6 @@ def render_sample_inventory():
                     st.session_state.samples_page += 1
                     st.rerun()
                     
-        # Items per page selector
-        st.selectbox(
-            "Items per page",
-            options=[10, 25, 50],
-            key="samples_per_page",
-            on_change=lambda: setattr(st.session_state, 'samples_page', 1)
-        )
     else:
         st.info("No samples found matching the selected criteria.")
     
@@ -461,7 +452,7 @@ def display_sample_details(sample_id):
                 st.session_state.adding_photo = True
                 st.session_state.adding_analysis = False # Ensure analysis form is closed
                 st.session_state.current_sample_id = sample_id 
-                st.session_state.current_sample_db_id = sample.id
+                st.session_state.current_sample_db_id = sample.sample_id
                 st.rerun() # Rerun to show the form immediately
 
             # Photo Upload Form 
@@ -497,7 +488,7 @@ def display_sample_details(sample_id):
                 st.session_state.adding_analysis = True
                 st.session_state.adding_photo = False # Ensure photo form is closed
                 st.session_state.current_sample_id = sample_id
-                st.session_state.current_sample_db_id = sample.id 
+                st.session_state.current_sample_db_id = sample.sample_id
                 st.rerun() # Rerun to show the form immediately
             
             # External Analysis Form

@@ -33,6 +33,17 @@ def backup_database(backup_dir=None):
                 raise ValueError("Backup directory not configured")
             backup_dir = config['backup_directory']
             
+        # Clean up the backup directory path
+        if isinstance(backup_dir, str):
+            # Remove any raw string prefix (r"...") if present
+            if backup_dir.startswith('r"') and backup_dir.endswith('"'):
+                backup_dir = backup_dir[2:-1]
+            # Remove any quotes if present
+            backup_dir = backup_dir.strip('"\'')
+            
+        # Log the original backup directory for debugging
+        logger.info(f"Original backup directory: {repr(backup_dir)}")
+            
         # Parse database URL
         db_url = urlparse(DATABASE_URL)
         
@@ -50,13 +61,32 @@ def backup_database(backup_dir=None):
             raise ValueError(f"Database file not found at: {db_path}")
             
         # Create backup directory if it doesn't exist
-        backup_path = Path(backup_dir)
-        backup_path.mkdir(parents=True, exist_ok=True)
+        try:
+            # Use raw string handling to avoid escape sequence issues
+            # Replace any problematic escape sequences with proper path separators
+            if '\\x01' in repr(backup_dir):
+                # The path has escape sequence issues, let's reconstruct it properly
+                backup_dir = r"C:\Users\MathewHearl\Addis Energy\All Company - Addis Energy\01_R&D\01_Experiment Tracking\98_Backend\DO NOT TOUCH DATABASE FILE"
+                logger.info(f"Using corrected backup directory: {backup_dir}")
+            
+            backup_path = Path(backup_dir)
+            logger.info(f"Final backup path: {backup_path}")
+            
+            # Create directory if it doesn't exist
+            backup_path.mkdir(parents=True, exist_ok=True)
+            
+        except Exception as e:
+            logger.error(f"Failed to create backup directory: {str(e)}")
+            logger.error(f"Backup directory repr: {repr(backup_dir)}")
+            raise ValueError(f"Failed to create backup directory: {str(e)}")
         
         # Generate backup filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_filename = f"experiments_backup_{timestamp}.db"
         backup_filepath = backup_path / backup_filename
+        
+        # Log the full backup path
+        logger.info(f"Attempting to create backup at: {backup_filepath}")
         
         # Create the backup
         shutil.copy2(db_path, backup_filepath)

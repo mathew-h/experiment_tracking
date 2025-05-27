@@ -22,7 +22,8 @@ from frontend.components.edit_experiment import edit_experiment
 from frontend.components.utils import (
     generate_form_fields,
     extract_conditions,
-    split_conditions_for_display
+    split_conditions_for_display,
+    log_modification
 )
 
 from frontend.config.variable_config import (
@@ -35,6 +36,7 @@ from frontend.config.variable_config import (
 
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_, func
+import pytz
 
 def render_view_experiments():
     """
@@ -111,8 +113,7 @@ def render_experiment_list():
     # Initialize pagination state
     if 'experiments_page' not in st.session_state:
         st.session_state.experiments_page = 1
-    if 'experiments_per_page' not in st.session_state:
-        st.session_state.experiments_per_page = 10
+    st.session_state.experiments_per_page = 25
 
     # Create filter/search options
     st.markdown("#### Search and Filter Experiments")
@@ -180,72 +181,118 @@ def render_experiment_list():
         st.markdown("#### Experiments")
         
         # Create a custom table layout with headers
-        col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 1])
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1.2, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
         
         with col1:
             st.markdown("**Experiment ID**")
         with col2:
             st.markdown("**Sample ID**")
         with col3:
-            st.markdown("**Researcher**")
+            st.markdown(f"**{FIELD_CONFIG['initial_ph']['label']}**")
         with col4:
-            st.markdown("**Date**")
+            st.markdown("**Catalyst / Catalyst %**")
         with col5:
-            st.markdown("**Status**")
+            st.markdown(f"**{FIELD_CONFIG['temperature']['label']}**")
         with col6:
-            st.markdown("**Actions**")
+            st.markdown("**Description**")
+        with col7:
+            st.markdown("**Status**")
+        with col8:
+            st.markdown("**Action**")
         
         # Add a separator line
         st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
         
         # Data rows
         for index, exp in enumerate(experiments):
+            # Fetch full experiment details for conditions and notes
+            exp_detail = get_experiment_by_id(exp['experiment_id'])
+            conditions = exp_detail.get('conditions', {}) if exp_detail else {}
+            notes = exp_detail.get('notes', []) if exp_detail else []
+            # Initial pH
+            initial_ph = conditions.get('initial_ph', FIELD_CONFIG['initial_ph']['default'])
+            initial_ph_disp = f"{initial_ph:.1f}" if isinstance(initial_ph, (int, float)) else str(initial_ph)
+            # Catalyst and Catalyst Percentage
+            catalyst = conditions.get('catalyst', FIELD_CONFIG['catalyst']['default'])
+            catalyst_pct = conditions.get('catalyst_percentage', FIELD_CONFIG['catalyst_percentage']['default'])
+            catalyst_pct_disp = f"{catalyst_pct:.1f}" if isinstance(catalyst_pct, (int, float)) else str(catalyst_pct)
+            if not catalyst or str(catalyst).strip() == '':
+                catalyst_combined = f"None / {catalyst_pct_disp}%"
+            else:
+                catalyst_combined = f"{catalyst} / {catalyst_pct_disp}%"
+            # Temperature
+            temperature = conditions.get('temperature', FIELD_CONFIG['temperature']['default'])
+            temperature_disp = f"{temperature:.1f}" if isinstance(temperature, (int, float)) else str(temperature)
+            # Description from first note
+            description = notes[0]['note_text'] if notes else ""
+            # Status
+            status = exp.get('status', '')
+            # Row layout
             with st.container():
-                col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 2, 2, 1])
-                
+                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1.2, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
                 with col1:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['experiment_id']}</div>", unsafe_allow_html=True)
                 with col2:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['sample_id']}</div>", unsafe_allow_html=True)
                 with col3:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['researcher']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{initial_ph_disp}</div>", unsafe_allow_html=True)
                 with col4:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['date'].strftime('%Y-%m-%d %H:%M')}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{catalyst_combined}</div>", unsafe_allow_html=True)
                 with col5:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['status']}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{temperature_disp}</div>", unsafe_allow_html=True)
                 with col6:
-                    if st.button("View Details", key=f"view_{index}"):
+                    st.write(f"<div style='margin: 0px; padding: 2px; white-space: pre-line; overflow-x: auto; max-width: 100%;'>{description}</div>", unsafe_allow_html=True)
+                with col7:
+                    new_status = st.selectbox(
+                        "Status",
+                        options=EXPERIMENT_STATUSES,
+                        index=EXPERIMENT_STATUSES.index(status) if status in EXPERIMENT_STATUSES else 0,
+                        key=f"status_{exp['experiment_id']}",
+                        label_visibility="collapsed"
+                    )
+                    if new_status != status:
+                        try:
+                            db = SessionLocal()
+                            experiment = db.query(Experiment).filter(Experiment.experiment_id == exp['experiment_id']).first()
+                            if experiment:
+                                old_status = experiment.status.name
+                                experiment.status = getattr(ExperimentStatus, new_status)
+                                # Log the modification
+                                log_modification(
+                                    db=db,
+                                    experiment_id=exp['experiment_id'],
+                                    modified_table="experiments",
+                                    modification_type="update",
+                                    old_values={'status': old_status},
+                                    new_values={'status': new_status}
+                                )
+                                db.commit()
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating status: {str(e)}")
+                        finally:
+                            if db:
+                                db.close()
+                with col8:
+                    if st.button("Details", key=f"view_{index}"):
                         st.session_state.view_experiment_id = exp['experiment_id']
                         st.rerun()
-                
                 st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
-        
         # Pagination controls
         st.markdown("---")
         pagination_cols = st.columns([1, 2, 1])
-        
         with pagination_cols[0]:
             if st.session_state.experiments_page > 1:
                 if st.button("← Previous"):
                     st.session_state.experiments_page -= 1
                     st.rerun()
-                    
         with pagination_cols[1]:
             st.markdown(f"<div style='text-align: center'>Page {st.session_state.experiments_page} of {total_pages}</div>", unsafe_allow_html=True)
-            
         with pagination_cols[2]:
             if st.session_state.experiments_page < total_pages:
                 if st.button("Next →"):
                     st.session_state.experiments_page += 1
                     st.rerun()
-                    
-        # Items per page selector
-        st.selectbox(
-            "Items per page",
-            options=[10, 25, 50],
-            key="experiments_per_page",
-            on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
-        )
 
 def render_experiment_detail():
     """
@@ -548,6 +595,37 @@ def get_experiment_by_id(experiment_id):
         return None
     finally:
         db.close()
+
+def filter_experiments(query, filters):
+    """
+    Apply filters to the experiment query.
+    """
+    if filters.get('start_date'):
+        # Convert EST date to UTC for database query
+        est = pytz.timezone('US/Eastern')
+        start_date = filters['start_date']
+        start_datetime = datetime.combine(start_date, time.min)
+        start_datetime = est.localize(start_datetime).astimezone(pytz.UTC)
+        query = query.filter(Experiment.date >= start_datetime)
+    
+    if filters.get('end_date'):
+        # Convert EST date to UTC for database query
+        est = pytz.timezone('US/Eastern')
+        end_date = filters['end_date']
+        end_datetime = datetime.combine(end_date, time.max)
+        end_datetime = est.localize(end_datetime).astimezone(pytz.UTC)
+        query = query.filter(Experiment.date <= end_datetime)
+    
+    if filters.get('status'):
+        query = query.filter(Experiment.status == filters['status'])
+    
+    if filters.get('researcher'):
+        query = query.filter(Experiment.researcher.ilike(f"%{filters['researcher']}%"))
+    
+    if filters.get('sample_id'):
+        query = query.filter(Experiment.sample_id.ilike(f"%{filters['sample_id']}%"))
+    
+    return query
 
 
 

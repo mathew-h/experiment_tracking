@@ -15,6 +15,9 @@ from database.models import (
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields
 from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG, SCALAR_RESULTS_CONFIG, NMR_RESULTS_CONFIG
+# Import the service
+from backend.services.experimental_conditions_service import ExperimentalConditionsService
+import pytz
 
 def edit_experiment(experiment):
     """
@@ -24,7 +27,7 @@ def edit_experiment(experiment):
         experiment (dict): Dictionary containing the experiment data to edit
         
     This function creates a form interface that allows users to:
-    - Edit basic experiment information (sample ID, researcher, status, date)
+    - Edit basic experiment information (experiment ID, sample ID, researcher, status, date)
     - Modify experimental conditions (temperature, pressure, pH, etc.)
     - Update optional parameters
     - Save changes to the database
@@ -36,6 +39,7 @@ def edit_experiment(experiment):
         col1, col2 = st.columns(2)
         
         with col1:
+            experiment_id = st.text_input("Experiment ID", value=experiment['experiment_id'])
             sample_id = st.text_input("Rock Sample ID", value=experiment['sample_id'])
             researcher = st.text_input("Researcher Name", value=experiment['researcher'])
         
@@ -45,9 +49,19 @@ def edit_experiment(experiment):
                 options=EXPERIMENT_STATUSES,
                 index=EXPERIMENT_STATUSES.index(experiment['status']) if experiment['status'] in EXPERIMENT_STATUSES else 0
             )
+            # Convert UTC datetime to EST for display
+            est = pytz.timezone('US/Eastern')
+            if isinstance(experiment['date'], datetime.datetime):
+                if experiment['date'].tzinfo is None:
+                    # If naive datetime, assume it's UTC
+                    experiment['date'] = experiment['date'].replace(tzinfo=pytz.UTC)
+                display_date = experiment['date'].astimezone(est)
+            else:
+                display_date = datetime.datetime.now(est)
+            
             exp_date = st.date_input(
                 "Experiment Date", 
-                value=experiment['date'] if isinstance(experiment['date'], datetime.datetime) else datetime.datetime.now()
+                value=display_date
             )
         
         st.markdown("### Experimental Conditions")
@@ -80,12 +94,18 @@ def edit_experiment(experiment):
         # Combine required and optional values into a single dictionary
         all_condition_values = {**required_values, **optional_values}
         
+        # Convert EST date to UTC for storage
+        est = pytz.timezone('US/Eastern')
+        current_time = datetime.datetime.now(est)
+        utc_time = current_time.astimezone(pytz.UTC)
+        
         # Prepare data for submission
         form_data = {
+            'experiment_id': experiment_id,
             'sample_id': sample_id,
             'researcher': researcher,
             'status': status,
-            'date': datetime.datetime.combine(exp_date, datetime.datetime.now().time()),
+            'date': datetime.datetime.combine(exp_date, utc_time.time()).replace(tzinfo=pytz.UTC),
             'conditions': all_condition_values
         }
         
@@ -140,8 +160,16 @@ def update_experiment(experiment_id, data):
             st.error(f"Experiment with ID {experiment_id} not found.")
             return False
         
+        # Check if the new experiment_id already exists (if it's being changed)
+        if data['experiment_id'] != experiment.experiment_id:
+            existing = db.query(Experiment).filter(Experiment.experiment_id == data['experiment_id']).first()
+            if existing:
+                st.error(f"Experiment ID '{data['experiment_id']}' already exists. Please choose a different ID.")
+                return False
+        
         # Log old values before updating
         old_values = {
+            'experiment_id': experiment.experiment_id,
             'sample_id': experiment.sample_id,
             'researcher': experiment.researcher,
             'status': experiment.status.name,
@@ -149,40 +177,40 @@ def update_experiment(experiment_id, data):
         }
         
         # Update basic experiment information
+        experiment.experiment_id = data['experiment_id']
         experiment.sample_id = data['sample_id']
         experiment.researcher = data['researcher']
         experiment.status = getattr(ExperimentStatus, data['status'])
         experiment.date = data['date']
         
-        # Update or create conditions
-        conditions = experiment.conditions
-        if conditions:
-            # Update existing conditions using FIELD_CONFIG to ensure all fields are handled
-            for field_name, config in FIELD_CONFIG.items():
-                if hasattr(conditions, field_name):
-                    value = data['conditions'].get(field_name)
-                    # Handle special cases for text fields
-                    if config['type'] == 'text' and value is not None:
-                        value = value.strip() if value else ''
-                    # Handle special cases for numeric fields
-                    elif config['type'] == 'number':
-                        if value is not None:
-                            try:
-                                value = float(value)
-                            except (ValueError, TypeError):
-                                value = float(config['default'])
-                    setattr(conditions, field_name, value)
+        # Update or create conditions using the service
+        if experiment.conditions:
+            # Update existing conditions
+            updated_conditions = ExperimentalConditionsService.update_experimental_conditions(
+                db=db,
+                conditions_id=experiment.conditions.id,
+                conditions_data=data['conditions']
+            )
+            if not updated_conditions:
+                # Handle error if conditions couldn't be updated
+                raise Exception(f"Failed to update experimental conditions for experiment ID {experiment.experiment_id}")
+            experiment.conditions = updated_conditions # Re-assign to ensure the session tracks the potentially new object from service
         else:
-            # Create new conditions
-            conditions_data = {
-                'experiment_id': experiment.id,
-                **data['conditions']
-            }
-            conditions = ExperimentalConditions(**conditions_data)
-            db.add(conditions)
+            # Create new conditions using the service
+            # The service expects the string experiment_id
+            created_conditions = ExperimentalConditionsService.create_experimental_conditions(
+                db=db,
+                experiment_id=experiment.experiment_id, # Pass the string ID
+                conditions_data=data['conditions']
+            )
+            if not created_conditions:
+                # Handle error if conditions couldn't be created
+                raise Exception(f"Failed to create experimental conditions for experiment ID {experiment.experiment_id}")
+            experiment.conditions = created_conditions # Assign the newly created conditions
         
         # Prepare new values for logging
         new_values = {
+            'experiment_id': data['experiment_id'],
             'sample_id': data['sample_id'],
             'researcher': data['researcher'],
             'status': data['status'],
@@ -231,9 +259,15 @@ def save_note(experiment_id, note_text):
     try:
         db = SessionLocal()
         
+        # Get the experiment to get its string ID
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+        if not experiment:
+            raise Exception(f"Experiment with ID {experiment_id} not found")
+        
         # Create a new note
         note = ExperimentNotes(
-            experiment_id=experiment_id,
+            experiment_fk=experiment_id,  # Set the foreign key to the experiment's primary key
+            experiment_id=experiment.experiment_id,  # Set the string ID
             note_text=note_text.strip()
         )
         

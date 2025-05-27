@@ -37,6 +37,8 @@ from frontend.components.view_results import render_results_section
 
 from frontend.components.edit_sample import delete_external_analysis
 
+import pytz
+
 def display_experiment_details(experiment):
     """
     Displays the complete details of an experiment.
@@ -51,6 +53,25 @@ def display_experiment_details(experiment):
         experiment (dict): Dictionary containing all experiment data
     """
     
+    # Convert UTC times to EST for display
+    est = pytz.timezone('US/Eastern')
+    
+    # Convert experiment date
+    if isinstance(experiment['date'], datetime.datetime):
+        if experiment['date'].tzinfo is None:
+            experiment['date'] = experiment['date'].replace(tzinfo=pytz.UTC)
+        display_date = experiment['date'].astimezone(est)
+    else:
+        display_date = experiment['date']
+    
+    # Convert updated_at
+    if isinstance(experiment['updated_at'], datetime.datetime):
+        if experiment['updated_at'].tzinfo is None:
+            experiment['updated_at'] = experiment['updated_at'].replace(tzinfo=pytz.UTC)
+        display_updated = experiment['updated_at'].astimezone(est)
+    else:
+        display_updated = experiment['updated_at']
+    
     # Prepare basic info
     basic_info = {
         "Experiment Number": str(experiment['experiment_number']),
@@ -58,8 +79,8 @@ def display_experiment_details(experiment):
         "Sample ID": str(experiment['sample_id']),
         "Researcher": str(experiment['researcher']),
         "Status": str(experiment['status']),
-        "Date Created": experiment['date'].strftime("%Y-%m-%d %H:%M") if isinstance(experiment['date'], datetime.datetime) else str(experiment['date']),
-        "Date Updated": experiment['updated_at'].strftime("%Y-%m-%d %H:%M") if isinstance(experiment['updated_at'], datetime.datetime) else "N/A"
+        "Date Created": display_date.strftime("%Y-%m-%d %H:%M %Z") if isinstance(display_date, datetime.datetime) else str(display_date),
+        "Date Updated": display_updated.strftime("%Y-%m-%d %H:%M %Z") if isinstance(display_updated, datetime.datetime) else "N/A"
     }
 
     # Get conditions if they exist

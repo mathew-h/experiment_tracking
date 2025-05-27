@@ -2,10 +2,11 @@ import datetime
 import streamlit as st
 from database.database import SessionLocal
 from database.models import Experiment, ExperimentalConditions, ExperimentNotes, ExperimentStatus
-from frontend.components.utils import log_modification, generate_form_fields
+from frontend.components.utils import log_modification, generate_form_fields, get_sample_options
 from frontend.config.variable_config import FIELD_CONFIG, EXPERIMENT_STATUSES
 # Import the new service
 from backend.services.experimental_conditions_service import ExperimentalConditionsService
+import pytz
 
 # Helper function to get default values from FIELD_CONFIG
 def get_default_conditions():
@@ -62,11 +63,39 @@ def render_new_experiment():
                     value=st.session_state.experiment_data.get('experiment_id', ''),
                     help="Enter a unique identifier for this experiment"
                 )
-                sample_id = st.text_input(
-                    "Rock Sample ID", 
-                    value=st.session_state.experiment_data.get('sample_id', ''),
-                    help="Enter the sample identifier (e.g., 20UM21)"
+                
+                # Sample selection - allow blank for control runs or experiments without rock samples
+                # Get sample options from database using utils function
+                sample_options, sample_dict = get_sample_options()
+                
+                # Find current selection if any
+                current_sample_id = st.session_state.experiment_data.get('sample_id', '')
+                current_index = 0
+                if current_sample_id:
+                    for i, option in enumerate(sample_options):
+                        if sample_dict.get(option) == current_sample_id:
+                            current_index = i
+                            break
+                
+                selected_sample_display = st.selectbox(
+                    "Rock Sample",
+                    options=sample_options,
+                    index=current_index,
+                    help="Select a rock sample from the database, or leave blank for control runs/experiments without rock samples. You can type to search.",
+                    format_func=lambda x: "None (Control Run)" if x == "" else x
                 )
+                
+                # Get the actual sample_id from the selection
+                sample_id = sample_dict.get(selected_sample_display, "")
+                
+                # Additional safety: if mapping fails, extract sample_id from display text
+                if not sample_id and selected_sample_display and selected_sample_display != "":
+                    # Extract just the sample_id part (everything before the first " - ")
+                    sample_id = selected_sample_display.split(" - ")[0].strip()
+                    # Verify this is a valid sample_id by checking if it exists in our sample_dict values
+                    if sample_id not in sample_dict.values():
+                        sample_id = ""  # Reset to empty if not valid
+                
                 researcher = st.text_input(
                     "Researcher Name", 
                     value=st.session_state.experiment_data.get('researcher', '')
@@ -88,12 +117,13 @@ def render_new_experiment():
                 )
                 
                 # --- Moved Initial Notes Section Here ---
-                st.markdown("#### Initial Notes") # Keep header for clarity within column
+                st.markdown("#### Experiment Description") # Changed header to reflect new purpose
                 initial_note = st.text_area(
-                    "Lab Note",
+                    "Experiment Description",
                     value=st.session_state.experiment_data.get('initial_note', ''),
                     height=150,
-                    help="Add any initial lab notes for this experiment. You can add more notes later."
+                    max_chars=100,
+                    help="Provide a brief description of the experiment (required, max 100 characters)."
                 )
                 
             with col2:
@@ -116,15 +146,16 @@ def render_new_experiment():
 
             if submit_button:                
                 # --- Data Validation (Basic Example) ---
-                if not experiment_id or not sample_id or not researcher:
-                     st.error("Experiment ID, Sample ID, and Researcher Name are required.")
+                if not experiment_id or not researcher or not initial_note:
+                     st.error("Experiment ID, Researcher Name, and Experiment Description are required.")
+                # Note: sample_id is now optional - blank is allowed for control runs
                 # Add more specific validation based on FIELD_CONFIG if needed 
                 # (e.g., check numeric ranges beyond what st.number_input enforces)
                 else:
                     # Update session state with collected data
                     st.session_state.experiment_data.update({
                         'experiment_id': experiment_id,
-                        'sample_id': sample_id,
+                        'sample_id': sample_id,  # Can be empty string for control runs
                         'researcher': researcher,
                         'status': status,
                         'conditions': all_condition_values,
@@ -143,15 +174,32 @@ def render_new_experiment():
         st.success(f"Experiment {st.session_state.get('last_created_experiment_id', '')} (Number: {st.session_state.get('last_created_experiment_number', '')}) created successfully!")
         if st.button("Create Another Experiment"):
             st.session_state.step = 1
-            st.session_state.experiment_data = {
-                'experiment_id': '',
-                'sample_id': '',
-                'researcher': '',
-                'status': 'PLANNED',
-                'conditions': get_default_conditions(), # Reset conditions to defaults
-                'notes': [], # Keep notes separate, initial note handled in form
-                'initial_note': '' # Clear initial note field
-            }
+            
+            if 'previous_experiment_data' in st.session_state:
+                # Pre-fill with previous data
+                previous_data = st.session_state.previous_experiment_data
+                st.session_state.experiment_data = {
+                    'experiment_id': '',  # Clear for new experiment
+                    'sample_id': previous_data.get('sample_id', ''),
+                    'researcher': previous_data.get('researcher', ''),
+                    'status': 'PLANNED',  # Default for new experiments
+                    'conditions': previous_data.get('conditions', get_default_conditions()),
+                    'notes': [], # Notes are experiment-specific
+                    'initial_note': ''  # Description is experiment-specific
+                }
+                del st.session_state['previous_experiment_data'] # Clear after use
+            else:
+                # Default reset if no previous data
+                st.session_state.experiment_data = {
+                    'experiment_id': '',
+                    'sample_id': '',
+                    'researcher': '',
+                    'status': 'PLANNED',
+                    'conditions': get_default_conditions(), # Reset conditions to defaults
+                    'notes': [], # Keep notes separate, initial note handled in form
+                    'initial_note': '' # Clear initial note field
+                }
+
             if 'last_created_experiment_number' in st.session_state:
                 del st.session_state['last_created_experiment_number']
             if 'last_created_experiment_id' in st.session_state:
@@ -174,11 +222,14 @@ def save_experiment():
         # Get data from session state
         exp_data = st.session_state.experiment_data
         
+        # For experiments without rock samples, set sample_id to None
+        sample_id = exp_data['sample_id'] if exp_data['sample_id'] else None
+        
         # Create a new experiment
         experiment = Experiment(
             experiment_number=next_experiment_number,
             experiment_id=exp_data['experiment_id'],
-            sample_id=exp_data['sample_id'],
+            sample_id=sample_id,
             researcher=exp_data['researcher'],
             date=datetime.datetime.now(),
             status=getattr(ExperimentStatus, exp_data['status'])
@@ -243,6 +294,9 @@ def save_experiment():
         # Commit the transaction
         db.commit()
         
+        # Store data for pre-filling the next form
+        st.session_state.previous_experiment_data = exp_data.copy()
+        
         # Show experiment number and ID for reference in step 2
         st.session_state.last_created_experiment_number = next_experiment_number
         st.session_state.last_created_experiment_id = exp_data['experiment_id']
@@ -254,8 +308,78 @@ def save_experiment():
     except Exception as e:
         if db: # Check if db was initialized before trying to rollback
             db.rollback()
-        st.error(f"Error saving experiment: {str(e)}")
+        # Check if this is a unique constraint violation on experiment_id
+        if "UNIQUE constraint failed: experiments.experiment_id" in str(e):
+            st.error(f"An experiment with ID '{st.session_state.experiment_data['experiment_id']}' already exists. Please choose a different experiment ID.")
+        else:
+            st.error(f"Error saving experiment: {str(e)}")
         return False # Indicate failure
     finally:
         if db: # Check if db was initialized before trying to close
             db.close()
+
+def create_new_experiment():
+    """
+    Create a new experiment entry.
+    """
+    with st.form(key="new_experiment_form"):
+        st.markdown("### Basic Information")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sample_id = st.text_input("Rock Sample ID")
+            researcher = st.text_input("Researcher Name")
+        
+        with col2:
+            status = st.selectbox(
+                "Experiment Status",
+                options=EXPERIMENT_STATUSES,
+                index=0
+            )
+            # Use EST timezone for the date input
+            est = pytz.timezone('US/Eastern')
+            current_time = datetime.datetime.now(est)
+            exp_date = st.date_input(
+                "Experiment Date", 
+                value=current_time
+            )
+        
+        st.markdown("### Experimental Conditions")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            st.markdown("#### Required Parameters")
+            required_field_names = [name for name, config in FIELD_CONFIG.items() if config.get('required', False)]
+            required_values = generate_form_fields(
+                FIELD_CONFIG, 
+                {}, 
+                required_field_names,
+                key_prefix="new_req"
+            )
+            
+        with col4:
+            st.markdown("#### Optional Parameters")
+            optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False)]
+            optional_values = generate_form_fields(
+                FIELD_CONFIG, 
+                {}, 
+                optional_field_names,
+                key_prefix="new_opt"
+            )
+        
+        all_condition_values = {**required_values, **optional_values}
+        
+        # Convert EST date to UTC for storage
+        utc_time = current_time.astimezone(pytz.UTC)
+        
+        form_data = {
+            'sample_id': sample_id,
+            'researcher': researcher,
+            'status': status,
+            'date': datetime.datetime.combine(exp_date, utc_time.time()).replace(tzinfo=pytz.UTC),
+            'conditions': all_condition_values
+        }
+        
+        submit_button = st.form_submit_button("Create Experiment")
+        if submit_button:
+            submit_new_experiment(form_data)

@@ -34,12 +34,14 @@ def setup_backup_scheduler(
     # Create scheduler if it doesn't exist
     if scheduler is None:
         scheduler = BackgroundScheduler()
+        logger.info("Created new scheduler instance")
         
     elif scheduler.running:
         # If scheduler is already running, remove any existing backup jobs
         for job in scheduler.get_jobs():
             if job.id in ['database_backup', 'backup_cleanup', 'public_database_copy']:
                 scheduler.remove_job(job.id)
+                logger.info(f"Removed existing job: {job.id}")
     
     # Schedule database backup
     scheduler.add_job(
@@ -49,6 +51,7 @@ def setup_backup_scheduler(
         name=f'Database backup every {backup_interval_hours} hours',
         replace_existing=True
     )
+    logger.info(f"Scheduled database backup job (every {backup_interval_hours} hours)")
     
     # Schedule cleanup of old backups
     scheduler.add_job(
@@ -58,6 +61,7 @@ def setup_backup_scheduler(
         name=f'Clean up old backups every {cleanup_interval_days} days',
         replace_existing=True
     )
+    logger.info(f"Scheduled backup cleanup job (every {cleanup_interval_days} days)")
     
     # Schedule public database copy
     scheduler.add_job(
@@ -67,15 +71,14 @@ def setup_backup_scheduler(
         name=f'Public database copy every {public_copy_interval_hours} hours',
         replace_existing=True
     )
+    logger.info(f"Scheduled public database copy job (every {public_copy_interval_hours} hours)")
     
     # Start the scheduler if it's not already running
     if not scheduler.running:
         scheduler.start()
-        logger.info(f"Started database backup scheduler (every {backup_interval_hours} hours)")
-        logger.info(f"Started public database copy scheduler (every {public_copy_interval_hours} hours)")
+        logger.info("Started scheduler")
     else:
-        logger.info(f"Updated database backup scheduler (every {backup_interval_hours} hours)")
-        logger.info(f"Updated public database copy scheduler (every {public_copy_interval_hours} hours)")
+        logger.info("Scheduler was already running, jobs have been updated")
     
     return scheduler
 
