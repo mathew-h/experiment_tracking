@@ -241,6 +241,12 @@ def save_experiment():
         
         # --- Use the Service to Create Experimental Conditions ---
         conditions_data = exp_data['conditions'].copy() # Get condition values
+
+        # Convert empty strings to None for numeric fields
+        for key, value in conditions_data.items():
+            if key in FIELD_CONFIG and FIELD_CONFIG[key]['type'] == 'number' and value == '':
+                conditions_data[key] = None
+        
         # The service expects the string experiment_id
         conditions = ExperimentalConditionsService.create_experimental_conditions(
             db=db, 
@@ -286,7 +292,9 @@ def save_experiment():
                 # Log the conditions *after* potential calculation by the service
                 # Need to refresh 'conditions' to get calculated values if service doesn't refresh
                 # The service currently does refresh, so this should be fine
-                'conditions': {c.key: getattr(conditions, c.key) for c in conditions.__table__.columns if c.key != 'id' and c.key != 'experiment_id'},
+                'conditions': {k: v.isoformat() if isinstance(v, datetime.datetime) else v 
+                               for k, v in conditions.__dict__.items() 
+                               if not k.startswith('_') and k not in ['id', 'experiment_id', 'experiment_fk']},
                 'initial_note': initial_note_text if initial_note_text else None
             }
         )
