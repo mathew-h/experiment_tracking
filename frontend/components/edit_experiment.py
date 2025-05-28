@@ -13,7 +13,7 @@ from database.models import (
     ExternalAnalysis
 )
 # Import utilities and config
-from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields
+from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields, get_sample_options
 from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG, SCALAR_RESULTS_CONFIG, NMR_RESULTS_CONFIG
 # Import the service
 from backend.services.experimental_conditions_service import ExperimentalConditionsService
@@ -40,7 +40,52 @@ def edit_experiment(experiment):
         
         with col1:
             experiment_id = st.text_input("Experiment ID", value=experiment['experiment_id'])
-            sample_id = st.text_input("Rock Sample ID", value=experiment['sample_id'])
+            
+            # Get sample options from database using utils function
+            sample_options, sample_dict = get_sample_options()
+            
+            # Find current selection
+            current_sample_id = experiment.get('sample_id', '')
+            current_index = 0
+            if current_sample_id:
+                # Find the display text that maps to the current_sample_id
+                for display_text, s_id in sample_dict.items():
+                    if s_id == current_sample_id:
+                        if display_text in sample_options:
+                             current_index = sample_options.index(display_text)
+                        break 
+                # Fallback if current_sample_id is not in sample_dict (e.g. old data)
+                # or if the display_text is no longer in sample_options (e.g. sample deleted)
+                # In such cases, we try to find a partial match if possible or default to "None"
+                if current_index == 0 and current_sample_id != "": # if not found and not intentionally blank
+                    # Try to find by exact sample_id if it exists as an option (should not happen with current get_sample_options)
+                    if current_sample_id in sample_options:
+                        current_index = sample_options.index(current_sample_id)
+                    else: # if still not found, try to find a display text that starts with the sample_id
+                        for i, option_text in enumerate(sample_options):
+                            if option_text.startswith(current_sample_id):
+                                current_index = i
+                                break
+            
+            selected_sample_display = st.selectbox(
+                "Sample ID",
+                options=sample_options,
+                index=current_index,
+                help="Select a rock sample from the database, or leave blank for control runs/experiments without rock samples. You can type to search.",
+                format_func=lambda x: "None (Control Run)" if x == "" else x
+            )
+            
+            # Get the actual sample_id from the selection
+            sample_id = sample_dict.get(selected_sample_display, "")
+
+            # Additional safety: if mapping fails, extract sample_id from display text
+            if not sample_id and selected_sample_display and selected_sample_display != "" and selected_sample_display != "None (Control Run)":
+                # Extract just the sample_id part (everything before the first " - ")
+                sample_id = selected_sample_display.split(" - ")[0].strip()
+                # Verify this is a valid sample_id by checking if it exists in our sample_dict values
+                if sample_id not in sample_dict.values():
+                    sample_id = "" # Reset to empty if not valid
+
             researcher = st.text_input("Researcher Name", value=experiment['researcher'])
         
         with col2:
@@ -183,13 +228,19 @@ def update_experiment(experiment_id, data):
         experiment.status = getattr(ExperimentStatus, data['status'])
         experiment.date = data['date']
         
+        # Prepare conditions data by converting empty strings in numeric fields to None
+        conditions_data = data['conditions'].copy()
+        for key, value in conditions_data.items():
+            if key in FIELD_CONFIG and FIELD_CONFIG[key]['type'] == 'number' and value == '':
+                conditions_data[key] = None
+
         # Update or create conditions using the service
         if experiment.conditions:
             # Update existing conditions
             updated_conditions = ExperimentalConditionsService.update_experimental_conditions(
                 db=db,
                 conditions_id=experiment.conditions.id,
-                conditions_data=data['conditions']
+                conditions_data=conditions_data # Use the processed conditions_data
             )
             if not updated_conditions:
                 # Handle error if conditions couldn't be updated
@@ -201,7 +252,7 @@ def update_experiment(experiment_id, data):
             created_conditions = ExperimentalConditionsService.create_experimental_conditions(
                 db=db,
                 experiment_id=experiment.experiment_id, # Pass the string ID
-                conditions_data=data['conditions']
+                conditions_data=conditions_data # Use the processed conditions_data
             )
             if not created_conditions:
                 # Handle error if conditions couldn't be created
@@ -215,7 +266,7 @@ def update_experiment(experiment_id, data):
             'researcher': data['researcher'],
             'status': data['status'],
             'date': data['date'].isoformat() if data['date'] else None,
-            'conditions': data['conditions']
+            'conditions': conditions_data # Log the processed conditions
         }
         
         # Use utility for logging
