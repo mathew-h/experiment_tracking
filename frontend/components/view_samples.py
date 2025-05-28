@@ -256,7 +256,9 @@ def display_sample_details(sample_id):
                 ROCK_SAMPLE_CONFIG[field]['label']: getattr(sample, field) or "Not specified"
                 for field in ROCK_SAMPLE_CONFIG.keys()
             }
-            st.table(pd.DataFrame([info_data]).T.rename(columns={0: "Value"}))
+            sample_info_df = pd.DataFrame([info_data]).T.rename(columns={0: "Value"})
+            sample_info_df['Value'] = sample_info_df['Value'].astype(str)
+            st.table(sample_info_df)
             
             if not st.session_state.editing_sample:
                 if st.button("Edit Sample Information"):

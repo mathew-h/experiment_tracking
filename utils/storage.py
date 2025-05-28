@@ -217,10 +217,11 @@ def save_to_local(file_data, file_name, folder, config):
     os.makedirs(folder_path, exist_ok=True)
     
     file_path = os.path.join(folder_path, file_name)
-    with open(file_path, 'wb') as f:
+    absolute_file_path = os.path.abspath(os.path.normpath(file_path))
+    with open(absolute_file_path, 'wb') as f:
         f.write(file_data)
     
-    return file_path
+    return absolute_file_path
 
 def get_from_local(file_path, config):
     """Retrieve a file from local storage."""
@@ -237,13 +238,26 @@ def save_to_backup(file_data, file_name, folder, config):
     if 'backup_directory' not in config:
         print("Warning: Backup directory not configured, skipping backup")
         return None
+    
+    raw_backup_dir = config['backup_directory']
+
+    cleaned_backup_dir = raw_backup_dir
+    if isinstance(raw_backup_dir, str):
+        if cleaned_backup_dir.startswith('r"') and cleaned_backup_dir.endswith('"'):
+            cleaned_backup_dir = cleaned_backup_dir[2:-1]
+        elif cleaned_backup_dir.startswith("r'") and cleaned_backup_dir.endswith("'"):
+            cleaned_backup_dir = cleaned_backup_dir[2:-1]
+    
+    normalized_backup_config_dir = os.path.normpath(cleaned_backup_dir)
         
-    backup_folder_path = os.path.join(config['backup_directory'], folder)
+    backup_folder_path = os.path.join(normalized_backup_config_dir, folder)
     os.makedirs(backup_folder_path, exist_ok=True)
     
     backup_file_path = os.path.join(backup_folder_path, file_name)
-    with open(backup_file_path, 'wb') as f:
+    absolute_backup_file_path = os.path.abspath(os.path.normpath(backup_file_path))
+
+    with open(absolute_backup_file_path, 'wb') as f:
         f.write(file_data)
     
-    print(f"Backup created at: {backup_file_path}")
-    return backup_file_path 
+    print(f"Backup created at: {absolute_backup_file_path}")
+    return absolute_backup_file_path 

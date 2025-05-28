@@ -205,7 +205,7 @@ def add_sample_photo(sample_info_id, photo_file, description=None):
     """
     Adds a new photo record for a given sample.
     Args:
-        sample_info_id (int): The database ID of the SampleInfo record.
+        sample_info_id (str): The string ID of the SampleInfo record.
         photo_file (UploadedFile): The photo file uploaded via Streamlit.
         description (str, optional): Optional description for the photo.
     """
@@ -214,15 +214,15 @@ def add_sample_photo(sample_info_id, photo_file, description=None):
         db = SessionLocal()
         
         # Fetch parent sample to confirm it exists (optional but good practice)
-        sample = db.query(SampleInfo).filter(SampleInfo.id == sample_info_id).first()
+        sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_info_id).first()
         if not sample:
-             st.error(f"Sample with DB ID {sample_info_id} not found.")
+             st.error(f"Sample with ID {sample_info_id} not found.")
              return False
 
         # Save the file using utility
         file_path = save_uploaded_file(
             file=photo_file,
-            base_dir_name='sample_photos', 
+            storage_folder='sample_photos',
             filename_prefix=f"sample_{sample.sample_id}" # Use string sample_id for prefix
         )
 
@@ -233,7 +233,7 @@ def add_sample_photo(sample_info_id, photo_file, description=None):
 
         # Create new SamplePhotos object
         new_photo = SamplePhotos(
-            sample_info_id=sample_info_id,
+            sample_id=sample_info_id,  # Use string sample_id
             file_path=file_path,
             file_name=photo_file.name,
             file_type=photo_file.type,
@@ -252,7 +252,7 @@ def add_sample_photo(sample_info_id, photo_file, description=None):
             modified_table="sample_photos",
             modification_type="add",
             new_values={
-                'sample_info_id': new_photo.sample_info_id,
+                'sample_id': new_photo.sample_id,  # Use string sample_id
                 'photo_id': new_photo.id,
                 'file_path': new_photo.file_path,
                 'file_name': new_photo.file_name,

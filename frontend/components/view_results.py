@@ -120,6 +120,7 @@ def display_single_result(result, experiment_db_id):
             
             if scalar_data_dict:
                 scalar_df = pd.DataFrame([scalar_data_dict]).T.rename(columns={0: "Value"})
+                scalar_df["Value"] = scalar_df["Value"].astype(str) # Ensure string type
                 st.table(scalar_df)
             # Display message only if no scalar_data object exists at all
         else:
@@ -149,6 +150,7 @@ def display_single_result(result, experiment_db_id):
             
             if nmr_data_dict:
                 nmr_df = pd.DataFrame([nmr_data_dict]).T.rename(columns={0: "Value"})
+                nmr_df["Value"] = nmr_df["Value"].astype(str) # Ensure string type
                 st.table(nmr_df)
                 primary_data_displayed = True
             else:

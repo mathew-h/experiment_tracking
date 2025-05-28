@@ -97,6 +97,7 @@ def display_experiment_details(experiment):
         st.markdown("#### Basic Information")
         if basic_info:
             df_basic = pd.DataFrame(list(basic_info.items()), columns=['Parameter', 'Value'])
+            df_basic['Value'] = df_basic['Value'].astype(str)
             st.dataframe(df_basic, hide_index=True, use_container_width=True)
         else:
             st.info("No basic information available.")
@@ -105,6 +106,7 @@ def display_experiment_details(experiment):
         st.markdown("#### Required Parameters")
         if required_conditions:
             df_req = pd.DataFrame(list(required_conditions.items()), columns=['Parameter', 'Value'])
+            df_req['Value'] = df_req['Value'].astype(str)
             st.dataframe(df_req, hide_index=True, use_container_width=True)
         else:
             st.info("No required parameters recorded.")
@@ -113,6 +115,7 @@ def display_experiment_details(experiment):
         st.markdown("#### Secondary Parameters")
         if optional_conditions:
             df_opt = pd.DataFrame(list(optional_conditions.items()), columns=['Parameter', 'Value'])
+            df_opt['Value'] = df_opt['Value'].astype(str)
             st.dataframe(df_opt, hide_index=True, use_container_width=True)
         else:
             st.info("No secondary parameters recorded.")
