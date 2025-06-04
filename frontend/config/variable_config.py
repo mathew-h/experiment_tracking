@@ -14,7 +14,7 @@ PXRF_DATA_PATH = os.path.join(DATA_DIR, PXRF_DATA_FILENAME)
 EXPERIMENT_TYPES = ['Serum', 'Autoclave', 'HPHT', 'Core Flood', 'Other']
 
 # Available experiment statuses
-EXPERIMENT_STATUSES = ['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'CANCELLED']
+EXPERIMENT_STATUSES = ['ONGOING', 'COMPLETED', 'CANCELLED']
 
 # Available external analysis types
 ANALYSIS_TYPES = ['pXRF', 'XRD', 'SEM', 'Elemental', 'Other']

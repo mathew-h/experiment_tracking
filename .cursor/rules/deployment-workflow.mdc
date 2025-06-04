@@ -49,4 +49,5 @@ alwaysApply: false
 - Test database migrations locally before deploying
 - Keep backup and public copy locations synchronized between environments
 - Monitor backup logs for any issues
+- I am using cursor from my personal PC, command line tool requests can not be run on Lab PC. Write them out for me to run in Git Bash on Lab PC.
 

@@ -5,10 +5,8 @@ import enum
 from .database import Base
 
 class ExperimentStatus(enum.Enum):
-    PLANNED = "PLANNED"
-    IN_PROGRESS = "IN_PROGRESS"
+    ONGOING = "ONGOING"
     COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
 class ResultType(enum.Enum):
