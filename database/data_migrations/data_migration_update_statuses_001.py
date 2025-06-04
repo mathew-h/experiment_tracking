@@ -1,6 +1,6 @@
 import sys
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, select, update, column
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -9,8 +9,8 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from database.database import DATABASE_URL, Base # Assuming your DATABASE_URL and Base are here
-from database.models import Experiment # Assuming your Experiment model is here
+from database.database import DATABASE_URL
+from database.models import Experiment # Still needed for table metadata for raw query
 
 def run_data_migration():
     """
@@ -27,58 +27,91 @@ def run_data_migration():
         "PLANNED": "ONGOING",
         "IN_PROGRESS": "ONGOING",
         "FAILED": "CANCELLED"
-        # COMPLETED and CANCELLED remain as is, so no explicit mapping needed here
     }
 
     updated_count = 0
     failed_count = 0
+    # Initialize experiments_to_update to prevent UnboundLocalError
+    experiments_needing_update_info = []
 
     try:
         print("Starting experiment status data migration...")
-        experiments_to_update = session.query(Experiment).filter(
-            Experiment.status.in_(list(status_mapping.keys()))
-        ).all()
 
-        if not experiments_to_update:
+        # Step 1: Fetch IDs and current statuses (as strings) for experiments needing update
+        # This avoids premature full object loading with enum conflicts.
+        stmt = select(Experiment.id, Experiment.status.label("current_status")).where(
+            Experiment.status.in_(list(status_mapping.keys()))
+        )
+        result = session.execute(stmt).fetchall()
+        
+        experiments_needing_update_info = [
+            {"id": row.id, "current_status": str(row.current_status)} for row in result
+        ]
+
+        if not experiments_needing_update_info:
             print("No experiments found with statuses requiring update.")
+            session.close()
             return
 
-        print(f"Found {len(experiments_to_update)} experiments to update.")
+        print(f"Found {len(experiments_needing_update_info)} experiments to potentially update.")
 
-        for exp in experiments_to_update:
-            old_status = str(exp.status) # Get the string value of the enum
-            if old_status in status_mapping:
-                new_status = status_mapping[old_status]
-                print(f"Updating Experiment ID {exp.experiment_id} (DB ID: {exp.id}): status from '{old_status}' to '{new_status}'")
-                exp.status = new_status # SQLAlchemy handles enum conversion
-                updated_count += 1
+        # Step 2: Iterate and update each experiment
+        for exp_info in experiments_needing_update_info:
+            exp_id = exp_info["id"]
+            old_status_str = exp_info["current_status"] # This is already a string
+
+            if old_status_str in status_mapping:
+                new_status_str = status_mapping[old_status_str]
+                try:
+                    print(f"Updating Experiment DB ID {exp_id}: status from '{old_status_str}' to '{new_status_str}'")
+                    # Use SQLAlchemy's update() for targeted update
+                    # The new_status_str should be a valid member of the *current* Python enum
+                    # and the database ENUM type (after Alembic migration)
+                    update_stmt = (
+                        update(Experiment)
+                        .where(Experiment.id == exp_id)
+                        .values(status=new_status_str) # Rely on SQLAlchemy to handle enum if Experiment.status is still an enum
+                                                      # Or directly use the string if the column type supports it
+                    )
+                    session.execute(update_stmt)
+                    updated_count += 1
+                except Exception as e_update:
+                    print(f"Error updating experiment ID {exp_id}: {e_update}")
+                    failed_count +=1 # Increment failed_count for this specific experiment
+                    # Optionally, decide if you want to rollback immediately or continue with others
             else:
-                # This case should ideally not be hit if the query is correct
-                print(f"Skipping Experiment ID {exp.experiment_id} (DB ID: {exp.id}): status '{old_status}' not in mapping.")
+                print(f"Skipping Experiment DB ID {exp_id}: status '{old_status_str}' not in explicit mapping (should not happen with current logic).")
 
 
-        session.commit()
-        print(f"Successfully updated statuses for {updated_count} experiments.")
+        if failed_count > 0:
+             print(f"Warning: {failed_count} experiment(s) failed to update. Rolling back transaction.")
+             session.rollback()
+        else:
+            session.commit()
+            print(f"Successfully processed {updated_count} experiments for status update.")
+            if updated_count > 0 and failed_count == 0:
+                 print("All changes committed.")
 
-    except SQLAlchemyError as e:
+
+    except SQLAlchemyError as e_outer:
         session.rollback()
-        print(f"Error during data migration: {e}")
+        print(f"SQLAlchemyError during data migration: {e_outer}")
         print("Transaction rolled back.")
-        failed_count = len(experiments_to_update) # Approximate, as some might have succeeded before error
-    except Exception as e:
+        if experiments_needing_update_info: # If we got this far
+             failed_count = len(experiments_needing_update_info) - updated_count
+    except Exception as e_general:
         session.rollback()
-        print(f"An unexpected error occurred: {e}")
+        print(f"An unexpected error occurred: {e_general}")
         print("Transaction rolled back.")
-        failed_count = len(experiments_to_update)
+        if experiments_needing_update_info: # If we got this far
+            failed_count = len(experiments_needing_update_info) - updated_count
     finally:
         session.close()
         print("Data migration finished.")
         if failed_count > 0:
-            print(f"Warning: {failed_count} experiments might not have been updated due to errors.")
+            print(f"Warning: {failed_count} experiment(s) may not have been updated or processing failed.")
 
 if __name__ == "__main__":
-    # This allows running the script directly.
-    # Ensure your DATABASE_URL is correctly configured in your environment or database.py
     print("Attempting to run data migration for experiment statuses...")
     run_data_migration()
     print("Script execution complete.") 
