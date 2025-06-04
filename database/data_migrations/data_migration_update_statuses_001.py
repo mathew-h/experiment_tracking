@@ -37,11 +37,24 @@ def run_data_migration():
     try:
         print("Starting experiment status data migration...")
 
-        # Step 1: Fetch IDs and current statuses (as strings) for experiments needing update
-        # This avoids premature full object loading with enum conflicts.
-        stmt = select(Experiment.id, Experiment.status.label("current_status")).where(
-            Experiment.status.in_(list(status_mapping.keys()))
+        # Step 1: Fetch IDs and current statuses using a raw SQL IN clause
+        # This avoids Python-side enum validation on the filter values.
+        # Get the actual column name for 'status' from the Experiment model
+        status_column_name = Experiment.status.property.columns[0].name
+
+        # Create a placeholder string for the IN clause, e.g., "('PLANNED', 'IN_PROGRESS', 'FAILED')"
+        in_clause_values = ", ".join([f"'{s}'" for s in status_mapping.keys()])
+        raw_where_clause = f"{status_column_name} IN ({in_clause_values})"
+
+        # Select the id and the status column (referred to by its string name)
+        # from the actual table reflected by the Experiment model.
+        stmt = select(
+            Experiment.__table__.c.id, # Select id column directly from table metadata
+            Experiment.__table__.c[status_column_name].label("current_status") # Select status column by name
+        ).select_from(Experiment.__table__).where(
+            text(raw_where_clause) # Use the raw SQL WHERE clause
         )
+
         result = session.execute(stmt).fetchall()
         
         experiments_needing_update_info = [
@@ -58,30 +71,24 @@ def run_data_migration():
         # Step 2: Iterate and update each experiment
         for exp_info in experiments_needing_update_info:
             exp_id = exp_info["id"]
-            old_status_str = exp_info["current_status"] # This is already a string
+            old_status_str = exp_info["current_status"]
 
             if old_status_str in status_mapping:
                 new_status_str = status_mapping[old_status_str]
                 try:
                     print(f"Updating Experiment DB ID {exp_id}: status from '{old_status_str}' to '{new_status_str}'")
-                    # Use SQLAlchemy's update() for targeted update
-                    # The new_status_str should be a valid member of the *current* Python enum
-                    # and the database ENUM type (after Alembic migration)
                     update_stmt = (
                         update(Experiment)
                         .where(Experiment.id == exp_id)
-                        .values(status=new_status_str) # Rely on SQLAlchemy to handle enum if Experiment.status is still an enum
-                                                      # Or directly use the string if the column type supports it
+                        .values(status=new_status_str) # new_status_str is valid in current Python enum
                     )
                     session.execute(update_stmt)
                     updated_count += 1
                 except Exception as e_update:
                     print(f"Error updating experiment ID {exp_id}: {e_update}")
-                    failed_count +=1 # Increment failed_count for this specific experiment
-                    # Optionally, decide if you want to rollback immediately or continue with others
+                    failed_count +=1 
             else:
-                print(f"Skipping Experiment DB ID {exp_id}: status '{old_status_str}' not in explicit mapping (should not happen with current logic).")
-
+                print(f"Skipping Experiment DB ID {exp_id}: status '{old_status_str}' not in explicit mapping.")
 
         if failed_count > 0:
              print(f"Warning: {failed_count} experiment(s) failed to update. Rolling back transaction.")
@@ -92,18 +99,17 @@ def run_data_migration():
             if updated_count > 0 and failed_count == 0:
                  print("All changes committed.")
 
-
     except SQLAlchemyError as e_outer:
         session.rollback()
         print(f"SQLAlchemyError during data migration: {e_outer}")
         print("Transaction rolled back.")
-        if experiments_needing_update_info: # If we got this far
+        if experiments_needing_update_info:
              failed_count = len(experiments_needing_update_info) - updated_count
     except Exception as e_general:
         session.rollback()
         print(f"An unexpected error occurred: {e_general}")
         print("Transaction rolled back.")
-        if experiments_needing_update_info: # If we got this far
+        if experiments_needing_update_info:
             failed_count = len(experiments_needing_update_info) - updated_count
     finally:
         session.close()
