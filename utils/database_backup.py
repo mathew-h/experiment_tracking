@@ -194,3 +194,29 @@ def cleanup_old_backups(backup_dir=None, keep_last_n=5):
             
     except Exception as e:
         logger.error(f"Failed to cleanup old backups: {str(e)}")
+
+if __name__ == "__main__":
+    try:
+        logger.info("Starting manual database backup process...")
+        backup_file_path = backup_database()
+        if backup_file_path:
+            logger.info(f"Manual backup successful: {backup_file_path}")
+            
+            logger.info("Cleaning up old backups...")
+            cleanup_old_backups()
+            logger.info("Old backups cleanup complete.")
+        else:
+            logger.warning("Manual backup process completed but did not return a backup file path (this might be expected if backup is not supported for the DB type).")
+        
+        # Optional: Call copy_to_public_location if needed
+        # logger.info("Attempting to copy database to public location...")
+        # public_copy_path = copy_to_public_location()
+        # if public_copy_path:
+        #     logger.info(f"Database copied to public location: {public_copy_path}")
+        # else:
+        #     logger.info("Skipped or failed to copy database to public location.")
+            
+    except ValueError as ve:
+        logger.error(f"Manual backup process failed: {ve}")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during the manual backup process: {e}")
