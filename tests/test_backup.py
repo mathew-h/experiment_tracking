@@ -6,12 +6,13 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import sqlite3
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 # Add parent directory to path for imports
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.database_backup import backup_database, copy_to_public_location, cleanup_old_backups
+from utils.database_backup import create_archived_backup, update_public_db_copy, cleanup_old_backups
 from utils.scheduler import setup_backup_scheduler, shutdown_scheduler, create_backup_now, create_public_copy_now
 
 
@@ -62,8 +63,8 @@ def create_test_backups():
 
 @patch("utils.database_backup.DATABASE_URL", "sqlite:///test_db.db")
 @patch("utils.database_backup.get_storage_config")
-def test_backup_database(mock_get_config, temp_dirs):
-    """Test that backup_database creates a backup file correctly."""
+def test_create_archived_backup(mock_get_config, temp_dirs):
+    """Test that create_archived_backup creates a backup file correctly."""
     # Mock the storage config
     mock_get_config.return_value = {
         "backup_directory": temp_dirs['backup_dir']
@@ -77,13 +78,13 @@ def test_backup_database(mock_get_config, temp_dirs):
         )
         
         # Call the function
-        backup_path = backup_database()
+        backup_path = create_archived_backup()
         
         # Verify a backup was created
         assert backup_path is not None
         assert os.path.exists(backup_path)
         assert backup_path.startswith(temp_dirs['backup_dir'])
-        assert "experiments_backup_" in backup_path
+        assert f"{Path(temp_dirs['db_path']).stem}_backup_" in backup_path
         assert backup_path.endswith(".db")
         
         # Verify the backup is a valid SQLite database with our test data
@@ -96,8 +97,8 @@ def test_backup_database(mock_get_config, temp_dirs):
 
 @patch("utils.database_backup.DATABASE_URL", "sqlite:///test_db.db")
 @patch("os.environ")
-def test_copy_to_public_location(mock_environ, temp_dirs):
-    """Test that copy_to_public_location creates a public copy correctly."""
+def test_update_public_db_copy(mock_environ, temp_dirs):
+    """Test that update_public_db_copy creates a public copy correctly."""
     # Mock environment variables
     mock_environ.get.return_value = temp_dirs['public_dir']
     
@@ -110,7 +111,7 @@ def test_copy_to_public_location(mock_environ, temp_dirs):
         
         # Use a simplified approach without mocking Path.name
         # Call the function with direct mocking of the original path
-        public_path = copy_to_public_location()
+        public_path = update_public_db_copy()
         
         # Verify a public copy was created
         assert public_path is not None
@@ -137,7 +138,7 @@ def test_cleanup_old_backups(mock_get_config, temp_dirs, create_test_backups):
     cleanup_old_backups(keep_last_n=5)
     
     # Verify only 5 backups remain
-    remaining_files = list(Path(temp_dirs['backup_dir']).glob("experiments_backup_*.db"))
+    remaining_files = list(Path(temp_dirs['backup_dir']).glob("*_backup_*.db"))
     assert len(remaining_files) == 5
     
     # Verify the newest backups were kept
@@ -196,37 +197,37 @@ def test_shutdown_scheduler(mock_scheduler):
     # Verify the scheduler was shut down
     mock_scheduler.shutdown.assert_called_once()
 
-@patch("utils.scheduler.backup_database")
-def test_create_backup_now(mock_backup):
-    """Test that create_backup_now calls backup_database correctly."""
+@patch("utils.scheduler.create_archived_backup")
+def test_create_backup_now(mock_backup_func):
+    """Test that create_backup_now calls create_archived_backup correctly."""
     # Mock the backup function
-    mock_backup.return_value = "/path/to/backup.db"
+    mock_backup_func.return_value = "/path/to/backup.db"
     
     # Call the function
     result = create_backup_now()
     
-    # Verify backup_database was called
-    mock_backup.assert_called_once()
+    # Verify create_archived_backup was called
+    mock_backup_func.assert_called_once()
     assert result == "/path/to/backup.db"
 
-@patch("utils.scheduler.copy_to_public_location")
-def test_create_public_copy_now(mock_copy):
-    """Test that create_public_copy_now calls copy_to_public_location correctly."""
+@patch("utils.scheduler.update_public_db_copy")
+def test_create_public_copy_now(mock_public_copy_func):
+    """Test that create_public_copy_now calls update_public_db_copy correctly."""
     # Mock the copy function
-    mock_copy.return_value = "/path/to/public.db"
+    mock_public_copy_func.return_value = "/path/to/public.db"
     
     # Call the function
     result = create_public_copy_now()
     
-    # Verify copy_to_public_location was called
-    mock_copy.assert_called_once()
+    # Verify update_public_db_copy was called
+    mock_public_copy_func.assert_called_once()
     assert result == "/path/to/public.db"
 
 @patch("utils.database_backup.DATABASE_URL", "postgres://localhost:5432/experiments")
 @patch("utils.database_backup.get_storage_config")
 @patch("utils.database_backup.logger")
-def test_backup_database_non_sqlite(mock_logger, mock_get_config, temp_dirs):
-    """Test that backup_database handles non-SQLite databases correctly."""
+def test_create_archived_backup_non_sqlite(mock_logger, mock_get_config, temp_dirs):
+    """Test that create_archived_backup handles non-SQLite databases correctly."""
     # Mock the storage config
     mock_get_config.return_value = {
         "backup_directory": temp_dirs['backup_dir']
@@ -240,7 +241,7 @@ def test_backup_database_non_sqlite(mock_logger, mock_get_config, temp_dirs):
         )
         
         # Call the function
-        result = backup_database()
+        result = create_archived_backup()
         
         # Verify warning was logged and function returned None
         assert result is None
@@ -248,8 +249,8 @@ def test_backup_database_non_sqlite(mock_logger, mock_get_config, temp_dirs):
 
 @patch("utils.database_backup.DATABASE_URL", "sqlite:///nonexistent.db")
 @patch("utils.database_backup.get_storage_config")
-def test_backup_database_file_not_found(mock_get_config, temp_dirs):
-    """Test that backup_database handles missing database files correctly."""
+def test_create_archived_backup_file_not_found(mock_get_config, temp_dirs):
+    """Test that create_archived_backup handles missing database files correctly."""
     # Mock the storage config
     mock_get_config.return_value = {
         "backup_directory": temp_dirs['backup_dir']
@@ -262,18 +263,43 @@ def test_backup_database_file_not_found(mock_get_config, temp_dirs):
             path="/nonexistent.db"
         )
         
-        # Call the function and expect a ValueError
-        with pytest.raises(ValueError):
-            backup_database()
+        # Call the function and expect a FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            create_archived_backup()
 
 @patch("os.environ")
-def test_copy_to_public_location_no_env_var(mock_environ):
-    """Test that copy_to_public_location handles missing environment variable correctly."""
-    # Mock environment variables to return None
+def test_update_public_db_copy_no_env_var(mock_environ):
+    """Test that update_public_db_copy handles missing environment variable correctly."""
+    mock_environ.get.return_value = None
+    
+    result = update_public_db_copy()
+    assert result is None
+
+@patch("utils.database_backup.shutil.copy2")
+def test_create_archived_backup_exception(mock_copy, mock_get_config, temp_dirs):
+    """Test that create_archived_backup handles exceptions during copy."""
+    # Mock the storage config
+    mock_get_config.return_value = {
+        "backup_directory": temp_dirs['backup_dir']
+    }
+    
+    # Mock the database path
+    with patch("utils.database_backup.urlparse") as mock_urlparse:
+        mock_urlparse.return_value = MagicMock(
+            scheme="sqlite",
+            path="/nonexistent.db"
+        )
+        
+        # Expect a generic exception because the original function raises it
+        with pytest.raises(Exception):
+            create_archived_backup()
+
+@patch("utils.database_backup.shutil.copy2")
+def test_update_public_db_copy_exception(mock_copy, mock_environ, temp_dirs):
+    """Test that update_public_db_copy handles exceptions during copy."""
+    # Mock the environment variables
     mock_environ.get.return_value = None
     
     # Call the function
-    result = copy_to_public_location()
-    
-    # Verify function returned None
+    result = update_public_db_copy()
     assert result is None

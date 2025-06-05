@@ -1,5 +1,5 @@
 import streamlit as st
-from config import APP_NAME, APP_LAYOUT
+from config import APP_NAME, APP_LAYOUT, APP_ICON
 from frontend.components.sidebar import render_sidebar
 from frontend.components.header import render_header
 from frontend.components.new_experiment import render_new_experiment
@@ -9,7 +9,7 @@ from frontend.components.view_samples import render_sample_inventory
 from frontend.components.auth_components import init_auth_state, render_login_page, render_logout_button
 from frontend.components.issue_submission import render_issue_submission_form
 from utils.scheduler import setup_backup_scheduler, shutdown_scheduler
-from utils.database_backup import copy_to_public_location
+from utils.database_backup import update_public_db_copy
 import os
 import logging
 import atexit
@@ -31,20 +31,17 @@ except Exception as e:
     st.error("Failed to initialize authentication. Please check your configuration.")
     st.stop()
 
-# Get the absolute path to the icon file
-icon_path = os.path.join(os.path.dirname(__file__), ".streamlit", "static", "Addis_Avatar_SandColor_NoBackground.png")
-
 # Streamlit app configuration
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon=icon_path,
+    page_icon=APP_ICON,
     layout=APP_LAYOUT,
     initial_sidebar_state="expanded"
 )
 
 # Create an initial public copy of the database
 try:
-    public_path = copy_to_public_location()
+    public_path = update_public_db_copy()
     if public_path:
         logger.info(f"Created initial public database copy at: {public_path}")
 except Exception as e:
@@ -88,6 +85,16 @@ def main():
             render_issue_submission_form()
         # elif page == "Settings":
         #     render_settings()
+
+        if st.sidebar.button("Sync Public DB"):
+            try:
+                with st.spinner("Syncing public database..."):
+                    public_path = update_public_db_copy()
+                    if public_path:
+                        st.sidebar.success(f"DB synced to {public_path}")
+            except Exception as e:
+                logger.error(f"Error syncing public database: {str(e)}")
+                st.sidebar.error("An error occurred while syncing the public database. Please try again later.")
     except Exception as e:
         logger.error(f"Error in main application: {str(e)}")
         st.error("An error occurred while running the application. Please try again later.")
