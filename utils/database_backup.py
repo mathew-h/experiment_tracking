@@ -1,3 +1,4 @@
+import sys
 import os
 import shutil
 import logging
@@ -6,6 +7,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 from config.config import DATABASE_URL
 from config.storage import get_storage_config
+
+# Add the project root to sys.path
+# Project root is one level up from the directory containing this script (utils)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
