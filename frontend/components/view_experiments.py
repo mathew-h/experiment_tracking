@@ -18,7 +18,7 @@ from database.models import (
 )
 
 from frontend.components.experiment_details import display_experiment_details
-from frontend.components.edit_experiment import edit_experiment
+from frontend.components.edit_experiment import edit_experiment, handle_delete_experiment
 from frontend.components.utils import (
     generate_form_fields,
     extract_conditions,
@@ -78,6 +78,9 @@ def render_view_experiments():
     
     if 'edit_mode' not in st.session_state:
         st.session_state.edit_mode = False
+    
+    if 'confirm_delete_experiment_id' not in st.session_state: # Initialize confirmation state
+        st.session_state.confirm_delete_experiment_id = None
     
     # Quick access section for direct experiment lookup
     st.markdown("#### Quick Access")
@@ -312,12 +315,14 @@ def render_experiment_detail():
         if st.button("Back to Experiment List"):
             st.session_state.view_experiment_id = None
             st.session_state.edit_mode = False
+            st.session_state.confirm_delete_experiment_id = None # Reset confirmation on back
             st.rerun() # Rerun to go back to the list
     else:
         # Back to List button - Place it consistently at the top left
         if st.button("← Back to List"):
             st.session_state.view_experiment_id = None
             st.session_state.edit_mode = False
+            st.session_state.confirm_delete_experiment_id = None # Reset confirmation on back
             st.rerun() # Rerun to go back to the list
         
         # --- Refetch the experiment data HERE ---
@@ -342,7 +347,35 @@ def render_experiment_detail():
             # Place Edit button *after* details in view mode
             if st.button("Edit Experiment"):
                 st.session_state.edit_mode = True
+                st.session_state.confirm_delete_experiment_id = None # Reset delete confirmation if going to edit
                 st.rerun() # Rerun to switch to edit mode
+
+            # Delete Experiment Button and Confirmation Logic
+            st.markdown("--- Configuraton ---") # Adding a separator for clarity
+            if st.session_state.confirm_delete_experiment_id == experiment['id']:
+                st.warning(f"**Are you sure you want to delete experiment {experiment['experiment_id']}?** This action cannot be undone.")
+                col_confirm, col_cancel, _ = st.columns([1,1,3])
+                with col_confirm:
+                    if st.button("Confirm Delete", key="confirm_delete_btn", type="primary"):
+                        if handle_delete_experiment(experiment['id']):
+                            st.success(f"Experiment {experiment['experiment_id']} deleted successfully.")
+                            st.session_state.view_experiment_id = None
+                            st.session_state.edit_mode = False
+                            st.session_state.confirm_delete_experiment_id = None
+                            st.session_state.experiment_updated = True # To refresh list view if it depends on it
+                            st.rerun()
+                        else:
+                            # Error is handled by handle_delete_experiment
+                            st.session_state.confirm_delete_experiment_id = None # Reset to hide confirmation
+                            st.rerun()
+                with col_cancel:
+                    if st.button("Cancel Delete", key="cancel_delete_btn"):
+                        st.session_state.confirm_delete_experiment_id = None
+                        st.rerun()
+            else:
+                if st.button("Delete Experiment", key="delete_experiment_btn"):
+                    st.session_state.confirm_delete_experiment_id = experiment['id']
+                    st.rerun()
         else:
             # Edit mode - show editable form
             edit_experiment(experiment)

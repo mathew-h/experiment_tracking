@@ -294,6 +294,49 @@ def update_experiment(experiment_id, data):
     finally:
         db.close()
 
+def handle_delete_experiment(db_experiment_id: int):
+    """
+    Deletes an experiment and its associated data from the database.
+
+    Args:
+        db_experiment_id (int): The primary key (id) of the experiment to delete.
+
+    Returns:
+        bool: True if deletion was successful, False otherwise.
+        
+    Note: This function assumes that cascade deletes are properly configured
+    in the SQLAlchemy models (e.g., using cascade="all, delete-orphan" on
+    relationships from Experiment to its related tables like ExperimentalConditions,
+    ExperimentNotes, ExperimentalResults, ModificationsLog, and from
+    ExperimentalResults to its own related data like ScalarData, NMRData, ResultFiles).
+    If cascades are not set up, related records must be deleted manually here.
+    """
+    try:
+        db = SessionLocal()
+        experiment = db.query(Experiment).filter(Experiment.id == db_experiment_id).first()
+
+        if experiment is None:
+            st.error(f"Experiment with ID {db_experiment_id} not found for deletion.")
+            return False
+
+        # If cascade deletes are properly configured in the models,
+        # deleting the experiment object will also delete all its related data.
+        db.delete(experiment)
+        
+        # Log this action (optional, but good practice)
+        # For simplicity, we're not adding a new log type for deletion here,
+        # but one could be added to ModificationsLog if desired.
+        
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        st.error(f"Error deleting experiment: {str(e)}")
+        return False
+    finally:
+        if 'db' in locals() and db:
+            db.close()
+
 def save_note(experiment_id, note_text):
     """
     Save a new note to the database.
