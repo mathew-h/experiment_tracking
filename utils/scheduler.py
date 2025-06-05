@@ -2,7 +2,7 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
-from .database_backup import backup_database, cleanup_old_backups, copy_to_public_location
+from .database_backup import create_archived_backup, cleanup_old_backups, update_public_db_copy
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,13 +45,13 @@ def setup_backup_scheduler(
     
     # Schedule database backup
     scheduler.add_job(
-        func=lambda: backup_database(),
+        func=lambda: create_archived_backup(),
         trigger=IntervalTrigger(hours=backup_interval_hours),
         id='database_backup',
-        name=f'Database backup every {backup_interval_hours} hours',
+        name=f'Database archive backup every {backup_interval_hours} hours',
         replace_existing=True
     )
-    logger.info(f"Scheduled database backup job (every {backup_interval_hours} hours)")
+    logger.info(f"Scheduled database archive backup job (every {backup_interval_hours} hours)")
     
     # Schedule cleanup of old backups
     scheduler.add_job(
@@ -65,7 +65,7 @@ def setup_backup_scheduler(
     
     # Schedule public database copy
     scheduler.add_job(
-        func=lambda: copy_to_public_location(),
+        func=lambda: update_public_db_copy(),
         trigger=IntervalTrigger(hours=public_copy_interval_hours),
         id='public_database_copy',
         name=f'Public database copy every {public_copy_interval_hours} hours',
@@ -93,7 +93,7 @@ def shutdown_scheduler():
 def create_backup_now():
     """Create a database backup immediately."""
     try:
-        backup_path = backup_database()
+        backup_path = create_archived_backup()
         return backup_path
     except Exception as e:
         logger.error(f"Failed to create immediate backup: {str(e)}")
@@ -102,7 +102,7 @@ def create_backup_now():
 def create_public_copy_now():
     """Create a public database copy immediately."""
     try:
-        public_path = copy_to_public_location()
+        public_path = update_public_db_copy()
         return public_path
     except Exception as e:
         logger.error(f"Failed to create immediate public copy: {str(e)}")
