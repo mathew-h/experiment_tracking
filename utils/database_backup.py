@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
-from config import DATABASE_URL
+from config.config import DATABASE_URL
 from config.storage import get_storage_config
 
 # Configure logging
