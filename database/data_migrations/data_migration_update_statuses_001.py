@@ -1,6 +1,6 @@
 import sys
 import os
-from sqlalchemy import create_engine, text, select, update, column
+from sqlalchemy import create_engine, text, update # Removed select, column for this approach
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -10,7 +10,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from database.database import DATABASE_URL
-from database.models import Experiment # Still needed for table metadata for raw query
+from database.models import Experiment # Still needed for table metadata and update
 
 def run_data_migration():
     """
@@ -31,35 +31,33 @@ def run_data_migration():
 
     updated_count = 0
     failed_count = 0
-    # Initialize experiments_to_update to prevent UnboundLocalError
     experiments_needing_update_info = []
 
     try:
         print("Starting experiment status data migration...")
 
-        # Step 1: Fetch IDs and current statuses using a raw SQL IN clause
-        # This avoids Python-side enum validation on the filter values.
-        # Get the actual column name for 'status' from the Experiment model
+        # Step 1: Fetch IDs and current statuses using a more direct SQL execution
         status_column_name = Experiment.status.property.columns[0].name
+        id_column_name = Experiment.id.property.columns[0].name
+        table_name = Experiment.__tablename__
 
-        # Create a placeholder string for the IN clause, e.g., "('PLANNED', 'IN_PROGRESS', 'FAILED')"
         in_clause_values = ", ".join([f"'{s}'" for s in status_mapping.keys()])
-        raw_where_clause = f"{status_column_name} IN ({in_clause_values})"
-
-        # Select the id and the status column (referred to by its string name)
-        # from the actual table reflected by the Experiment model.
-        stmt = select(
-            Experiment.__table__.c.id, # Select id column directly from table metadata
-            Experiment.__table__.c[status_column_name].label("current_status") # Select status column by name
-        ).select_from(Experiment.__table__).where(
-            text(raw_where_clause) # Use the raw SQL WHERE clause
-        )
-
-        result = session.execute(stmt).fetchall()
+        # Construct the raw SQL query string
+        raw_sql_query = f"SELECT {id_column_name}, {status_column_name} FROM {table_name} WHERE {status_column_name} IN ({in_clause_values})"
         
-        experiments_needing_update_info = [
-            {"id": row.id, "current_status": str(row.current_status)} for row in result
-        ]
+        print(f"Executing raw SQL for fetching: {raw_sql_query}")
+
+        # Use a connection to execute raw SQL and fetch results directly
+        with engine.connect() as connection:
+            result_proxy = connection.execute(text(raw_sql_query))
+            # Iterate over the ResultProxy, which yields RowProxy objects (like tuples)
+            for row in result_proxy:
+                # Access by index: 0 for id, 1 for status
+                experiments_needing_update_info.append({
+                    "id": row[0],
+                    "current_status": str(row[1]) # Ensure it's a string immediately
+                })
+            result_proxy.close() # Close the ResultProxy
 
         if not experiments_needing_update_info:
             print("No experiments found with statuses requiring update.")
@@ -68,7 +66,7 @@ def run_data_migration():
 
         print(f"Found {len(experiments_needing_update_info)} experiments to potentially update.")
 
-        # Step 2: Iterate and update each experiment
+        # Step 2: Iterate and update each experiment (using the existing session for transaction management)
         for exp_info in experiments_needing_update_info:
             exp_id = exp_info["id"]
             old_status_str = exp_info["current_status"]
@@ -77,6 +75,7 @@ def run_data_migration():
                 new_status_str = status_mapping[old_status_str]
                 try:
                     print(f"Updating Experiment DB ID {exp_id}: status from '{old_status_str}' to '{new_status_str}'")
+                    # Use the session for the update operation to keep it within the transaction
                     update_stmt = (
                         update(Experiment)
                         .where(Experiment.id == exp_id)
@@ -112,7 +111,8 @@ def run_data_migration():
         if experiments_needing_update_info:
             failed_count = len(experiments_needing_update_info) - updated_count
     finally:
-        session.close()
+        if session.is_active:
+             session.close()
         print("Data migration finished.")
         if failed_count > 0:
             print(f"Warning: {failed_count} experiment(s) may not have been updated or processing failed.")
