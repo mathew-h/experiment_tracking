@@ -39,7 +39,7 @@ def render_new_experiment():
             'experiment_id': '',
             'sample_id': '',
             'researcher': '',
-            'status': 'PLANNED', # Default status
+            'status': EXPERIMENT_STATUSES[0], # Default status
             'conditions': get_default_conditions(), # Load defaults from FIELD_CONFIG
             'notes': [], # Keep notes separate, initial note handled in form
             'initial_note': '' # Clear initial note field
@@ -103,7 +103,7 @@ def render_new_experiment():
                 status = st.selectbox(
                     "Experiment Status",
                     options=EXPERIMENT_STATUSES,
-                    index=EXPERIMENT_STATUSES.index(st.session_state.experiment_data.get('status', 'PLANNED'))
+                    index=EXPERIMENT_STATUSES.index(st.session_state.experiment_data.get('status', EXPERIMENT_STATUSES[0]))
                 )
                 
                 st.markdown("#### Required Conditions")
@@ -182,7 +182,7 @@ def render_new_experiment():
                     'experiment_id': '',  # Clear for new experiment
                     'sample_id': previous_data.get('sample_id', ''),
                     'researcher': previous_data.get('researcher', ''),
-                    'status': 'PLANNED',  # Default for new experiments
+                    'status': EXPERIMENT_STATUSES[0],  # Default for new experiments
                     'conditions': previous_data.get('conditions', get_default_conditions()),
                     'notes': [], # Notes are experiment-specific
                     'initial_note': ''  # Description is experiment-specific
@@ -194,7 +194,7 @@ def render_new_experiment():
                     'experiment_id': '',
                     'sample_id': '',
                     'researcher': '',
-                    'status': 'PLANNED',
+                    'status': EXPERIMENT_STATUSES[0],
                     'conditions': get_default_conditions(), # Reset conditions to defaults
                     'notes': [], # Keep notes separate, initial note handled in form
                     'initial_note': '' # Clear initial note field
