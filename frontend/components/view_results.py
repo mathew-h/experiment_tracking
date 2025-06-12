@@ -319,7 +319,7 @@ def render_results_form(experiment_db_id):
     st.markdown(f"#### {form_title}")
 
     # --- File Upload Section (Outside Form) ---
-    st.markdown("**Upload New Files** (Associate with this time point)")
+    st.markdown("**Upload New Files** (Associated with this time point)")
     uploaded_files_widget = st.file_uploader(
         "Select files",
         accept_multiple_files=True,
@@ -444,8 +444,8 @@ def render_results_form(experiment_db_id):
              scalar_fields_to_generate.remove('time_post_reaction')
 
         scalar_generated_values = generate_form_fields(
-            field_config=SCALAR_RESULTS_CONFIG,
-            current_data=current_data,
+            config=SCALAR_RESULTS_CONFIG,
+            current_values=current_data,
             field_names=scalar_fields_to_generate,
             key_prefix=f"results_{form_key}_scalar"
         )
@@ -463,8 +463,8 @@ def render_results_form(experiment_db_id):
             primary_fields_to_generate = [f for f in primary_fields_to_generate if f not in readonly_primary]
 
             primary_generated_values = generate_form_fields(
-                field_config=primary_config,
-                current_data=current_data,
+                config=primary_config,
+                current_values=current_data,
                 field_names=primary_fields_to_generate,
                 key_prefix=f"results_{form_key}_{primary_type_name.lower()}"
             )

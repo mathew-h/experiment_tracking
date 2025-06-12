@@ -394,6 +394,8 @@ class ExternalAnalysis(Base):
     pxrf_reading_no = Column(String, ForeignKey("pxrf_readings.reading_no", ondelete="SET NULL"), nullable=True, index=True)
     description = Column(Text)
     analysis_metadata = Column(JSON)  # For storing additional analysis-specific data
+    # Add magnetic susceptibility field
+    magnetic_susceptibility = Column(String, nullable=True)  # Store as string to maintain flexibility
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

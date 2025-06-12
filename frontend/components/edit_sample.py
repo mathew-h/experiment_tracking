@@ -101,31 +101,33 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
     db = SessionLocal()
     saved_file_paths = [] # Keep track of files saved in this run for cleanup
     try:
-        # --- Step 1 & 2: Find SampleInfo record and get its integer ID --- 
+        # --- Step 1: Find SampleInfo record ---
         sample_info_record = db.query(SampleInfo).filter(SampleInfo.sample_id == user_sample_id).first()
 
         if not sample_info_record:
             st.error(f"Sample with ID '{user_sample_id}' not found. Cannot add analysis.")
             return False
 
-        # --- Step 3: Get the SampleInfo primary key (integer) --- 
-        sample_info_primary_key_id = sample_info_record.id
-
-        # --- Step 4: Create the ExternalAnalysis object --- 
+        # --- Step 2: Create the ExternalAnalysis object ---
+        # If Magnetic Susceptibility, append value to description
+        description = analysis_data.get('description', '')
+        if analysis_data.get('analysis_type') == 'Magnetic Susceptibility':
+            mag_susc_val = analysis_data.get('magnetic_susceptibility', '').strip()
+            if mag_susc_val:
+                if description:
+                    description += f"\nMagnetic susceptibility: {mag_susc_val} (1x10^-3)"
+                else:
+                    description = f"Magnetic susceptibility: {mag_susc_val} (1x10^-3)"
         new_analysis = ExternalAnalysis(
-            sample_id=user_sample_id,               # User-defined string ID
-            sample_info_id=sample_info_primary_key_id, # Integer foreign key *<- Now included*
+            sample_id=user_sample_id,  # Use the user-defined string ID
             analysis_type=analysis_data.get('analysis_type'),
-            analysis_date=analysis_data.get('analysis_date'), # Ensure this is a datetime object or None
-            laboratory=analysis_data.get('laboratory'),
-            analyst=analysis_data.get('analyst'),
-            pxrf_reading_no=analysis_data.get('pxrf_reading_no'), # Include new field
-            description=analysis_data.get('description'),
+            pxrf_reading_no=analysis_data.get('pxrf_reading_no'),
+            description=description,
             analysis_metadata=json.dumps(analysis_data.get('analysis_metadata')) if analysis_data.get('analysis_metadata') else None
         )
         db.add(new_analysis)
 
-        # --- Flush to get new_analysis.id --- 
+        # --- Flush to get new_analysis.id ---
         try:
             db.flush()
             db.refresh(new_analysis)
@@ -134,12 +136,13 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
              db.rollback()
              return False # Don't proceed if main record fails
         
-        # --- Handle File Uploads (Loop through list) --- 
+        # --- Handle File Uploads (Loop through list) ---
         analysis_file_entries_info = []
         if uploaded_files:
             for idx, uploaded_file in enumerate(uploaded_files):
                 if uploaded_file:
-                    filename_prefix = f"sample_{sample_info_primary_key_id}_analysis_{new_analysis.id}_{idx}" # Make prefix unique per file
+                    # Use the string sample_id for the prefix
+                    filename_prefix = f"sample_{user_sample_id}_analysis_{new_analysis.id}_{idx}"
                     file_path = save_uploaded_file(
                         file=uploaded_file, 
                         base_dir_name='analysis_reports',
@@ -173,7 +176,6 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
         # --- Log Modification --- 
         log_values = analysis_data.copy()
         log_values['sample_id'] = user_sample_id # User string id
-        log_values['sample_info_id'] = sample_info_primary_key_id # Integer id
         # pxrf_reading_no should already be in analysis_data if provided
         if analysis_file_entries_info:
              log_values['analysis_files'] = analysis_file_entries_info
@@ -292,7 +294,7 @@ def delete_sample_photo(photo_id):
 
         # Store details for logging before deletion
         old_values = {
-            'sample_info_id': photo.sample_info_id,
+            'sample_id': photo.sample_id,
             'photo_id': photo.id,
             'file_path': photo.file_path,
             'file_name': photo.file_name

@@ -17,7 +17,7 @@ EXPERIMENT_TYPES = ['Serum', 'Autoclave', 'HPHT', 'Core Flood', 'Other']
 EXPERIMENT_STATUSES = ['ONGOING', 'COMPLETED', 'CANCELLED']
 
 # Available external analysis types
-ANALYSIS_TYPES = ['pXRF', 'XRD', 'SEM', 'Elemental', 'Other']
+ANALYSIS_TYPES = ['pXRF', 'XRD', 'SEM', 'Elemental', 'Other', 'Magnetic Susceptibility']
 
 # Feedstock types
 FEEDSTOCK_TYPES = ['Nitrogen', 'Nitrate', 'Blank']
@@ -104,38 +104,24 @@ EXTERNAL_ANALYSIS_CONFIG = {
         'required': True,
         'help': "Select the type of analysis performed"
     },
-    'pxrf_reading_no': { # New field
+    'pxrf_reading_no': {
         'label': "pXRF Reading No(s)",
         'type': 'text',
         'default': '',
         'required': False, # Required conditionally in the UI, not always
         'help': "Enter the pXRF reading number(s). Can be integers separated by commas (e.g., 1, 2, 5)."
     },
-    'laboratory': {
-        'label': "Laboratory",
+    'magnetic_susceptibility': {
+        'label': "Mag. Susc (1x10^-3)",
         'type': 'text',
-        'default': '', # Default to empty string
+        'default': '',
         'required': False,
-        'help': "Enter the name of the laboratory performing the analysis"
-    },
-    'analyst': {
-        'label': "Analyst",
-        'type': 'text',
-        'default': '', # Default to empty string
-        'required': False,
-        'help': "Enter the name of the analyst"
-    },
-    'analysis_date': {
-        'label': "Analysis Date",
-        'type': 'date',
-        'default': None, # Default to None for date input
-        'required': False,
-        'help': "Select the date when the analysis was performed"
+        'help': "Enter the magnetic susceptibility value or range (e.g., 0.5-1). Units: 1x10^-3. Leave blank if not measured."
     },
     'description': {
         'label': "Description",
         'type': 'text_area',
-        'default': '', # Default to empty string
+        'default': '',
         'required': False,
         'height': 100,
         'help': "Add a description of the analysis"

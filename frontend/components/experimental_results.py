@@ -75,8 +75,7 @@ def _save_or_update_scalar(db: Session, result: ExperimentalResults, scalar_data
         modified_table=ScalarResults.__tablename__,
         modification_type=modification_type,
         old_values=old_values if old_values else None,
-        new_values=new_values if new_values else None,
-        related_id=result.id
+        new_values=new_values if new_values else None
     )
     return scalar_entry # Return the saved/updated entry
 
@@ -158,8 +157,7 @@ def _save_or_update_primary(db: Session, result: ExperimentalResults, primary_da
         modified_table=SpecificModel.__tablename__,
         modification_type=modification_type,
         old_values=old_values if old_values else None,
-        new_values=new_values if new_values else None,
-        related_id=result.id
+        new_values=new_values if new_values else None
     )
     return primary_entry # Return the saved/updated entry
 
@@ -210,8 +208,7 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
                     modified_table=ExperimentalResults.__tablename__,
                     modification_type="update",
                     old_values={"description": old_desc},
-                    new_values={"description": result_description},
-                    related_id=result.id
+                    new_values={"description": result_description}
                 )
             # No need to log main entry update unless fields on ExperimentalResults itself change
 
@@ -249,17 +246,12 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
                 modified_table=ExperimentalResults.__tablename__,
                 modification_type="create",
                 new_values={
-                    'time_post_reaction': time_post_reaction,
-                    'result_type': result_type.name,
-                    'description': result_description,
-                    'experiment_fk': parent_experiment.id
-                },
-                related_id=None # For new entry, related_id might be result.id after flush if preferred
-            ) # Example
-
-            # Flush to get the result.id needed for related tables
-            db.flush()
-            db.refresh(result)
+                    "time_post_reaction": time_post_reaction,
+                    "result_type": result_type.name,
+                    "description": result_description
+                }
+            )
+            db.flush() # Flush to get result.id before using it below
 
 
         # --- Save/Update Scalar Data (Always happens) ---
@@ -366,8 +358,7 @@ def delete_experimental_results(result_id):
             experiment_id=experiment_str_id,
             modified_table="experimental_results",
             modification_type="delete",
-            old_values=old_values_log,
-            related_id=result_id
+            old_values=old_values_log
         )
 
         # --- Delete the ExperimentalResults record ---
@@ -435,11 +426,10 @@ def delete_result_file(file_id):
         # --- Log the deletion ---
         log_modification(
             db=db,
-            experiment_id=experiment_str_id_for_log, # Log against the parent experiment's string ID
-            modified_table="result_files", # Indicate which table
+            experiment_id=experiment_str_id_for_log,
+            modified_table=ResultFiles.__tablename__,
             modification_type="delete",
-            old_values=old_values, # Log the details of the deleted file record
-            related_id=file_record.result_id # Log the parent result ID
+            old_values=old_values
         )
 
         # --- Commit the transaction ---

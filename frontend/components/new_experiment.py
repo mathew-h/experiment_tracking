@@ -215,8 +215,8 @@ def save_experiment():
         # Create a database session
         db = SessionLocal()
         
-        # Get the next experiment number
-        last_experiment = db.query(Experiment).order_by(Experiment.experiment_number.desc()).first()
+        # Get the next experiment number, with a lock to prevent race conditions
+        last_experiment = db.query(Experiment).order_by(Experiment.experiment_number.desc()).with_for_update().first()
         next_experiment_number = 1 if last_experiment is None else last_experiment.experiment_number + 1
         
         # Get data from session state
@@ -316,9 +316,12 @@ def save_experiment():
     except Exception as e:
         if db: # Check if db was initialized before trying to rollback
             db.rollback()
-        # Check if this is a unique constraint violation on experiment_id
-        if "UNIQUE constraint failed: experiments.experiment_id" in str(e):
+        # Check for unique constraint violations
+        error_str = str(e).lower()
+        if "unique constraint failed: experiments.experiment_id" in error_str:
             st.error(f"An experiment with ID '{st.session_state.experiment_data['experiment_id']}' already exists. Please choose a different experiment ID.")
+        elif "unique constraint failed: experiments.experiment_number" in error_str:
+            st.error("There was a conflict creating a new experiment number. This can happen if multiple experiments are created at the same time. Please try saving again.")
         else:
             st.error(f"Error saving experiment: {str(e)}")
         return False # Indicate failure

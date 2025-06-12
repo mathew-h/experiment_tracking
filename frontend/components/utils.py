@@ -170,40 +170,102 @@ def format_value(value, config):
         return str(value)
 
 # --- New Form Generation Utility ---
-def generate_form_fields(field_config, current_values, field_names, key_prefix=""):
+def generate_form_fields(config, current_values, field_names, key_prefix=""):
     """
-    Generate form fields based on configuration.
-    """
-    values = {}
-    for field_name in field_names:
-        config = field_config.get(field_name, {})
-        current_value = current_values.get(field_name)
-        
-        # Handle date fields
-        if config.get('type') == 'date':
-            # Ensure value passed is either None or a datetime.date/datetime.datetime
-            date_value = current_value if isinstance(current_value, (datetime.date, datetime.datetime)) else None
-            if isinstance(date_value, datetime.datetime):
-                if date_value.tzinfo is None:
-                    date_value = date_value.replace(tzinfo=pytz.UTC)
-                # Convert to EST for display
-                est = pytz.timezone('US/Eastern')
-                date_value = date_value.astimezone(est)
-            
-            values[field_name] = st.date_input(
-                config.get('label', field_name),
-                value=date_value,
-                key=f"{key_prefix}_{field_name}"
-            )
-        else:
-            # Handle other field types as before
-            values[field_name] = st.text_input(
-                config.get('label', field_name),
-                value=str(current_value) if current_value is not None else "",
-                key=f"{key_prefix}_{field_name}"
-            )
+    Generate form fields based on the provided configuration.
     
-    return values
+    Args:
+        config (dict): The configuration dictionary for the fields.
+        current_values (dict): The current values for the fields.
+        field_names (list): A list of field names to generate.
+        key_prefix (str): A prefix for the widget keys to ensure uniqueness.
+        
+    Returns:
+        dict: A dictionary of the new values from the form fields.
+    """
+    new_values = {}
+    for name in field_names:
+        if name in config:
+            field_config = config[name]
+            field_type = field_config.get('type', 'text')
+            
+            # Use a unique key for each widget
+            widget_key = f"{key_prefix}_{name}"
+            
+            # Get the current value for this field, or its default
+            current_value = current_values.get(name, field_config.get('default'))
+
+            if field_type == 'select':
+                options = field_config.get('options', [])
+                try:
+                    # Find index of current value, default to 0 if not found
+                    index = options.index(current_value) if current_value in options else 0
+                except (ValueError, TypeError):
+                    index = 0
+                new_values[name] = st.selectbox(
+                    label=field_config['label'],
+                    options=options,
+                    index=index,
+                    help=field_config.get('help', ''),
+                    key=widget_key
+                )
+            elif field_type == 'number':
+                # Get number-specific config values, providing sensible defaults
+                min_val = field_config.get('min_value')
+                max_val = field_config.get('max_value')
+                step = field_config.get('step', 1.0)
+                format_str = field_config.get('format', "%.2f")
+
+                # Ensure the value passed to the widget is a valid number, or a default if None
+                val = current_value
+                if val is None:
+                    val = field_config.get('default')
+
+                # Cast to the correct type (int or float) based on config
+                try:
+                    if format_str == '%d':
+                        # Ensure step is also an int for integer types
+                        step = int(step) if step is not None else 1
+                        val = int(float(val)) # Safely cast to float first, then int
+                    else:
+                        step = float(step) if step is not None else 1.0
+                        val = float(val)
+                except (ValueError, TypeError):
+                    val = 0 if format_str == '%d' else 0.0 # Fallback to correct type
+
+                new_values[name] = st.number_input(
+                    label=field_config['label'],
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=val,
+                    step=step,
+                    format=format_str,
+                    help=field_config.get('help', ''),
+                    key=widget_key
+                )
+            elif field_type == 'date':
+                # Ensure value passed is either None or a datetime.date/datetime.datetime
+                date_value = current_value if isinstance(current_value, (datetime.date, datetime.datetime)) else None
+                if isinstance(date_value, datetime.datetime):
+                    if date_value.tzinfo is None:
+                        date_value = date_value.replace(tzinfo=pytz.UTC)
+                    # Convert to EST for display
+                    est = pytz.timezone('US/Eastern')
+                    date_value = date_value.astimezone(est)
+                
+                new_values[name] = st.date_input(
+                    label=field_config['label'],
+                    value=date_value,
+                    key=widget_key
+                )
+            else:
+                # Handle other field types as before
+                new_values[name] = st.text_input(
+                    label=field_config['label'],
+                    value=str(current_value) if current_value is not None else "",
+                    key=widget_key
+                )
+    return new_values
 
 # --- Modification Logging Utility ---
 
