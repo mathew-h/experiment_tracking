@@ -41,6 +41,13 @@ def edit_experiment(experiment):
         with col1:
             experiment_id = st.text_input("Experiment ID", value=experiment['experiment_id'])
             
+            created_at = st.date_input(
+                "Creation Date",
+                value=experiment.get('created_at', datetime.datetime.now()),
+                help="The date when the experiment was created",
+                format="MM/DD/YYYY"
+            )
+            
             # Get sample options from database using utils function
             sample_options, sample_dict = get_sample_options()
             

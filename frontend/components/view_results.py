@@ -8,7 +8,8 @@ from database.models import (
     ExperimentalResults,
     ResultType,
     ScalarResults, # Import ScalarResults
-    NMRResults    # Import NMRResults
+    NMRResults,    # Import NMRResults
+    ResultFiles
 )
 from frontend.config.variable_config import (
     SCALAR_RESULTS_CONFIG,
@@ -22,7 +23,8 @@ from frontend.components.utils import (
 from frontend.components.experimental_results import (
     save_results,
     delete_experimental_results,
-    delete_result_file
+    delete_result_file,
+    save_uploaded_file
 )
 
 # --- Main Rendering Function ---
@@ -171,8 +173,6 @@ def display_single_result(result, experiment_db_id):
                 file_col1, file_col2, file_col3 = st.columns([3, 4, 1])
                 with file_col1:
                     st.write(f"- {file_record.file_name}")
-                    if file_record.description:
-                        st.caption(f"  Description: {file_record.description}")
                 with file_col2:
                     if os.path.exists(file_record.file_path):
                         try:
@@ -233,7 +233,7 @@ def render_results_form(experiment_db_id):
 
     # --- Initialize Session State for file buffer ---
     if buffer_key not in st.session_state:
-        st.session_state[buffer_key] = {'uploaded_files': [], 'descriptions': {}}
+        st.session_state[buffer_key] = {'uploaded_files': []}
     file_buffer = st.session_state[buffer_key]
 
     if st.session_state.editing_result_id:
@@ -336,202 +336,159 @@ def render_results_form(experiment_db_id):
     for file in current_widget_files:
          if file.name not in buffer_file_names:
              file_buffer['uploaded_files'].append(file)
-             # Initialize description if not already there (e.g., file re-added)
-             if file.name not in file_buffer['descriptions']:
-                 file_buffer['descriptions'][file.name] = ""
 
     # Remove files from buffer that are no longer in the widget
     new_buffer_files = []
-    removed_files = set()
     for file in file_buffer['uploaded_files']:
          if file.name in current_widget_file_names:
              new_buffer_files.append(file)
-         else:
-             # Track removed file names to clean up descriptions
-             removed_files.add(file.name)
 
     file_buffer['uploaded_files'] = new_buffer_files
-    # Clean up descriptions for removed files
-    for name in removed_files:
-        if name in file_buffer['descriptions']:
-            del file_buffer['descriptions'][name]
 
-    # --- Display Description Inputs (Outside Form) ---
-    if file_buffer['uploaded_files']:
-        st.write("Add optional descriptions for uploaded files:")
-        for i, uploaded_file in enumerate(file_buffer['uploaded_files']):
-            desc_key = f"file_desc_{i}_{uploaded_file.name}_{buffer_key}"
-            # Ensure description exists in buffer before accessing
-            file_buffer['descriptions'][uploaded_file.name] = st.text_input(
-                f"Description for {uploaded_file.name}",
-                value=file_buffer['descriptions'].get(uploaded_file.name, ""), # Use .get()
-                key=desc_key
-            )
-
-    # --- Form for Data Values and Submit ---
-    with st.form(form_key):
+    with st.form(key=form_key, clear_on_submit=True):
         form_values = {} # Will store scalar values
         primary_specific_data_values = {} # Will store primary type values
 
-        # --- Primary Result Type Selection (Only when ADDING NEW) ---
+        # Determine which fields to show based on the primary result type
+        # For "Add New", let user choose. For "Edit", it's fixed.
         if st.session_state.editing_result_id is None:
-            # Get available types (NMR, GC, etc.) from RESULT_TYPE_FIELDS
-            available_types = list(RESULT_TYPE_FIELDS.keys())
-            if not available_types:
-                 st.error("No primary result types configured. Cannot add results.")
-                 st.stop()
+            # Get available types from RESULT_TYPE_FIELDS
+            available_primary_types = list(RESULT_TYPE_FIELDS.keys())
 
-            default_index = 0
-            if primary_result_type and primary_result_type.name in available_types:
-                 default_index = available_types.index(primary_result_type.name)
+            if available_primary_types:
+                # Let user choose which type of result they are adding
+                selected_primary_type_name = st.selectbox(
+                    "Primary Result Type",
+                    options=available_primary_types,
+                    index=0,  # Default to first available type
+                    key=f"{base_key_part}_primary_type_select"
+                )
+                try:
+                    primary_result_type = ResultType[selected_primary_type_name]
+                except KeyError:
+                    st.error(f"Invalid primary result type: {selected_primary_type_name}")
+                    primary_result_type = None  # Handle error
+            else:
+                st.warning("No primary result types (e.g., NMR, GC) are configured. Please check `variable_config.py`.")
+                primary_result_type = None
+        # In edit mode, primary_result_type is already set from the database record loaded earlier.
 
-            selected_type_str = st.selectbox(
-                "Select Primary Result Type",
-                options=available_types,
-                index=default_index,
-                key=f"{base_key_part}_result_type_select"
+        # --- Render form fields ---
+        st.markdown("**Result Metadata**")
+        col1_meta, col2_meta = st.columns(2)
+        with col1_meta:
+            form_values['time_post_reaction'] = st.number_input(
+                label=SCALAR_RESULTS_CONFIG['time_post_reaction']['label'],
+                value=current_data.get('time_post_reaction', 0.0),
+                min_value=0.0,
+                step=0.5,
+                format="%.1f",
+                help=SCALAR_RESULTS_CONFIG['time_post_reaction']['help'],
+                disabled=(editing_time is not None) # Disable if editing
             )
-            # Determine the current primary type based on selection
-            try:
-                 current_primary_result_type = ResultType[selected_type_str]
-            except KeyError:
-                 st.error(f"Invalid result type selected: {selected_type_str}")
-                 current_primary_result_type = None # Handle error
-        else:
-            # Editing: Display the fixed primary type
-            st.text_input("Primary Result Type", value=primary_result_type.name, disabled=True)
-            current_primary_result_type = primary_result_type # Use the type being edited
 
-        # --- Result Description Field ---
-        description_label = "Result Description"
-        description_value = current_data.get('description', "") # Get from current_data or default to empty
-        description_key = f"results_description_{form_key}"
-        form_values['description'] = st.text_area(
-            label=description_label,
-            value=description_value,
-            key=description_key,
-            help="Add a general description for this result time point."
-        )
-
-        # --- Time Post-Reaction Field (remains mostly the same) ---
-        time_config = SCALAR_RESULTS_CONFIG['time_post_reaction'] # Still defined in scalar
-        time_label = time_config['label']
-        time_value = current_data.get('time_post_reaction')
-        time_key = f"results_time_post_reaction_{form_key}"
-        is_editing_time = st.session_state.editing_result_id is not None
-
-        if is_editing_time:
-            st.text_input(
-                label=f"{time_label} (Cannot be changed)",
-                value=f"{time_value:.1f}" if time_value is not None else "N/A",
-                key=time_key, disabled=True,
-                help=time_config.get('help', '') + " Time cannot be changed during edit."
+        with col2_meta:
+            form_values['description'] = st.text_input(
+                "Add a general description for this result entry",
+                value=current_data.get('description', ''),
+                key=f"{base_key_part}_desc"
             )
-            form_values['time_post_reaction'] = time_value # Keep original time
-        else:
-             form_values['time_post_reaction'] = st.number_input(
-                 label=time_label, min_value=time_config.get('min_value'),
-                 max_value=time_config.get('max_value'),
-                 value=float(time_value) if time_value is not None else time_config.get('default'),
-                 step=time_config.get('step'), format=time_config.get('format', "%.1f"),
-                 key=time_key, help=time_config.get('help')
-             )
 
-        # --- Always Generate Scalar Fields ---
-        st.markdown("##### General Scalar Measurements")
-        scalar_fields_to_generate = list(SCALAR_RESULTS_CONFIG.keys())
-        if 'time_post_reaction' in scalar_fields_to_generate:
-             scalar_fields_to_generate.remove('time_post_reaction')
-
-        scalar_generated_values = generate_form_fields(
-            config=SCALAR_RESULTS_CONFIG,
-            current_values=current_data,
-            field_names=scalar_fields_to_generate,
-            key_prefix=f"results_{form_key}_scalar"
-        )
-        form_values.update(scalar_generated_values)
-
-        # --- Generate Fields for the Selected/Edited Primary Type ---
-        if current_primary_result_type and current_primary_result_type.name in RESULT_TYPE_FIELDS:
-            primary_type_name = current_primary_result_type.name
-            st.markdown(f"##### {primary_type_name} Specific Data")
-            primary_config = RESULT_TYPE_FIELDS[primary_type_name]['config']
-            primary_fields_to_generate = list(primary_config.keys())
-
-            # Exclude readonly fields from form generation
-            readonly_primary = [k for k,v in primary_config.items() if v.get('readonly')]
-            primary_fields_to_generate = [f for f in primary_fields_to_generate if f not in readonly_primary]
-
-            primary_generated_values = generate_form_fields(
-                config=primary_config,
-                current_values=current_data,
-                field_names=primary_fields_to_generate,
-                key_prefix=f"results_{form_key}_{primary_type_name.lower()}"
-            )
-            primary_specific_data_values.update(primary_generated_values)
-        elif not current_primary_result_type:
-             st.warning("No primary result type selected or determined.")
-
-        # --- Save/Cancel Buttons (Logic inside needs update for new data structure) ---
+        st.markdown("---")
+        
         col1, col2 = st.columns(2)
+
         with col1:
-            submitted = st.form_submit_button("Save Results")
-            if submitted:
-                # Get time value (either from form or fixed value)
-                time_val = form_values.get('time_post_reaction')
+            # --- Render Scalar Fields ---
+            st.markdown("**Scalar Measurements**")
+            scalar_field_names = [f for f in SCALAR_RESULTS_CONFIG.keys() if f not in ['time_post_reaction', 'description']]
+            
+            for field_name in scalar_field_names:
+                config = SCALAR_RESULTS_CONFIG[field_name]
+                default_val = current_data.get(field_name, config.get('default'))
+                field_key = f"{base_key_part}_{field_name}"
 
-                # File data comes from the buffer
-                files_to_save = []
-                if file_buffer['uploaded_files']:
-                    for uploaded_file in file_buffer['uploaded_files']:
-                        files_to_save.append({
-                            'file': uploaded_file,
-                            'description': file_buffer['descriptions'].get(uploaded_file.name, '')
-                        })
-
-                # Validation
-                if time_val is None:
-                     st.error("Time Post-Reaction is required.")
-                elif current_primary_result_type is None:
-                     st.error("A primary result type must be selected.")
-                else:
-                    # *** IMPORTANT: Need to update save_results function ***
-                    # It should now accept 'scalar_data' and 'primary_data' dictionaries
-                    # Prepare scalar data dict (excluding time)
-                    scalar_data_to_save = {k: v for k, v in form_values.items() if k != 'time_post_reaction' and k != 'description'}
-                    # Get the description from form_values
-                    result_description = form_values.get('description', "")
-
-                    save_success = save_results(
-                        experiment_id=experiment_db_id,
-                        time_post_reaction=time_val,
-                        result_type=current_primary_result_type, # Pass the PRIMARY ResultType Enum
-                        result_description=result_description, # Pass the new description
-                        scalar_data=scalar_data_to_save,      # Pass the dict of scalar values
-                        primary_data=primary_specific_data_values, # Pass the dict for the primary type
-                        uploaded_files_data=files_to_save,
-                        result_id_to_edit=st.session_state.editing_result_id
+                if config['type'] == 'number':
+                    form_values[field_name] = st.number_input(
+                        label=config['label'],
+                        value=default_val,
+                        min_value=config.get('min_value'),
+                        max_value=config.get('max_value'),
+                        step=config.get('step'),
+                        format=config.get('format'),
+                        help=config.get('help'),
+                        key=field_key,
+                        disabled=config.get('readonly', False)
                     )
 
-                    if save_success:
-                        # Clear the buffer using buffer_key
-                        if buffer_key in st.session_state:
-                            del st.session_state[buffer_key]
-                        # Reset form display state
-                        st.session_state.show_results_form = False
-                        st.session_state.editing_result_id = None
-                        st.session_state.current_experiment_id_results = None
-                        st.session_state.experiment_updated = True
-                        st.rerun()
-                    # else: Error message handled by save_results
-
         with col2:
-            if st.form_submit_button("Cancel"):
-                # Clear the buffer
-                if buffer_key in st.session_state:
-                    del st.session_state[buffer_key]
-                # Reset form display state
-                st.session_state.show_results_form = False
-                st.session_state.editing_result_id = None
-                st.session_state.current_experiment_id_results = None
-                st.rerun()
+            # --- Render Primary-Specific Fields (e.g., NMR) ---
+            if primary_result_type and primary_result_type.name in RESULT_TYPE_FIELDS:
+                st.markdown(f"**{primary_result_type.name} Data**")
+                primary_config = RESULT_TYPE_FIELDS[primary_result_type.name]['config']
+                primary_field_names = list(primary_config.keys())
+                
+                for field_name in primary_field_names:
+                    with st.container(): # Use container to group fields
+                        config = primary_config[field_name]
+                        default_val = current_data.get(field_name, config.get('default'))
+                        field_key = f"{base_key_part}_{field_name}"
+
+                        if config['type'] == 'number':
+                            primary_specific_data_values[field_name] = st.number_input(
+                                label=config['label'],
+                                value=default_val,
+                                min_value=config.get('min_value'),
+                                max_value=config.get('max_value'),
+                                step=config.get('step'),
+                                format=config.get('format'),
+                                help=config.get('help'),
+                                key=field_key,
+                                disabled=config.get('readonly', False)
+                            )
+        
+        # --- Submit Button ---
+        st.markdown("---")
+        submitted = st.form_submit_button(
+            "Save Results",
+            type="primary",
+            use_container_width=True
+        )
+
+    # --- Post-form processing ---
+    if submitted:
+        # Re-determine primary type for saving
+        if st.session_state.editing_result_id is None:
+            # On new submission, get the type that was selected in the form
+            selected_type_name = st.session_state.get(f"{base_key_part}_primary_type_select")
+            if selected_type_name:
+                primary_result_type = ResultType[selected_type_name]
+        
+        # Get description from form_values
+        result_description = form_values.get('description', "")
+
+        # Prepare list of files to be saved
+        files_to_save = []
+        if file_buffer.get('uploaded_files'):
+             for uploaded_file in file_buffer['uploaded_files']:
+                 # No description needed anymore
+                 files_to_save.append({'file': uploaded_file})
+
+        # Save all data
+        save_results(
+            experiment_id=experiment_db_id,
+            time_post_reaction=form_values['time_post_reaction'],
+            result_description=result_description,
+            result_type=primary_result_type, # Pass the ResultType enum member
+            scalar_data=form_values,
+            primary_data=primary_specific_data_values,
+            files_to_save=files_to_save,
+            result_id_to_edit=st.session_state.editing_result_id
+        )
+
+        # Clear buffer and reset state
+        st.session_state[buffer_key] = {'uploaded_files': []}
+        st.session_state.show_results_form = False
+        st.session_state.editing_result_id = None
+        st.session_state.current_experiment_id_results = None
+        st.rerun()

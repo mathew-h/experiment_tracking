@@ -229,7 +229,19 @@ FIELD_CONFIG = {
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Enter the catalyst percentage relative to rock mass (optional)."
+        'help': "Enter the catalyst percentage relative to rock mass (optional).",
+        'readonly': True
+    },
+    'catalyst_ppm': {
+        'label': "Catalyst Concentration (ppm)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Calculated concentration of catalyst in the water (mg/L).",
+        'readonly': True
     },
     'feedstock': {
         'label': "Feedstock Type",
@@ -428,6 +440,16 @@ SCALAR_RESULTS_CONFIG = {
         'format': "%.1f",
         'required': False,
         'help': "Enter the ferrous iron yield as a percentage (if measured)."
+    },
+    'solution_ammonium_concentration': {
+        'label': "Solution Ammonium Concentration (mM)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the ammonium concentration in the solution in millimolar (mM)."
     },
     'grams_per_ton_yield': {
         'label': "Yield (g NH3/ton rock)",

@@ -42,7 +42,8 @@ def render_new_experiment():
             'status': EXPERIMENT_STATUSES[0], # Default status
             'conditions': get_default_conditions(), # Load defaults from FIELD_CONFIG
             'notes': [], # Keep notes separate, initial note handled in form
-            'initial_note': '' # Clear initial note field
+            'initial_note': '', # Clear initial note field
+            'created_at': datetime.datetime.now() # Added created_at field
         }
     else:
         # Always merge defaults with current conditions
@@ -62,6 +63,13 @@ def render_new_experiment():
                     "Experiment ID", 
                     value=st.session_state.experiment_data.get('experiment_id', ''),
                     help="Enter a unique identifier for this experiment"
+                )
+                
+                created_at = st.date_input(
+                    "Creation Date",
+                    value=st.session_state.experiment_data.get('created_at', datetime.datetime.now()),
+                    help="The date when the experiment was created",
+                    format="MM/DD/YYYY"
                 )
                 
                 # Sample selection - allow blank for control runs or experiments without rock samples
@@ -129,7 +137,7 @@ def render_new_experiment():
             with col2:
                 st.markdown("#### Optional Parameters")
                 # Get optional field names from FIELD_CONFIG
-                optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False)]
+                optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False) and not config.get('readonly', False)]
                 optional_values = generate_form_fields(
                     FIELD_CONFIG, 
                     st.session_state.experiment_data['conditions'], 
@@ -185,7 +193,8 @@ def render_new_experiment():
                     'status': EXPERIMENT_STATUSES[0],  # Default for new experiments
                     'conditions': previous_data.get('conditions', get_default_conditions()),
                     'notes': [], # Notes are experiment-specific
-                    'initial_note': ''  # Description is experiment-specific
+                    'initial_note': '',  # Description is experiment-specific
+                    'created_at': datetime.datetime.now() # Reset created_at
                 }
                 del st.session_state['previous_experiment_data'] # Clear after use
             else:
@@ -197,7 +206,8 @@ def render_new_experiment():
                     'status': EXPERIMENT_STATUSES[0],
                     'conditions': get_default_conditions(), # Reset conditions to defaults
                     'notes': [], # Keep notes separate, initial note handled in form
-                    'initial_note': '' # Clear initial note field
+                    'initial_note': '', # Clear initial note field
+                    'created_at': datetime.datetime.now() # Reset created_at
                 }
 
             if 'last_created_experiment_number' in st.session_state:
@@ -328,69 +338,3 @@ def save_experiment():
     finally:
         if db: # Check if db was initialized before trying to close
             db.close()
-
-def create_new_experiment():
-    """
-    Create a new experiment entry.
-    """
-    with st.form(key="new_experiment_form"):
-        st.markdown("### Basic Information")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            sample_id = st.text_input("Rock Sample ID")
-            researcher = st.text_input("Researcher Name")
-        
-        with col2:
-            status = st.selectbox(
-                "Experiment Status",
-                options=EXPERIMENT_STATUSES,
-                index=0
-            )
-            # Use EST timezone for the date input
-            est = pytz.timezone('US/Eastern')
-            current_time = datetime.datetime.now(est)
-            exp_date = st.date_input(
-                "Experiment Date", 
-                value=current_time
-            )
-        
-        st.markdown("### Experimental Conditions")
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            st.markdown("#### Required Parameters")
-            required_field_names = [name for name, config in FIELD_CONFIG.items() if config.get('required', False)]
-            required_values = generate_form_fields(
-                FIELD_CONFIG, 
-                {}, 
-                required_field_names,
-                key_prefix="new_req"
-            )
-            
-        with col4:
-            st.markdown("#### Optional Parameters")
-            optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False)]
-            optional_values = generate_form_fields(
-                FIELD_CONFIG, 
-                {}, 
-                optional_field_names,
-                key_prefix="new_opt"
-            )
-        
-        all_condition_values = {**required_values, **optional_values}
-        
-        # Convert EST date to UTC for storage
-        utc_time = current_time.astimezone(pytz.UTC)
-        
-        form_data = {
-            'sample_id': sample_id,
-            'researcher': researcher,
-            'status': status,
-            'date': datetime.datetime.combine(exp_date, utc_time.time()).replace(tzinfo=pytz.UTC),
-            'conditions': all_condition_values
-        }
-        
-        submit_button = st.form_submit_button("Create Experiment")
-        if submit_button:
-            submit_new_experiment(form_data)

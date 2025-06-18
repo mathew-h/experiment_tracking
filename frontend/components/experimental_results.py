@@ -163,7 +163,7 @@ def _save_or_update_primary(db: Session, result: ExperimentalResults, primary_da
 
 
 # --- Main Save Function (Refactored) ---
-def save_results(experiment_id, time_post_reaction, result_type, result_description, scalar_data, primary_data, uploaded_files_data=None, result_id_to_edit=None):
+def save_results(experiment_id, time_post_reaction, result_type, result_description, scalar_data, primary_data, files_to_save=None, result_id_to_edit=None):
     """
     Save or update experiment results for a specific time point.
     Handles creation/update of ExperimentalResults, ScalarResults, and primary result data (NMR, GC, etc.).
@@ -175,7 +175,7 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
         result_description (str): The description for this result entry.
         scalar_data (dict): Dictionary of scalar field values.
         primary_data (dict): Dictionary containing data for the primary result type.
-        uploaded_files_data (list[dict], optional): List of file upload data.
+        files_to_save (list[dict], optional): List of file upload data.
         result_id_to_edit (int, optional): The ID of the ExperimentalResults entry to update.
 
     Returns:
@@ -260,48 +260,51 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
         # --- Save/Update Primary Data (NMR, GC, etc.) ---
         primary_entry = _save_or_update_primary(db, result, primary_data, result_type)
 
-        # --- Handle File Uploads (No changes needed here) ---
-        if uploaded_files_data:
-            saved_files_info = []
-            for file_data in uploaded_files_data:
-                uploaded_file = file_data.get('file')
-                description = file_data.get('description', '')
-                if uploaded_file:
-                    exp_str_id = result.experiment.experiment_id
-                    storage_folder = f'result_files/exp_{exp_str_id}/res_{result.id}'
-                    file_path = save_uploaded_file(uploaded_file, storage_folder, "")
+        # --- Handle File Uploads ---
+        if files_to_save:
+            for file_info in files_to_save:
+                uploaded_file = file_info['file']
+                # Check if file already exists for this result to prevent duplicates
+                file_exists = db.query(ResultFiles).filter_by(
+                    result_id=result.id,
+                    file_name=uploaded_file.name
+                ).first()
+
+                if not file_exists:
+                    # Save the file to disk/cloud storage
+                    file_path = save_uploaded_file(uploaded_file)
                     if file_path:
-                        result_file_entry = ResultFiles(
+                        # Create a new ResultFiles entry without description
+                        new_file = ResultFiles(
                             result_id=result.id,
                             file_path=file_path,
                             file_name=uploaded_file.name,
-                            file_type=uploaded_file.type,
-                            description=description
+                            file_type=uploaded_file.type
                         )
-                        db.add(result_file_entry)
-                        # TODO: Log file additions?
-                    else:
-                        st.error(f"Failed to save uploaded file: {uploaded_file.name}")
-                        db.rollback()
-                        return False
-
-        # --- Commit all changes ---
+                        db.add(new_file)
+                        # Log file addition
+                        log_modification(
+                            db=db,
+                            experiment_id=result.experiment.experiment_id,
+                            modified_table=ResultFiles.__tablename__,
+                            modification_type="create",
+                            new_values={
+                                "file_name": uploaded_file.name,
+                                "result_id": result.id
+                            }
+                        )
+        
         db.commit()
-        action = "updated" if result_id_to_edit else "saved"
-        st.success(f"Results (Type: {result_type.name}) and associated data for time point {time_post_reaction:.1f}h {action} successfully!")
+        st.success("Results saved successfully!")
         return True
 
-    except ValueError as ve: # Catch specific errors raised by helpers
-         db.rollback()
-         # Error already shown by helper function
-         print(f"ValueError during save: {ve}") # Log for debugging
-         return False
     except Exception as e:
         db.rollback()
-        st.error(f"An unexpected error occurred saving results/files for time {time_post_reaction:.1f}h: {str(e)}")
-        print(f"Detailed error: {e}") # Use proper logging
+        st.error(f"An error occurred while saving the results: {e}")
+        # Log the exception for debugging
+        print(f"Error in save_results: {e}")
         import traceback
-        traceback.print_exc() # Print stack trace for debugging
+        traceback.print_exc()
         return False
     finally:
         db.close()

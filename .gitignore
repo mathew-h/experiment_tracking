@@ -61,7 +61,6 @@ venv.bak/
 *.sqlite3
 *.sql
 *.db-journal
-migrations/
 
 # Logs
 *.log

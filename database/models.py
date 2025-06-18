@@ -26,7 +26,7 @@ class Experiment(Base):
     researcher = Column(String)
     date = Column(DateTime(timezone=True))
     status = Column(SQLEnum(ExperimentStatus))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     conditions = relationship("ExperimentalConditions", back_populates="experiment", uselist=False, cascade="all, delete-orphan")
@@ -51,6 +51,7 @@ class ExperimentalConditions(Base):
     buffer_system = Column(String, nullable=True)
     water_to_rock_ratio = Column(Float, nullable=True)
     catalyst_percentage = Column(Float, nullable=True)
+    catalyst_ppm = Column(Float, nullable=True)
     buffer_concentration = Column(Float, nullable=True)  # in mM
     room_temp_pressure = Column(Float, nullable=True)  # in psi instead of bar
     flow_rate = Column(Float, nullable=True)
@@ -114,6 +115,11 @@ class ExperimentalConditions(Base):
             if elemental_metal_mass is not None:
                 # Calculate percentage (mass/mass)
                 self.catalyst_percentage = (elemental_metal_mass / self.rock_mass) * 100 # Convert ratio to percentage
+
+                # Calculate catalyst_ppm (mg of metal per L of water)
+                if self.water_volume is not None and self.water_volume > 0:
+                    # mg/L = (grams * 1000 mg/g) / (mL / 1000 mL/L)
+                    self.catalyst_ppm = (elemental_metal_mass * 1000) / (self.water_volume / 1000)
 
 class ExperimentalResults(Base):
     __tablename__ = "experimental_results"
@@ -231,6 +237,7 @@ class ScalarResults(Base):
 
     # Scalar fields
     ferrous_iron_yield = Column(Float, nullable=True)  # in percentage
+    solution_ammonium_concentration = Column(Float, nullable=True)  # in mM
     grams_per_ton_yield = Column(Float, nullable=True)  # yield in g/ton
     final_ph = Column(Float, nullable=True)
     final_nitrate_concentration = Column(Float, nullable=True)  # in mM
@@ -288,7 +295,6 @@ class ResultFiles(Base):
     file_path = Column(String, nullable=False)
     file_name = Column(String)
     file_type = Column(String)
-    description = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationship back to the specific result entry
