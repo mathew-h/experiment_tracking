@@ -96,14 +96,13 @@ def build_conditions(data, experiment_id):
 
 # Removed the FileStorage class and get_upload_dir function
 
-def save_uploaded_file(file, storage_folder, filename_prefix):
+def save_uploaded_file(file, storage_folder):
     """
     Saves an uploaded file using the centralized utils.storage.save_file.
 
     Args:
         file (UploadedFile): The file object from st.file_uploader.
         storage_folder (str): The target folder/prefix in the storage backend (e.g., "photos/sample_123").
-        filename_prefix (str): A prefix to potentially add to the original filename (often not needed when using folders).
 
     Returns:
         str or None: The storage path/URL of the saved file, or None if error.

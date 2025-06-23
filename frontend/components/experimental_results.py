@@ -262,6 +262,8 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
 
         # --- Handle File Uploads ---
         if files_to_save:
+            # Define storage folder outside the loop, as it's the same for all files in this result
+            storage_folder = f"results/{result.experiment.experiment_id}/{result.id}"
             for file_info in files_to_save:
                 uploaded_file = file_info['file']
                 # Check if file already exists for this result to prevent duplicates
@@ -272,7 +274,10 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
 
                 if not file_exists:
                     # Save the file to disk/cloud storage
-                    file_path = save_uploaded_file(uploaded_file)
+                    file_path = save_uploaded_file(
+                        file=uploaded_file,
+                        storage_folder=storage_folder
+                    )
                     if file_path:
                         # Create a new ResultFiles entry without description
                         new_file = ResultFiles(
@@ -405,7 +410,6 @@ def delete_result_file(file_id):
             'result_id': file_record.result_id,
             'file_path': file_record.file_path,
             'file_name': file_record.file_name,
-            'description': file_record.description
         }
 
         # Get the associated experiment string ID for logging context

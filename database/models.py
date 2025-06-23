@@ -116,10 +116,11 @@ class ExperimentalConditions(Base):
                 # Calculate percentage (mass/mass)
                 self.catalyst_percentage = (elemental_metal_mass / self.rock_mass) * 100 # Convert ratio to percentage
 
-                # Calculate catalyst_ppm (mg of metal per L of water)
+                # Calculate catalyst_ppm (parts per million by mass)
                 if self.water_volume is not None and self.water_volume > 0:
-                    # mg/L = (grams * 1000 mg/g) / (mL / 1000 mL/L)
-                    self.catalyst_ppm = (elemental_metal_mass * 1000) / (self.water_volume / 1000)
+                    # ppm = (mass_of_solute [g] / mass_of_solvent [g]) * 1,000,000
+                    # Assuming water density is 1 g/mL, water_volume in mL is equivalent to water_mass in g.
+                    self.catalyst_ppm = (elemental_metal_mass / self.water_volume) * 1_000_000
 
 class ExperimentalResults(Base):
     __tablename__ = "experimental_results"

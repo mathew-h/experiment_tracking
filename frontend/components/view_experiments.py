@@ -614,7 +614,6 @@ def get_experiment_by_id(experiment_id):
                             'file_path': file_obj.file_path,
                             'file_name': file_obj.file_name,
                             'file_type': file_obj.file_type,
-                            'description': file_obj.description,
                             'created_at': file_obj.created_at
                         })
 

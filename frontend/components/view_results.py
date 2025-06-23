@@ -24,7 +24,6 @@ from frontend.components.experimental_results import (
     save_results,
     delete_experimental_results,
     delete_result_file,
-    save_uploaded_file
 )
 
 # --- Main Rendering Function ---
