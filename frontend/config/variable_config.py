@@ -36,7 +36,7 @@ ROCK_SAMPLE_CONFIG = {
         'help': "Enter a unique identifier for this rock sample (e.g., 20UM21)"
     },
     'description': {
-        'label': "Sample Description",
+        'label': "Sample Description (optional)",
         'type': 'text',
         'required': False,
         'default': '',
@@ -57,7 +57,7 @@ ROCK_SAMPLE_CONFIG = {
         'help': "Enter the country where the sample was collected"
     },
     'locality': {
-        'label': "Locality",
+        'label': "Locality (optional)",
         'type': 'text',
         'required': False,
         'default': '',
@@ -85,8 +85,8 @@ ROCK_SAMPLE_CONFIG = {
         'format': "%.6f",
         'help': "Enter the longitude coordinate of the collection site (0.0 for unknown/unspecified location)"
     },
-        'rock_classification': {
-        'label': "Rock Classification",
+    'rock_classification': {
+        'label': "Rock Classification (optional)",
         'type': 'text',
         'required': False,
         'default': '',
@@ -248,7 +248,7 @@ FIELD_CONFIG = {
         'type': 'select',
         'options': FEEDSTOCK_TYPES,
         'default': 'Nitrate',
-        'required': False,
+        'required': True,
         'help': "Feedstock type. Valid values: Nitrogen, Nitrate, or Blank."
     },
     'buffer_system': {
@@ -286,7 +286,7 @@ FIELD_CONFIG = {
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Enter the initial nitrate concentration in millimolar (mM)."
+        'help': "Enter the initial nitrate concentration in millimolar (mM). Should be 50 for 'Nitrate' feedstock and 0 for 'Nitrogen' or 'Blank'."
     },
     'initial_dissolved_oxygen': {  # Renamed from 'dissolved_oxygen'
         'label': "Initial Dissolved Oxygen (ppm)",
@@ -421,8 +421,8 @@ FIELD_CONFIG = {
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
+        'step': 0.001,
+        'format': "%.3f",
         'required': False,
         'help': "Specify the flow rate in mL/min (for flow-through experiments)."
     },

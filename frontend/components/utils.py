@@ -269,29 +269,35 @@ def generate_form_fields(config, current_values, field_names, key_prefix=""):
 
 # --- Modification Logging Utility ---
 
-def log_modification(db, experiment_id, modified_table, modification_type, old_values=None, new_values=None):
+def log_modification(
+    db: Session, 
+    modified_table: str, 
+    modification_type: str, 
+    experiment_id: str = None, 
+    experiment_fk: int = None, 
+    old_values: dict = None, 
+    new_values: dict = None
+):
     """
-    Log a modification to the database.
+    Log a modification to the database. Does NOT commit.
+    The caller is responsible for handling the session and transaction.
     """
     try:
-        # Convert any datetime objects to UTC before JSON serialization
+        # Get current user if available in session state
+        modified_by = st.session_state.get("user", {}).get("email", "unknown")
+
+        # Convert any datetime objects for JSON serialization
         if old_values:
-            for key, value in old_values.items():
-                if isinstance(value, datetime.datetime):
-                    if value.tzinfo is None:
-                        value = value.replace(tzinfo=pytz.UTC)
-                    old_values[key] = value.isoformat()
+            old_values = {k: v.isoformat() if isinstance(v, datetime.datetime) else v for k, v in old_values.items()}
         
         if new_values:
-            for key, value in new_values.items():
-                if isinstance(value, datetime.datetime):
-                    if value.tzinfo is None:
-                        value = value.replace(tzinfo=pytz.UTC)
-                    new_values[key] = value.isoformat()
+            new_values = {k: v.isoformat() if isinstance(v, datetime.datetime) else v for k, v in new_values.items()}
         
         # Create the log entry
         log_entry = ModificationsLog(
             experiment_id=experiment_id,
+            experiment_fk=experiment_fk,
+            modified_by=modified_by,
             modified_table=modified_table,
             modification_type=modification_type,
             old_values=old_values,
@@ -299,11 +305,11 @@ def log_modification(db, experiment_id, modified_table, modification_type, old_v
         )
         
         db.add(log_entry)
-        db.commit()
+        # NO COMMIT HERE. The caller is responsible for the transaction.
         
     except Exception as e:
-        db.rollback()
-        st.error(f"Error logging modification: {str(e)}")
+        # Re-raise to ensure the parent transaction can be rolled back.
+        logger.error(f"Error creating log entry (will be rolled back): {e}", exc_info=True)
         raise e
 
 # --- Moved from view_experiments.py ---

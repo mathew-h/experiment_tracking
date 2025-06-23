@@ -34,16 +34,27 @@ def edit_experiment(experiment):
     
     The form includes validation and proper error handling for the submission process.
     """
+    # --- State management for edit form ---
+    # Use session state to hold the data being edited to persist changes across reruns
+    if 'edit_form_data' not in st.session_state or st.session_state.edit_form_data.get('id') != experiment.get('id'):
+        st.session_state.edit_form_data = experiment.copy()
+        if 'conditions' in st.session_state.edit_form_data:
+            st.session_state.edit_form_data['conditions'] = st.session_state.edit_form_data['conditions'].copy()
+    
+    # Work with the session state copy
+    form_data = st.session_state.edit_form_data
+    conditions = form_data.get('conditions', {})
+
     with st.form(key="edit_experiment_form"):
         st.markdown("### Basic Information")
         col1, col2 = st.columns(2)
         
         with col1:
-            experiment_id = st.text_input("Experiment ID", value=experiment['experiment_id'])
+            experiment_id = st.text_input("Experiment ID", value=form_data['experiment_id'])
             
             created_at = st.date_input(
                 "Creation Date",
-                value=experiment.get('created_at', datetime.datetime.now()),
+                value=form_data.get('created_at', datetime.datetime.now()),
                 help="The date when the experiment was created",
                 format="MM/DD/YYYY"
             )
@@ -52,7 +63,7 @@ def edit_experiment(experiment):
             sample_options, sample_dict = get_sample_options()
             
             # Find current selection
-            current_sample_id = experiment.get('sample_id', '')
+            current_sample_id = form_data.get('sample_id', '')
             current_index = 0
             if current_sample_id:
                 # Find the display text that maps to the current_sample_id
@@ -93,21 +104,21 @@ def edit_experiment(experiment):
                 if sample_id not in sample_dict.values():
                     sample_id = "" # Reset to empty if not valid
 
-            researcher = st.text_input("Researcher Name", value=experiment['researcher'])
+            researcher = st.text_input("Researcher Name", value=form_data['researcher'])
         
         with col2:
             status = st.selectbox(
                 "Experiment Status",
                 options=EXPERIMENT_STATUSES,
-                index=EXPERIMENT_STATUSES.index(experiment['status']) if experiment['status'] in EXPERIMENT_STATUSES else 0
+                index=EXPERIMENT_STATUSES.index(form_data['status']) if form_data['status'] in EXPERIMENT_STATUSES else 0
             )
             # Convert UTC datetime to EST for display
             est = pytz.timezone('US/Eastern')
-            if isinstance(experiment['date'], datetime.datetime):
-                if experiment['date'].tzinfo is None:
+            if isinstance(form_data['date'], datetime.datetime):
+                if form_data['date'].tzinfo is None:
                     # If naive datetime, assume it's UTC
-                    experiment['date'] = experiment['date'].replace(tzinfo=pytz.UTC)
-                display_date = experiment['date'].astimezone(est)
+                    form_data['date'] = form_data['date'].replace(tzinfo=pytz.UTC)
+                display_date = form_data['date'].astimezone(est)
             else:
                 display_date = datetime.datetime.now(est)
             
@@ -119,10 +130,9 @@ def edit_experiment(experiment):
         st.markdown("### Experimental Conditions")
         col3, col4 = st.columns(2)
         
-        conditions = experiment.get('conditions', {})
-        
         with col3:
             st.markdown("#### Required Parameters")
+            
             # Get required field names from FIELD_CONFIG
             required_field_names = [name for name, config in FIELD_CONFIG.items() if config.get('required', False)]
             required_values = generate_form_fields(
@@ -135,7 +145,7 @@ def edit_experiment(experiment):
         with col4:
             st.markdown("#### Optional Parameters")
             # Get optional field names from FIELD_CONFIG
-            optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False)]
+            optional_field_names = [name for name, config in FIELD_CONFIG.items() if not config.get('required', False) and not config.get('readonly', False)]
             optional_values = generate_form_fields(
                 FIELD_CONFIG, 
                 conditions, 
@@ -152,7 +162,7 @@ def edit_experiment(experiment):
         utc_time = current_time.astimezone(pytz.UTC)
         
         # Prepare data for submission
-        form_data = {
+        submission_data = {
             'experiment_id': experiment_id,
             'sample_id': sample_id,
             'researcher': researcher,
@@ -164,7 +174,7 @@ def edit_experiment(experiment):
         # Submit button
         submit_button = st.form_submit_button("Save Changes")
         if submit_button:
-            submit_experiment_edit(experiment['id'], form_data)
+            submit_experiment_edit(experiment['id'], submission_data)
 
 def submit_experiment_edit(experiment_id, data):
     """
@@ -279,7 +289,8 @@ def update_experiment(experiment_id, data):
         # Use utility for logging
         log_modification(
             db=db,
-            experiment_id=experiment.id,
+            experiment_fk=experiment.id,
+            experiment_id=experiment.experiment_id,
             modified_table="experiments",
             modification_type="update",
             old_values=old_values,
@@ -326,14 +337,21 @@ def handle_delete_experiment(db_experiment_id: int):
             st.error(f"Experiment with ID {db_experiment_id} not found for deletion.")
             return False
 
+        # Log this action before deleting
+        log_modification(
+            db=db,
+            experiment_fk=experiment.id,
+            experiment_id=experiment.experiment_id,
+            modified_table="experiments",
+            modification_type="delete",
+            old_values={'experiment_id': experiment.experiment_id, 'id': experiment.id}
+        )
+
         # If cascade deletes are properly configured in the models,
         # deleting the experiment object will also delete all its related data.
         db.delete(experiment)
         
-        # Log this action (optional, but good practice)
-        # For simplicity, we're not adding a new log type for deletion here,
-        # but one could be added to ModificationsLog if desired.
-        
+        # Commit the transaction
         db.commit()
         return True
     except Exception as e:
@@ -374,6 +392,17 @@ def save_note(experiment_id, note_text):
         
         # Add the note to the session
         db.add(note)
+        db.flush() # Flush to get note ID for logging if needed, and to ensure it's in the transaction
+
+        # Log the creation of the note
+        log_modification(
+            db=db,
+            experiment_fk=experiment.id,
+            experiment_id=experiment.experiment_id,
+            modified_table="experiment_notes",
+            modification_type="create",
+            new_values={'note_id': note.id, 'note_text': note.note_text}
+        )
         
         # Commit the transaction
         db.commit()
@@ -430,8 +459,20 @@ def update_note(note_id, note_text):
             st.error("Note not found")
             return
         
+        old_text = note.note_text
         # Update the note
         note.note_text = note_text.strip()
+
+        # Log the update
+        log_modification(
+            db=db,
+            experiment_fk=note.experiment_fk,
+            experiment_id=note.experiment_id,
+            modified_table="experiment_notes",
+            modification_type="update",
+            old_values={'note_id': note.id, 'note_text': old_text},
+            new_values={'note_id': note.id, 'note_text': note.note_text}
+        )
         
         # Commit the transaction
         db.commit()

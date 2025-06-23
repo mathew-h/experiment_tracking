@@ -101,7 +101,6 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
         # Log modification using all fields from ROCK_SAMPLE_CONFIG, plus mag_susc if provided
         log_modification(
             db=db,
-            experiment_id=None,
             modified_table="sample_info",
             modification_type="create",
             new_values={
@@ -118,6 +117,16 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
                 pxrf_reading_no=pxrf_reading_no.strip(),
             )
             db.add(ext_analysis)
+            log_modification(
+                db=db,
+                modified_table="external_analyses",
+                modification_type="create",
+                new_values={
+                    'sample_id': sample.sample_id,
+                    'analysis_type': 'pXRF',
+                    'pxrf_reading_no': pxrf_reading_no.strip()
+                }
+            )
         # If Magnetic Susceptibility is provided, create an ExternalAnalysis entry
         if mag_susc and mag_susc.strip():
             from database.models import ExternalAnalysis
@@ -127,6 +136,16 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
                 description=f"Magnetic susceptibility: {mag_susc} (1x10^-3)"
             )
             db.add(mag_susc_analysis)
+            log_modification(
+                db=db,
+                modified_table="external_analyses",
+                modification_type="create",
+                new_values={
+                    'sample_id': sample.sample_id,
+                    'analysis_type': 'Magnetic Susceptibility',
+                    'description': f"Magnetic susceptibility: {mag_susc} (1x10^-3)"
+                }
+            )
         db.commit()
         st.success(f"Rock sample {form_values['sample_id']} saved successfully!" + (f" (Magnetic susceptibility: {mag_susc} 1x10^-3)" if mag_susc else ""))
         # --- Add sample photo if provided ---

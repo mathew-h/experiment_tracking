@@ -284,12 +284,11 @@ def save_experiment():
             )
             db.add(note)
         
-        # Log the creation of the experiment and its related data
-        # Ensure experiment has an ID before logging if FK is on Experiment.id
-        # db.flush() # Uncomment if ModificationsLog.experiment_id links to Experiment.id (PK)
+        # Use utility for logging
         log_modification(
             db=db,
-            experiment_id=experiment.experiment_id, # Assuming FK is on the string ID
+            experiment_fk=experiment.id,
+            experiment_id=experiment.experiment_id,
             modified_table="experiments",
             modification_type="create",
             new_values={
