@@ -16,7 +16,8 @@ from auth.user_management import (
     approve_user,
     reject_user,
     delete_request_by_email,
-    set_user_claims
+    set_user_claims,
+    reset_user_password
 )
 
 def main():
@@ -60,6 +61,10 @@ def main():
     set_claims_parser = subparsers.add_parser('set-claims', help='Set custom claims for an existing user')
     set_claims_parser.add_argument('uid', help='User UID')
     set_claims_parser.add_argument('--role', default='user', help='User role (default: user)')
+
+    # Reset password command
+    reset_password_parser = subparsers.add_parser('reset-password', help='Generate a password reset link for a user')
+    reset_password_parser.add_argument('email', help='User email')
 
     args = parser.parse_args()
 
@@ -113,6 +118,11 @@ def main():
             user = set_user_claims(args.uid, args.role)
             print(f"Set claims for user: {user['email']} (UID: {user['uid']})")
             print(f"Custom claims: {user['custom_claims']}")
+        
+        elif args.command == 'reset-password':
+            link = reset_user_password(args.email)
+            print(f"Password reset link for {args.email}:")
+            print(link)
         
         else:
             parser.print_help()

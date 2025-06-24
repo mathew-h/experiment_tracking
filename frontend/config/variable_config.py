@@ -430,17 +430,6 @@ FIELD_CONFIG = {
 
 # Configuration for experiment scalar results (formerly RESULTS_CONFIG)
 SCALAR_RESULTS_CONFIG = {
-    'ferrous_iron_yield': {  
-        'label': "Ferrous Iron Yield (%)",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'max_value': 100.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Enter the ferrous iron yield as a percentage (if measured)."
-    },
     'solution_ammonium_concentration': {
         'label': "Solution Ammonium Concentration (mM)",
         'type': 'number',
@@ -450,26 +439,6 @@ SCALAR_RESULTS_CONFIG = {
         'format': "%.1f",
         'required': False,
         'help': "Enter the ammonium concentration in the solution in millimolar (mM)."
-    },
-    'grams_per_ton_yield': {
-        'label': "Yield (g NH3/ton rock)",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Enter the yield in grams per ton (if measured)."
-    },
-    'co2_partial_pressure': {
-        'label': "CO2 Partial Pressure (psi)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
-        'required': False,
-        'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
     },
     'final_ph': {
         'label': "Final pH",
@@ -482,6 +451,50 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the final pH of the solution (if measured)."
     },
+    'sampling_volume': {
+        'label': "Sampling Volume (mL)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Sampling volume in milliliters."
+    },
+    'grams_per_ton_yield': {
+        'label': "Yield (g NH3/ton rock)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the yield in grams per ton (if measured)."
+    },
+    'ferrous_iron_yield': {  
+        'label': "Ferrous Iron Yield (%)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'max_value': 100.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Enter the ferrous iron yield as a percentage (if measured)."
+    },
+
+
+    'co2_partial_pressure': {
+        'label': "CO2 Partial Pressure (psi)",
+        'default': 0.0,
+        'type': 'number',
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
+    },
+
     'final_nitrate_concentration': {
         'label': "Final Nitrate Concentration (mM)",
         'type': 'number',
@@ -522,16 +535,6 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Final alkalinity measurement (mg/L as CaCO₃)."
     },
-    'sampling_volume': {
-        'label': "Sampling Volume (mL)",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Sampling volume in milliliters."
-    },
     'time_post_reaction': {
         'label': "Time Post-Reaction (hours)",
         'type': 'number',
@@ -542,121 +545,4 @@ SCALAR_RESULTS_CONFIG = {
         'format': "%.1f",
         'help': "Enter the time elapsed in hours since the reaction started when these results were measured."
     }
-}
-
-# Configuration for NMR specific results fields
-NMR_RESULTS_CONFIG = {
-    'is_concentration_mm': {
-        'label': "IS Concentration (mM)",
-        'type': 'number',
-        'default': 0.0263,
-        'min_value': 0.0,
-        'step': 0.0001,
-        'format': "%.4f",
-        'required': True,
-        'help': "Concentration of the Internal Standard (IS) in millimolar (mM)."
-    },
-    'is_protons': {
-        'label': "IS Protons",
-        'type': 'number',
-        'default': 2,
-        'min_value': 0,
-        'step': 1,
-        'format': "%d",
-        'required': True,
-        'help': "Number of protons contributing to the IS signal."
-    },
-    'sampled_rxn_volume_ul': {
-        'label': "Sampled Rxn Volume (uL)",
-        'type': 'number',
-        'default': 476.0,
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': True,
-        'help': "Volume of the reaction mixture sampled for NMR analysis in microliters (uL)."
-    },
-    'nmr_total_volume_ul': {
-        'label': "NMR Total Volume (uL)",
-        'type': 'number',
-        'default': 647.0,
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': True,
-        'help': "Total volume in the NMR tube (sample + solvent + IS) in microliters (uL)."
-    },
-    'nh4_peak_area_1': {
-        'label': "NH4 Peak Area 1",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.001,
-        'format': "%.3f",
-        'required': False,
-        'help': "Area of the first observed ammonium (NH4+) peak from NMR integration."
-    },
-    'nh4_peak_area_2': {
-        'label': "NH4 Peak Area 2",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.001,
-        'format': "%.3f",
-        'required': False,
-        'help': "Area of the second observed ammonium (NH4+) peak (if applicable)."
-    },
-    'nh4_peak_area_3': {
-        'label': "NH4 Peak Area 3",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.001,
-        'format': "%.3f",
-        'required': False,
-        'help': "Area of the third observed ammonium (NH4+) peak (if applicable)."
-    },
-    'total_nh4_peak_area': {
-        'label': "Total NH4 Peak Area",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.001,
-        'format': "%.3f",
-        'required': False,
-        'help': "Sum of all NH4 peak areas.",
-        'readonly': True  # Indicates this is a calculated field
-    },
-    'ammonium_concentration_mm': {
-        'label': "Ammonium Concentration (mM)",
-        'type': 'number',
-        'default': 0.0,
-        'min_value': 0.0,
-        'step': 0.001,
-        'format': "%.3f",
-        'required': False,
-        'help': "Calculated ammonium concentration in millimolar (mM).",
-        'readonly': True  # Indicates this is a calculated field
-    }
-}
-
-# Mapping of result types to their corresponding field configurations
-RESULT_TYPE_FIELDS = {
-    'NMR': {
-        'config': NMR_RESULTS_CONFIG,
-        'description': 'NMR spectroscopy measurements',
-        'always_editable': False,  # Now refers to whether NMR fields are editable (contextually)
-        'default_values': {
-            'is_concentration_mm': 0.0263,
-            'is_protons': 2,
-            'sampled_rxn_volume_ul': 476.0,
-            'nmr_total_volume_ul': 647.0,
-            'nh4_peak_area_1': 0.0,
-            'nh4_peak_area_2': 0.0,
-            'nh4_peak_area_3': 0.0,
-            'total_nh4_peak_area': 0.0,
-            'ammonium_concentration_mm': 0.0
-        }
-    }
-    # Add other non-scalar result types here as needed (e.g., GC, PXRF, XRD)
 } 

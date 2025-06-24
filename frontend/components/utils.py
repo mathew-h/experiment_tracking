@@ -13,7 +13,7 @@ import logging
 # Import the centralized storage functions
 from utils.storage import save_file, get_file, delete_file
 from sqlalchemy.orm import Session, joinedload
-from database.models import ExperimentalResults, NMRResults, ScalarResults, ExperimentalConditions, Experiment
+from database.models import ExperimentalResults, ScalarResults, ExperimentalConditions, Experiment
 import pytz
 
 logger = logging.getLogger(__name__)
@@ -532,127 +532,76 @@ def clean_external_analyses(excel_path: str = "data/20250404_Master Data Migrati
 
 def backfill_calculated_fields(db: Session):
     """
-    Iterates through results and conditions, recalculating derived fields.
-    Commits changes to the database if any updates were made.
+    Recalculates derived fields for all relevant records.
+    This now focuses on scalar results and experimental conditions.
     """
-    print("Starting backfill of calculated fields...")
-    updated_count = 0 # Track total updates across all types
+    logger.info("Starting backfill of calculated fields...")
 
-    # 1. Backfill ExperimentalConditions derived fields
-    # Fetch conditions where calculation inputs are present but outputs might be null
-    conditions_to_update = db.query(ExperimentalConditions).filter(
-        (
-            (ExperimentalConditions.water_to_rock_ratio == None) &
-            (ExperimentalConditions.water_volume != None) &
-            (ExperimentalConditions.rock_mass != None) &
-            (ExperimentalConditions.rock_mass > 0)
-        ) |
-        (
-            (ExperimentalConditions.catalyst_percentage == None) &
-            (ExperimentalConditions.catalyst != None) &
-            (ExperimentalConditions.catalyst_mass != None) &
-            (ExperimentalConditions.rock_mass != None) &
-            (ExperimentalConditions.rock_mass > 0)
-        )
-        # Add other conditions if more derived fields are added
-    ).all()
-    
-    updated_conditions_count = 0
-    if conditions_to_update:
-        print(f"Checking {len(conditions_to_update)} ExperimentalConditions entries for potential updates...")
-        for condition in conditions_to_update:
-            # Store original values to check if anything changed
-            original_wtr = condition.water_to_rock_ratio
-            original_cat_perc = condition.catalyst_percentage
-            condition.calculate_derived_conditions() # Attempt calculation
-            if (condition.water_to_rock_ratio != original_wtr or
-                condition.catalyst_percentage != original_cat_perc):
+    # Backfill for ExperimentalConditions
+    try:
+        conditions_to_update = db.query(ExperimentalConditions).all()
+        logger.info(f"Found {len(conditions_to_update)} experimental conditions to check for backfill.")
+        updated_conditions_count = 0
+        for conditions in conditions_to_update:
+            # Create a temporary dictionary of current values to check for changes
+            original_values = {
+                'water_to_rock_ratio': conditions.water_to_rock_ratio,
+                'catalyst_percentage': conditions.catalyst_percentage,
+                'catalyst_ppm': conditions.catalyst_ppm
+            }
+            # The method directly modifies the object
+            conditions.calculate_derived_conditions()
+            # Check if any values were actually changed
+            if (conditions.water_to_rock_ratio != original_values['water_to_rock_ratio'] or
+                conditions.catalyst_percentage != original_values['catalyst_percentage'] or
+                conditions.catalyst_ppm != original_values['catalyst_ppm']):
                 updated_conditions_count += 1
-                # No need to explicitly add, SQLAlchemy tracks changes within the session
+        
         if updated_conditions_count > 0:
-            print(f"Updated derived fields for {updated_conditions_count} ExperimentalConditions entries.")
-            updated_count += updated_conditions_count
-
-    # 2. Backfill NMRResults calculated fields
-    # It's often simplest to recalculate all, assuming inputs might have changed
-    # Load related experiment and conditions data needed for ammonia_mass_g calculation
-    nmr_results_to_update = db.query(NMRResults).options(
-        joinedload(NMRResults.result_entry)
+            logger.info(f"Updated {updated_conditions_count} experimental conditions with new calculated values.")
+        else:
+            logger.info("No experimental conditions required updates.")
+            
+    except Exception as e:
+        logger.error(f"Error during ExperimentalConditions backfill: {e}", exc_info=True)
+        db.rollback() # Rollback on error for this section
+        # Decide if you want to stop or continue
+    
+    # Backfill for ScalarResults
+    try:
+        # Eagerly load experiment and conditions to avoid N+1 queries
+        results_to_update = db.query(ScalarResults).options(
+            joinedload(ScalarResults.result_entry)
             .joinedload(ExperimentalResults.experiment)
             .joinedload(Experiment.conditions)
-    ).all()
-    
-    updated_nmr_count = 0
-    if nmr_results_to_update:
-        print(f"Checking {len(nmr_results_to_update)} NMRResults entries for potential updates...")
-        for nmr_result in nmr_results_to_update:
-            # Store original values
-            original_total_area = nmr_result.total_nh4_peak_area
-            original_conc_mm = nmr_result.ammonium_concentration_mm
-            original_mass_g = nmr_result.ammonia_mass_g
-            nmr_result.calculate_values() # Recalculate
-            if (nmr_result.total_nh4_peak_area != original_total_area or
-                nmr_result.ammonium_concentration_mm != original_conc_mm or
-                nmr_result.ammonia_mass_g != original_mass_g):
-                 updated_nmr_count += 1
-                 # No need to explicitly add
-        if updated_nmr_count > 0:
-             print(f"Recalculated values for {updated_nmr_count} NMRResults entries.")
-             updated_count += updated_nmr_count
+        ).all()
 
-    # 3. Backfill ScalarResults calculated fields (yields)
-    # Fetch Scalar results, ensuring related NMR data and conditions are loaded for yield calculation
-    scalar_results_to_update = db.query(ScalarResults).options(
-        joinedload(ScalarResults.result_entry).joinedload(ExperimentalResults.nmr_data),
-        joinedload(ScalarResults.result_entry).joinedload(ExperimentalResults.experiment).joinedload(Experiment.conditions)
-    ).all()
-    
-    updated_scalar_count = 0
-    if scalar_results_to_update:
-        print(f"Checking {len(scalar_results_to_update)} ScalarResults entries for potential updates...")
-        for scalar_result in scalar_results_to_update:
-            # Store original values
-            original_g_per_ton = scalar_result.grams_per_ton_yield
-            # original_fe_yield = scalar_result.ferrous_iron_yield # If/when calculated
-            scalar_result.calculate_yields() # Recalculate
-            # Check if g_per_ton changed (and potentially fe_yield later)
-            if scalar_result.grams_per_ton_yield != original_g_per_ton: # or scalar_result.ferrous_iron_yield != original_fe_yield:
+        logger.info(f"Found {len(results_to_update)} scalar results to check for backfill.")
+        updated_scalar_count = 0
+
+        for scalar_result in results_to_update:
+            original_yield = scalar_result.grams_per_ton_yield
+            # This method now calculates yield based on its own solution_ammonium_concentration
+            scalar_result.calculate_yields()
+            if scalar_result.grams_per_ton_yield != original_yield:
                 updated_scalar_count += 1
-                # No need to explicitly add
+
         if updated_scalar_count > 0:
-            print(f"Recalculated yields for {updated_scalar_count} ScalarResults entries.")
-            updated_count += updated_scalar_count
+            logger.info(f"Updated {updated_scalar_count} scalar results with new calculated yields.")
+        else:
+            logger.info("No scalar results required updates.")
 
-    # Commit changes if any updates were made
-    if updated_count > 0:
-        print(f"Committing {updated_count} total updates...")
+    except Exception as e:
+        logger.error(f"Error during ScalarResults backfill: {e}", exc_info=True)
+        db.rollback() # Rollback this part of the transaction
+    
+    # If both sections complete without raising an error, commit the changes
+    try:
         db.commit()
-        print("Backfill commit successful.")
-    else:
-        print("No calculated fields needed updating.")
-
-    print("Backfill process finished.")
-
-# --- How to run this --- #
-# This function needs to be called from a script or an admin interface.
-# Example (in a separate script like scripts/run_backfill.py):
-#
-# from sqlalchemy.orm import Session
-# from database.database import SessionLocal
-# from frontend.components.utils import backfill_calculated_fields
-#
-# if __name__ == "__main__":
-#     db: Session = SessionLocal()
-#     try:
-#         print("Running database calculation backfill...")
-#         backfill_calculated_fields(db)
-#         print("Backfill complete.")
-#     except Exception as e:
-#         print(f"An error occurred during backfill: {e}")
-#         db.rollback() # Rollback in case of error during commit
-#     finally:
-#         print("Closing database session.")
-#         db.close()
+        logger.info("Successfully committed all backfilled fields.")
+    except Exception as e:
+        logger.error(f"Failed to commit backfill changes: {e}", exc_info=True)
+        db.rollback()
 
 def get_sample_options():
     """

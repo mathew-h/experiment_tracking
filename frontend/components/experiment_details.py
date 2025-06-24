@@ -13,7 +13,6 @@ from database.models import (
     ExperimentStatus,
     ExperimentalConditions,
     PXRFReading,
-    ResultType
 )
 from frontend.config.variable_config import (
     FIELD_CONFIG,

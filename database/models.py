@@ -9,13 +9,6 @@ class ExperimentStatus(enum.Enum):
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
-class ResultType(enum.Enum):
-    NMR = "NMR"
-    GC = "GC"
-    PXRF = "PXRF"
-    XRD = "XRD"
-    # Add other non-scalar types as needed
-
 class Experiment(Base):
     __tablename__ = "experiments"
 
@@ -131,8 +124,7 @@ class ExperimentalResults(Base):
                            ForeignKey("experiments.id", ondelete="CASCADE"),
                            nullable=False)
     time_post_reaction = Column(Float, nullable=False, index=True) # Time in hours post-reaction start
-    result_type = Column(SQLEnum(ResultType), nullable=False)
-    description = Column(Text)  # Optional description of the data
+    description = Column(Text, nullable=False) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -142,12 +134,6 @@ class ExperimentalResults(Base):
     files = relationship("ResultFiles", back_populates="result_entry", cascade="all, delete-orphan")
 
     # Relationships to specific data tables (one-to-one)
-    nmr_data = relationship(
-        "NMRResults",
-        back_populates="result_entry",
-        uselist=False,
-        cascade="all, delete-orphan"
-    )
     scalar_data = relationship(
         "ScalarResults",
         back_populates="result_entry",
@@ -159,76 +145,6 @@ class ExperimentalResults(Base):
     __table_args__ = (
         UniqueConstraint('experiment_fk', 'time_post_reaction', name='uix_experiment_time'),
     )
-
-class NMRResults(Base):
-    __tablename__ = "nmr_results"
-
-    id = Column(Integer, primary_key=True, index=True)
-    result_id = Column(Integer, ForeignKey("experimental_results.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-
-    # NMR Specific Fields
-    is_concentration_mm = Column(Float, nullable=False, default=0.0263)
-    is_protons = Column(Integer, nullable=False, default=2)
-    sampled_rxn_volume_ul = Column(Float, nullable=False, default=476.0)
-    nmr_total_volume_ul = Column(Float, nullable=False, default=647.0)
-    nh4_peak_area_1 = Column(Float, nullable=True)
-    nh4_peak_area_2 = Column(Float, nullable=True)
-    nh4_peak_area_3 = Column(Float, nullable=True)
-
-    # Calculated Fields
-    total_nh4_peak_area = Column(Float, nullable=True)
-    ammonium_concentration_mm = Column(Float, nullable=True)
-    ammonia_mass_g = Column(Float, nullable=True)
-
-    # Relationship back to the main entry using result_id
-    result_entry = relationship(
-        "ExperimentalResults",
-        back_populates="nmr_data",
-    )
-
-    def calculate_values(self):
-        """Calculate and update the derived values for NMR results."""
-        # Calculate total NH4 peak area (sum of all non-None peak areas)
-        areas = [a for a in [self.nh4_peak_area_1, self.nh4_peak_area_2, self.nh4_peak_area_3] if a is not None]
-        self.total_nh4_peak_area = sum(areas) if areas else None
-
-        # Calculate ammonium concentration in mM
-        if all([
-            self.total_nh4_peak_area is not None,
-            self.is_concentration_mm is not None,
-            self.is_protons is not None,
-            self.nmr_total_volume_ul is not None,
-            self.sampled_rxn_volume_ul is not None,
-            self.sampled_rxn_volume_ul > 0
-        ]):
-            dilution_factor = self.nmr_total_volume_ul / self.sampled_rxn_volume_ul
-            self.ammonium_concentration_mm = (
-                (self.is_protons / 4) *
-                self.total_nh4_peak_area *
-                self.is_concentration_mm *
-                dilution_factor
-            )
-        else:
-            self.ammonium_concentration_mm = None
-
-        # Calculate ammonia mass in grams
-        if self.ammonium_concentration_mm is not None and self.result_entry is not None:
-            experiment = self.result_entry.experiment
-            if experiment and experiment.conditions and experiment.conditions.water_volume is not None:
-                water_volume_ml = experiment.conditions.water_volume
-                if water_volume_ml > 0:
-                    # Molar mass of NH3 is approx 17.031, but the concentration is NH4+, so use molar mass of NH4+ which is ~18.04 g/mol
-                    self.ammonia_mass_g = (
-                        (self.ammonium_concentration_mm / 1000) * # Convert mM to M (mol/L)
-                        (water_volume_ml / 1000) * # Convert mL to L
-                        18.04 # Molar mass of NH4+ (g/mol)
-                    )
-                else:
-                    self.ammonia_mass_g = None
-            else:
-                self.ammonia_mass_g = None
-        else:
-            self.ammonia_mass_g = None
 
 class ScalarResults(Base):
     __tablename__ = "scalar_results"
@@ -255,28 +171,34 @@ class ScalarResults(Base):
     )
 
     def calculate_yields(self):
-        """Calculate and update the yield values based on NMR data and experimental conditions."""
+        """Calculate and update the yield values based on solution concentration and experimental conditions."""
         # Ensure necessary parent relationships exist
         if not self.result_entry or not self.result_entry.experiment or not self.result_entry.experiment.conditions:
             self.grams_per_ton_yield = None
-            # Add logic for ferrous_iron_yield if it depends on these relations
             return
 
-        # Get related data needed for calculations
-        nmr_data = self.result_entry.nmr_data # Associated NMRResults object
         rock_mass = self.result_entry.experiment.conditions.rock_mass
+        water_volume_ml = self.result_entry.experiment.conditions.water_volume
+        
+        ammonia_mass_g = None
+        if self.solution_ammonium_concentration is not None and water_volume_ml is not None and water_volume_ml > 0:
+            # Molar mass of NH4+ is ~18.04 g/mol
+            ammonia_mass_g = (
+                (self.solution_ammonium_concentration / 1000) *  # Convert mM to M (mol/L)
+                (water_volume_ml / 1000) *  # Convert mL to L
+                18.04  # Molar mass of NH4+ (g/mol)
+            )
 
         # Calculate grams_per_ton_yield
-        if (nmr_data and
-            nmr_data.ammonia_mass_g is not None and
+        if (ammonia_mass_g is not None and
             rock_mass is not None and
             rock_mass > 0):
 
             # Convert to g/ton using rock mass in grams
             # 1 ton = 1,000,000 grams
-            self.grams_per_ton_yield = 1_000_000 * (nmr_data.ammonia_mass_g / rock_mass)
+            self.grams_per_ton_yield = 1_000_000 * (ammonia_mass_g / rock_mass)
         else:
-            # Set to None if required data (NMR mass or rock mass) is missing or invalid
+            # Set to None if required data is missing or invalid
             self.grams_per_ton_yield = None
 
         # TODO: Calculate ferrous_iron_yield when the calculation method is determined

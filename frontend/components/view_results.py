@@ -6,15 +6,11 @@ from sqlalchemy import orm
 from database.database import SessionLocal
 from database.models import (
     ExperimentalResults,
-    ResultType,
     ScalarResults, # Import ScalarResults
-    NMRResults,    # Import NMRResults
     ResultFiles
 )
 from frontend.config.variable_config import (
     SCALAR_RESULTS_CONFIG,
-    NMR_RESULTS_CONFIG,
-    RESULT_TYPE_FIELDS # Import this mapping
 )
 from frontend.components.utils import (
     generate_form_fields,
@@ -40,7 +36,6 @@ def render_results_section(experiment):
         all_results = db.query(ExperimentalResults).options(
             # Eager load specific result data and files
             orm.selectinload(ExperimentalResults.scalar_data),
-            orm.selectinload(ExperimentalResults.nmr_data),
             orm.selectinload(ExperimentalResults.files)
         ).filter(
             ExperimentalResults.experiment_id == experiment['experiment_id'] # Use experiment_id string
@@ -88,7 +83,7 @@ def render_results_section(experiment):
 def display_single_result(result, experiment_db_id):
     """Displays a single result entry (time point) in an expander."""
     # Create title based on primary result type
-    expander_title = f"{result.result_type.name} Results at {result.time_post_reaction:.1f} hours"
+    expander_title = f"Results at {result.time_post_reaction:.1f} hours"
     
     with st.expander(expander_title):
         # --- Directly access scalar_data via relationship ---
@@ -99,20 +94,8 @@ def display_single_result(result, experiment_db_id):
             st.markdown("##### Scalar Measurements") # Changed header slightly
             scalar_data_dict = {}
             
-            # First show key calculated fields
-            key_fields = ['grams_per_ton_yield', 'ferrous_iron_yield']
-            for field in key_fields:
-                value = getattr(scalar_data, field, None)
-                if value is not None:  # Only add non-null values
-                    # Ensure the field exists in SCALAR_RESULTS_CONFIG before accessing
-                    if field in SCALAR_RESULTS_CONFIG: 
-                        config = SCALAR_RESULTS_CONFIG[field]
-                        scalar_data_dict[config['label']] = format_value(value, config)
-                    else:
-                         scalar_data_dict[field.replace('_', ' ').title()] = value # Fallback display
-            
-            # Then show other scalar fields
-            skip_fields = ['time_post_reaction'] + key_fields
+            # Display all scalar fields based on the order in SCALAR_RESULTS_CONFIG
+            skip_fields = ['time_post_reaction'] # Already in expander title
             for field_name, config in SCALAR_RESULTS_CONFIG.items():
                 if field_name not in skip_fields:
                     value = getattr(scalar_data, field_name, None)
@@ -129,41 +112,13 @@ def display_single_result(result, experiment_db_id):
 
         # --- Display Primary Result Data (e.g., NMR) Second ---
         primary_data_displayed = False
-        if result.result_type == ResultType.NMR and result.nmr_data:
-            st.markdown("##### NMR Data")
-            nmr_data_dict = {}
-            nmr_config = RESULT_TYPE_FIELDS['NMR']['config']
-            
-            # Calculated NMR fields first
-            calc_fields = ['ammonium_concentration_mm', 'total_nh4_peak_area']
-            for field in calc_fields:
-                if field in nmr_config:
-                    value = getattr(result.nmr_data, field, None)
-                    if value is not None:
-                        nmr_data_dict[nmr_config[field]['label']] = format_value(value, nmr_config[field])
-            
-            # Other NMR fields
-            for field_name, config in nmr_config.items():
-                if field_name not in calc_fields:
-                    value = getattr(result.nmr_data, field_name, None)
-                    if value is not None:
-                        nmr_data_dict[config['label']] = format_value(value, config)
-            
-            if nmr_data_dict:
-                nmr_df = pd.DataFrame([nmr_data_dict]).T.rename(columns={0: "Value"})
-                nmr_df["Value"] = nmr_df["Value"].astype(str) # Ensure string type
-                st.table(nmr_df)
-                primary_data_displayed = True
-            else:
-                 st.info("NMR record exists, but contains no values.")
-        # --- Add elif blocks for other primary result types (GC, PXRF, etc.) ---
-        # elif result.result_type == ResultType.GC and result.gc_data:
-             # ... Display GC data ...
-             # primary_data_displayed = True
+        # Since NMRResults is removed, we no longer have a specific data block for it.
+        # The ammonium concentration is now in ScalarResults and displayed above.
+        # This structure is kept for future primary result types like GC, PXRF.
         
         # If no specific data was found/displayed for the primary type
         if not primary_data_displayed:
-             st.info(f"No specific {result.result_type.name} data recorded for this time point.")
+             st.info("No specific data recorded for this time point.")
 
         # --- Display Associated Files ---
         if result.files:
@@ -222,7 +177,6 @@ def render_results_form(experiment_db_id):
     form_title = "Add New Results"
     current_data = {} # Combined dict for pre-populating
     editing_time = None
-    primary_result_type = None # Track the primary type being added/edited
 
     # Generate base key parts using DB id
     base_key_part = f"results_{experiment_db_id}_{st.session_state.editing_result_id or 'new'}"
@@ -241,15 +195,13 @@ def render_results_form(experiment_db_id):
         try:
             result_to_edit = db.query(ExperimentalResults).options(
                 orm.selectinload(ExperimentalResults.scalar_data), # Always load scalar
-                orm.selectinload(ExperimentalResults.nmr_data)     # Load primary types as needed
-                # Add selectinload for GC, PXRF etc. if models exist
+                # No need to load nmr_data anymore
             ).filter(
                 ExperimentalResults.id == st.session_state.editing_result_id
             ).first()
 
             if result_to_edit:
-                primary_result_type = result_to_edit.result_type # Get the primary type being edited
-                form_title = f"Edit {primary_result_type.name} Results at {result_to_edit.time_post_reaction:.1f} hours"
+                form_title = f"Edit Results at {result_to_edit.time_post_reaction:.1f} hours"
                 editing_time = result_to_edit.time_post_reaction
                 current_data['time_post_reaction'] = editing_time # Pre-populate time
                 current_data['description'] = result_to_edit.description # Pre-populate description
@@ -264,26 +216,6 @@ def render_results_form(experiment_db_id):
                     for field_name, config in SCALAR_RESULTS_CONFIG.items():
                         current_data[field_name] = config['default']
 
-                # Pre-populate from the primary result type's data
-                primary_data_source = None
-                primary_config = {}
-                if primary_result_type.name in RESULT_TYPE_FIELDS:
-                     primary_config = RESULT_TYPE_FIELDS[primary_result_type.name].get('config', {})
-                     # Get the actual data attribute based on type (e.g., result_to_edit.nmr_data)
-                     data_attr_name = f"{primary_result_type.name.lower()}_data"
-                     if hasattr(result_to_edit, data_attr_name):
-                          primary_data_source = getattr(result_to_edit, data_attr_name)
-
-                if primary_data_source:
-                    for field_name in primary_config.keys():
-                        default_val = primary_config[field_name].get('default')
-                        current_data[field_name] = getattr(primary_data_source, field_name, default_val)
-                # If primary data source doesn't exist (shouldn't happen for edit?), populate with defaults
-                elif primary_config:
-                     for field_name, config in primary_config.items():
-                          if field_name not in current_data: # Avoid overwriting (e.g., from scalar)
-                               current_data[field_name] = config['default']
-
             else:
                 st.error("Could not find the result entry to edit.")
                 # Reset state and rerun
@@ -294,26 +226,11 @@ def render_results_form(experiment_db_id):
         finally:
             db.close()
     else:
-        # Adding new: Determine default primary type
-        available_types = list(RESULT_TYPE_FIELDS.keys()) # NMR, GC, etc.
-        default_primary_type_name = available_types[0] if available_types else None
-        if default_primary_type_name:
-             try:
-                 primary_result_type = ResultType[default_primary_type_name]
-             except KeyError:
-                 st.warning(f"Default result type {default_primary_type_name} not in ResultType enum.")
-                 primary_result_type = None # Handle error state
-
+        # Adding new: All fields are now scalar.
         # Use defaults from SCALAR config
         for field_name, config in SCALAR_RESULTS_CONFIG.items():
             current_data[field_name] = config['default']
         current_data['description'] = "" # Default to empty for new results
-        # Use defaults from the default primary type's config
-        if primary_result_type and primary_result_type.name in RESULT_TYPE_FIELDS:
-            primary_config = RESULT_TYPE_FIELDS[primary_result_type.name].get('config', {})
-            for field_name, config in primary_config.items():
-                if field_name not in current_data: # Avoid overwriting scalar defaults
-                    current_data[field_name] = config['default']
 
     st.markdown(f"#### {form_title}")
 
@@ -346,31 +263,6 @@ def render_results_form(experiment_db_id):
 
     with st.form(key=form_key, clear_on_submit=True):
         form_values = {} # Will store scalar values
-        primary_specific_data_values = {} # Will store primary type values
-
-        # Determine which fields to show based on the primary result type
-        # For "Add New", let user choose. For "Edit", it's fixed.
-        if st.session_state.editing_result_id is None:
-            # Get available types from RESULT_TYPE_FIELDS
-            available_primary_types = list(RESULT_TYPE_FIELDS.keys())
-
-            if available_primary_types:
-                # Let user choose which type of result they are adding
-                selected_primary_type_name = st.selectbox(
-                    "Primary Result Type",
-                    options=available_primary_types,
-                    index=0,  # Default to first available type
-                    key=f"{base_key_part}_primary_type_select"
-                )
-                try:
-                    primary_result_type = ResultType[selected_primary_type_name]
-                except KeyError:
-                    st.error(f"Invalid primary result type: {selected_primary_type_name}")
-                    primary_result_type = None  # Handle error
-            else:
-                st.warning("No primary result types (e.g., NMR, GC) are configured. Please check `variable_config.py`.")
-                primary_result_type = None
-        # In edit mode, primary_result_type is already set from the database record loaded earlier.
 
         # --- Render form fields ---
         st.markdown("**Result Metadata**")
@@ -395,14 +287,37 @@ def render_results_form(experiment_db_id):
 
         st.markdown("---")
         
+        # All fields are now considered scalar, so we render them in a two-column layout
+        st.markdown("**Scalar Measurements**")
+        scalar_field_names = [f for f in SCALAR_RESULTS_CONFIG.keys() if f not in ['time_post_reaction', 'description']]
+        
         col1, col2 = st.columns(2)
+        midpoint = (len(scalar_field_names) + 1) // 2
+        
+        fields_col1 = scalar_field_names[:midpoint]
+        fields_col2 = scalar_field_names[midpoint:]
 
         with col1:
-            # --- Render Scalar Fields ---
-            st.markdown("**Scalar Measurements**")
-            scalar_field_names = [f for f in SCALAR_RESULTS_CONFIG.keys() if f not in ['time_post_reaction', 'description']]
-            
-            for field_name in scalar_field_names:
+            for field_name in fields_col1:
+                config = SCALAR_RESULTS_CONFIG[field_name]
+                default_val = current_data.get(field_name, config.get('default'))
+                field_key = f"{base_key_part}_{field_name}"
+
+                if config['type'] == 'number':
+                    form_values[field_name] = st.number_input(
+                        label=config['label'],
+                        value=default_val,
+                        min_value=config.get('min_value'),
+                        max_value=config.get('max_value'),
+                        step=config.get('step'),
+                        format=config.get('format'),
+                        help=config.get('help'),
+                        key=field_key,
+                        disabled=config.get('readonly', False)
+                    )
+        
+        with col2:
+            for field_name in fields_col2:
                 config = SCALAR_RESULTS_CONFIG[field_name]
                 default_val = current_data.get(field_name, config.get('default'))
                 field_key = f"{base_key_part}_{field_name}"
@@ -420,32 +335,6 @@ def render_results_form(experiment_db_id):
                         disabled=config.get('readonly', False)
                     )
 
-        with col2:
-            # --- Render Primary-Specific Fields (e.g., NMR) ---
-            if primary_result_type and primary_result_type.name in RESULT_TYPE_FIELDS:
-                st.markdown(f"**{primary_result_type.name} Data**")
-                primary_config = RESULT_TYPE_FIELDS[primary_result_type.name]['config']
-                primary_field_names = list(primary_config.keys())
-                
-                for field_name in primary_field_names:
-                    with st.container(): # Use container to group fields
-                        config = primary_config[field_name]
-                        default_val = current_data.get(field_name, config.get('default'))
-                        field_key = f"{base_key_part}_{field_name}"
-
-                        if config['type'] == 'number':
-                            primary_specific_data_values[field_name] = st.number_input(
-                                label=config['label'],
-                                value=default_val,
-                                min_value=config.get('min_value'),
-                                max_value=config.get('max_value'),
-                                step=config.get('step'),
-                                format=config.get('format'),
-                                help=config.get('help'),
-                                key=field_key,
-                                disabled=config.get('readonly', False)
-                            )
-        
         # --- Submit Button ---
         st.markdown("---")
         submitted = st.form_submit_button(
@@ -456,15 +345,11 @@ def render_results_form(experiment_db_id):
 
     # --- Post-form processing ---
     if submitted:
-        # Re-determine primary type for saving
-        if st.session_state.editing_result_id is None:
-            # On new submission, get the type that was selected in the form
-            selected_type_name = st.session_state.get(f"{base_key_part}_primary_type_select")
-            if selected_type_name:
-                primary_result_type = ResultType[selected_type_name]
-        
-        # Get description from form_values
-        result_description = form_values.get('description', "")
+        # Get description from form_values and validate it
+        result_description = form_values.get('description', "").strip()
+        if not result_description:
+            st.error("The 'description' field is required. Please provide a brief summary of the result.")
+            return # Stop processing if validation fails
 
         # Prepare list of files to be saved
         files_to_save = []
@@ -478,9 +363,7 @@ def render_results_form(experiment_db_id):
             experiment_id=experiment_db_id,
             time_post_reaction=form_values['time_post_reaction'],
             result_description=result_description,
-            result_type=primary_result_type, # Pass the ResultType enum member
             scalar_data=form_values,
-            primary_data=primary_specific_data_values,
             files_to_save=files_to_save,
             result_id_to_edit=st.session_state.editing_result_id
         )

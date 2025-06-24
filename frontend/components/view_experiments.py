@@ -14,7 +14,6 @@ from database.models import (
     ModificationsLog,
     SampleInfo,
     ExternalAnalysis,
-    ResultType
 )
 
 from frontend.components.experiment_details import display_experiment_details
@@ -31,7 +30,6 @@ from frontend.config.variable_config import (
     EXPERIMENT_TYPES,
     EXPERIMENT_STATUSES,
     SCALAR_RESULTS_CONFIG,
-    NMR_RESULTS_CONFIG
 )
 
 from sqlalchemy.orm import selectinload
@@ -502,7 +500,6 @@ def get_experiment_by_id(experiment_id):
                 selectinload(Experiment.notes),
                 selectinload(Experiment.modifications),
                 selectinload(Experiment.results).selectinload(ExperimentalResults.scalar_data), # Eager load scalar data
-                selectinload(Experiment.results).selectinload(ExperimentalResults.nmr_data),    # Eager load NMR data
                 selectinload(Experiment.results).selectinload(ExperimentalResults.files)       # Eager load files
             ).filter(Experiment.experiment_id == experiment_id).first()
         else:
@@ -511,7 +508,6 @@ def get_experiment_by_id(experiment_id):
                 selectinload(Experiment.notes),
                 selectinload(Experiment.modifications),
                 selectinload(Experiment.results).selectinload(ExperimentalResults.scalar_data), # Eager load scalar data
-                selectinload(Experiment.results).selectinload(ExperimentalResults.nmr_data),    # Eager load NMR data
                 selectinload(Experiment.results).selectinload(ExperimentalResults.files)       # Eager load files
             ).filter(Experiment.id == experiment_id).first()
         
@@ -578,13 +574,11 @@ def get_experiment_by_id(experiment_id):
             for data in results: # data is an ExperimentalResults object
                 result_item = {
                     'id': data.id,
-                    'time_post_reaction': data.time_post_reaction,
-                    'result_type': data.result_type.name if data.result_type else None,
+                    'time_post_reaction': data.time_post_reaction,  
                     'description': data.description,
                     'created_at': data.created_at,
                     'updated_at': data.updated_at,
                     'scalar_data': None, # Placeholder for scalar data
-                    'nmr_data': None,    # Placeholder for NMR data
                     # Add placeholders for other data types (GC, PXRF, etc.) as needed
                     'files': []          # List to hold associated files
                 }
@@ -596,15 +590,6 @@ def get_experiment_by_id(experiment_id):
                         if hasattr(data.scalar_data, field_name):
                             scalar_dict[field_name] = getattr(data.scalar_data, field_name)
                     result_item['scalar_data'] = scalar_dict
-
-                # Extract primary result type data
-                if data.result_type == ResultType.NMR and data.nmr_data:
-                    nmr_dict = {}
-                    for field_name in NMR_RESULTS_CONFIG.keys():
-                        if hasattr(data.nmr_data, field_name):
-                            nmr_dict[field_name] = getattr(data.nmr_data, field_name)
-                    result_item['nmr_data'] = nmr_dict
-                # Add elif blocks for other primary result types (GC, PXRF, etc.) as they are implemented
 
                 # Extract files if they exist
                 if data.files:

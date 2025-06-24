@@ -9,13 +9,11 @@ from database.models import (
     ExperimentalResults,
     ResultFiles,
     ModificationsLog,
-    ResultType,
     ScalarResults,
-    NMRResults # Import NMRResults model
 )
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
-from frontend.config.variable_config import SCALAR_RESULTS_CONFIG, NMR_RESULTS_CONFIG, RESULT_TYPE_FIELDS # Import the main config mapping
+from frontend.config.variable_config import SCALAR_RESULTS_CONFIG# Import the main config mapping
 
 # TODO: Define a base class or interface for different result types (e.g., Scalar, pXRF, NMR)
 # class BaseResultHandler:
@@ -79,102 +77,17 @@ def _save_or_update_scalar(db: Session, result: ExperimentalResults, scalar_data
     )
     return scalar_entry # Return the saved/updated entry
 
-# --- Helper function to save/update primary result data ---
-def _save_or_update_primary(db: Session, result: ExperimentalResults, primary_data: dict, primary_type: ResultType):
-    """Helper to save or update primary result data (NMR, GC, etc.)."""
-    if primary_type.name not in RESULT_TYPE_FIELDS:
-        st.error(f"Configuration for result type '{primary_type.name}' not found.")
-        raise ValueError(f"Invalid primary_type: {primary_type.name}") # Raise error to force rollback
-
-    type_info = RESULT_TYPE_FIELDS[primary_type.name]
-    primary_config = type_info['config']
-    SpecificModel = None
-    relationship_name = None
-
-    # --- Determine Model and Relationship based on Primary Type ---
-    # Example for NMR:
-    if primary_type == ResultType.NMR:
-        SpecificModel = NMRResults
-        relationship_name = 'nmr_data'
-    # --- Add elif blocks for other primary types (GC, PXRF, etc.) ---
-    # elif primary_type == ResultType.GC:
-    #     SpecificModel = GCResults
-    #     relationship_name = 'gc_data'
-    # elif primary_type == ResultType.PXRF:
-    #     SpecificModel = PXRFResults # Assuming this model exists
-    #     relationship_name = 'pxrf_data' # Assuming this relationship exists
-
-    if not SpecificModel or not relationship_name:
-        st.error(f"Model or relationship not defined for result type '{primary_type.name}'.")
-        raise ValueError(f"Model/relationship undefined for {primary_type.name}")
-
-    # --- Get or Create Specific Data Entry ---
-    primary_entry = getattr(result, relationship_name)
-    old_values = {}
-    new_values = {}
-
-    if primary_entry:
-        # Updating existing primary data
-        modification_type = "update"
-        for field_name in primary_config.keys():
-            if hasattr(primary_entry, field_name):
-                old_values[field_name] = getattr(primary_entry, field_name)
-
-        # Update fields
-        for field_name, value in primary_data.items():
-            if field_name in primary_config and hasattr(primary_entry, field_name):
-                setattr(primary_entry, field_name, value)
-                new_values[field_name] = value
-    else:
-        # Creating new primary data
-        modification_type = "create"
-        primary_kwargs = {'result_id': result.id} # Link to main result
-        for field_name, config in primary_config.items():
-            # Get value from form, fall back to config default
-            value = primary_data.get(field_name, config.get('default'))
-            primary_kwargs[field_name] = value
-            new_values[field_name] = value
-
-        primary_entry = SpecificModel(**primary_kwargs)
-        db.add(primary_entry)
-        setattr(result, relationship_name, primary_entry) # Associate with main result
-
-    # --- Perform Calculations (if applicable for the primary type) ---
-    if hasattr(primary_entry, 'calculate_values'):
-        primary_entry.calculate_values()
-        # Update new_values log with calculated fields
-        for field_name in primary_config.keys():
-             if hasattr(primary_entry, field_name):
-                 calculated_value = getattr(primary_entry, field_name)
-                 # Add to log if not an input or if value changed
-                 if field_name not in primary_data or new_values.get(field_name) != calculated_value:
-                      new_values[field_name] = calculated_value
-
-    # Log the modification
-    log_modification(
-        db=db,
-        experiment_id=result.experiment.experiment_id,
-        modified_table=SpecificModel.__tablename__,
-        modification_type=modification_type,
-        old_values=old_values if old_values else None,
-        new_values=new_values if new_values else None
-    )
-    return primary_entry # Return the saved/updated entry
-
-
 # --- Main Save Function (Refactored) ---
-def save_results(experiment_id, time_post_reaction, result_type, result_description, scalar_data, primary_data, files_to_save=None, result_id_to_edit=None):
+def save_results(experiment_id, time_post_reaction, result_description, scalar_data, files_to_save=None, result_id_to_edit=None):
     """
     Save or update experiment results for a specific time point.
-    Handles creation/update of ExperimentalResults, ScalarResults, and primary result data (NMR, GC, etc.).
+    Handles creation/update of ExperimentalResults and ScalarResults.
 
     Args:
         experiment_id (int): The primary key (DB ID) of the experiment.
         time_post_reaction (float): Time in hours post-reaction.
-        result_type (ResultType): The PRIMARY type of result being saved (Enum member, e.g., NMR).
         result_description (str): The description for this result entry.
         scalar_data (dict): Dictionary of scalar field values.
-        primary_data (dict): Dictionary containing data for the primary result type.
         files_to_save (list[dict], optional): List of file upload data.
         result_id_to_edit (int, optional): The ID of the ExperimentalResults entry to update.
 
@@ -188,16 +101,11 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
             # Editing existing entry - Load result and related data
             result = db.query(ExperimentalResults).options(
                 selectinload(ExperimentalResults.scalar_data),
-                selectinload(ExperimentalResults.nmr_data) # Add others as needed (gc_data, pxrf_data)
             ).filter(ExperimentalResults.id == result_id_to_edit).first()
 
             if not result:
                 st.error(f"Result entry with ID {result_id_to_edit} not found for editing.")
                 return False
-            # Ensure the primary type matches (can't change type during edit)
-            if result.result_type != result_type:
-                 st.error(f"Cannot change primary result type during edit (Existing: {result.result_type.name}, Attempted: {result_type.name}).")
-                 return False
             # Update description if it has changed
             if result.description != result_description:
                 old_desc = result.description
@@ -235,7 +143,6 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
                 experiment=parent_experiment, # Relationship
                 experiment_fk=parent_experiment.id, # Foreign Key
                 time_post_reaction=time_post_reaction,
-                result_type=result_type, # Set the PRIMARY type
                 description=result_description # Set the description
             )
             db.add(result)
@@ -247,7 +154,6 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
                 modification_type="create",
                 new_values={
                     "time_post_reaction": time_post_reaction,
-                    "result_type": result_type.name,
                     "description": result_description
                 }
             )
@@ -256,9 +162,6 @@ def save_results(experiment_id, time_post_reaction, result_type, result_descript
 
         # --- Save/Update Scalar Data (Always happens) ---
         scalar_entry = _save_or_update_scalar(db, result, scalar_data)
-
-        # --- Save/Update Primary Data (NMR, GC, etc.) ---
-        primary_entry = _save_or_update_primary(db, result, primary_data, result_type)
 
         # --- Handle File Uploads ---
         if files_to_save:
@@ -335,7 +238,6 @@ def delete_experimental_results(result_id):
 
         experiment_str_id = result_entry.experiment.experiment_id if result_entry.experiment else None
         time_point = result_entry.time_post_reaction
-        result_type_name = result_entry.result_type.name if result_entry.result_type else "Unknown"
 
         # --- Delete associated files from storage FIRST ---
         associated_files = result_entry.files
@@ -355,7 +257,6 @@ def delete_experimental_results(result_id):
         old_values_log = {
             'result_id': result_entry.id,
             'time_post_reaction': time_point,
-            'result_type': result_type_name,
             'experiment_id': experiment_str_id,
             'deleted_files_info': deleted_file_info
         }
@@ -375,7 +276,7 @@ def delete_experimental_results(result_id):
         # --- Commit the transaction ---
         db.commit()
 
-        st.success(f"{result_type_name} result entry for time {time_point:.1f}h deleted successfully!")
+        st.success(f"Result entry for time {time_point:.1f}h deleted successfully!")
 
     except Exception as e:
         db.rollback()

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from database.database import SessionLocal
 from database.models import (
     Experiment, SampleInfo, ExperimentalConditions, ExperimentNotes,
-    ExperimentalResults, NMRResults, ScalarResults, ExternalAnalysis, PXRFReading,
+    ExperimentalResults, ScalarResults, ExternalAnalysis, PXRFReading,
     ModificationsLog
 )
 from sqlalchemy import text, and_
@@ -23,7 +23,6 @@ def download_database_as_excel():
             "ExperimentalConditions": ExperimentalConditions,
             "ExperimentNotes": ExperimentNotes,
             "ExperimentalResults": ExperimentalResults,
-            "NMRResults": NMRResults,
             "ScalarResults": ScalarResults,
             "SampleInfo": SampleInfo,
             "ExternalAnalyses": ExternalAnalysis,
@@ -115,7 +114,6 @@ def generate_weekly_log():
         for result in new_results:
             log_data.append({
                 'ID': result.experiment_id,
-                'Type': f'New Result - {result.result_type.value}',
                 'Description': result.description or 'No description',
                 'Date': result.created_at.strftime('%Y-%m-%d %H:%M:%S')
             })

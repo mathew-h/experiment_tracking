@@ -223,4 +223,23 @@ def set_user_claims(uid: str, role: str = "user") -> Dict:
             'custom_claims': user.custom_claims
         }
     except Exception as e:
-        raise Exception(f"Failed to set user claims: {str(e)}") 
+        raise Exception(f"Failed to set user claims: {str(e)}")
+
+def reset_user_password(email: str) -> str:
+    """
+    Generate a password reset link for the given email.
+    
+    Args:
+        email (str): The user's email address.
+        
+    Returns:
+        str: The password reset link.
+        
+    Raises:
+        Exception: If the link generation fails.
+    """
+    try:
+        link = auth.generate_password_reset_link(email)
+        return link
+    except Exception as e:
+        raise Exception(f"Failed to generate password reset link: {str(e)}") 
