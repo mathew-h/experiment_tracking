@@ -80,18 +80,6 @@ def render_view_experiments():
     if 'confirm_delete_experiment_id' not in st.session_state: # Initialize confirmation state
         st.session_state.confirm_delete_experiment_id = None
     
-    # Quick access section for direct experiment lookup
-    st.markdown("#### Quick Access")
-    quick_col1, quick_col2, quick_col3 = st.columns([0.9, 3, 1])
-    with quick_col1:
-        st.markdown("<div style='margin-top: 7px;'>Search by Experiment ID:</div>", unsafe_allow_html=True)
-    with quick_col2:
-        exp_id = st.text_input("Experiment ID Search", key="quick_search", label_visibility="collapsed")
-    with quick_col3:
-
-        if st.button("View Experiment", key="quick_view", use_container_width=True) and exp_id:
-            st.session_state.view_experiment_id = exp_id
-            st.rerun()
 
     # Main view logic
     if st.session_state.view_experiment_id is None:
@@ -125,7 +113,7 @@ def render_experiment_list():
     with col1:
         # Search filter
         search_term = st.text_input(
-            "Search: Sample ID, Experiment ID or Researcher:", 
+            "Search: Sample ID, Experiment ID or Researcher", 
             "",
             key="search_term",
             on_change=lambda: setattr(st.session_state, 'experiments_page', 1)
@@ -182,16 +170,16 @@ def render_experiment_list():
         st.markdown("#### Experiments")
         
         # Create a custom table layout with headers
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1.2, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
         
         with col1:
             st.markdown("**Experiment ID**")
         with col2:
-            st.markdown("**Sample ID**")
+            st.markdown("**Rock/Substrate**")
         with col3:
             st.markdown(f"**{FIELD_CONFIG['initial_ph']['label']}**")
         with col4:
-            st.markdown("**Catalyst / Catalyst %**")
+            st.markdown("**Cat. Type / % / PPM**")
         with col5:
             st.markdown(f"**{FIELD_CONFIG['temperature']['label']}**")
         with col6:
@@ -202,7 +190,7 @@ def render_experiment_list():
             st.markdown("**Action**")
         
         # Add a separator line
-        st.markdown("<hr style='margin: 2px 0px; background-color: #f0f0f0; height: 1px; border: none;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 1px 0px; background-color: #f0f0f0; height: 0.1px; border: none;'>", unsafe_allow_html=True)
         
         # Data rows
         for index, exp in enumerate(experiments):
@@ -215,12 +203,15 @@ def render_experiment_list():
             initial_ph_disp = f"{initial_ph:.1f}" if isinstance(initial_ph, (int, float)) else str(initial_ph)
             # Catalyst and Catalyst Percentage
             catalyst = conditions.get('catalyst', FIELD_CONFIG['catalyst']['default'])
-            catalyst_pct = conditions.get('catalyst_percentage', FIELD_CONFIG['catalyst_percentage']['default'])
-            catalyst_pct_disp = f"{catalyst_pct:.1f}" if isinstance(catalyst_pct, (int, float)) else str(catalyst_pct)
-            if not catalyst or str(catalyst).strip() == '':
-                catalyst_combined = f"None / {catalyst_pct_disp}%"
+            catalyst_pct = conditions.get('catalyst_percentage', 0.0)
+            catalyst_ppm = conditions.get('catalyst_ppm', 0.0)
+            
+            if not catalyst or not str(catalyst).strip():
+                catalyst_combined = "None"
             else:
-                catalyst_combined = f"{catalyst} / {catalyst_pct_disp}%"
+                catalyst_pct_disp = f"{catalyst_pct:.2f}" if isinstance(catalyst_pct, (int, float)) else str(catalyst_pct)
+                catalyst_ppm_disp = f"{catalyst_ppm:.2f}" if isinstance(catalyst_ppm, (int, float)) else str(catalyst_ppm)
+                catalyst_combined = f"{catalyst} / {catalyst_pct_disp}% / {catalyst_ppm_disp} ppm"
             # Temperature
             temperature = conditions.get('temperature', FIELD_CONFIG['temperature']['default'])
             temperature_disp = f"{temperature:.1f}" if isinstance(temperature, (int, float)) else str(temperature)
@@ -230,7 +221,7 @@ def render_experiment_list():
             status = exp.get('status', '')
             # Row layout
             with st.container():
-                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1.2, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
+                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
                 with col1:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['experiment_id']}</div>", unsafe_allow_html=True)
                 with col2:

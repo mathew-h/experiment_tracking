@@ -72,22 +72,25 @@ class ExperimentalConditions(Base):
 
     def calculate_derived_conditions(self):
         """
-        Calculate water_to_rock_ratio and catalyst_percentage if they are not
-        already set and the required input fields are available.
+        Calculate derived experimental conditions. This method calculates:
+        - water_to_rock_ratio
+        - catalyst_percentage
+        - catalyst_ppm
+        It is designed to be called before an instance is saved to ensure data consistency.
         """
         # Calculate water_to_rock_ratio
-        if self.water_to_rock_ratio is None and \
-           self.water_volume is not None and \
-           self.rock_mass is not None and self.rock_mass > 0:
+        if self.water_volume is not None and self.rock_mass is not None and self.rock_mass > 0:
             self.water_to_rock_ratio = self.water_volume / self.rock_mass
+        else:
+            self.water_to_rock_ratio = None  # Ensure it is null if inputs are missing
 
-        # Calculate catalyst_percentage
-        if self.catalyst_percentage is None and \
-           self.catalyst is not None and \
-           self.catalyst_mass is not None and \
-           self.rock_mass is not None and self.rock_mass > 0:
-            
-            elemental_metal_mass = None
+        # Reset catalyst-related fields to ensure they are always recalculated
+        self.catalyst_percentage = 0.0
+        self.catalyst_ppm = 0.0
+        elemental_metal_mass = None
+
+        # Step 1: Calculate elemental metal mass if a catalyst is specified
+        if self.catalyst and self.catalyst.strip() and self.catalyst_mass is not None and self.catalyst_mass > 0:
             catalyst_name = self.catalyst.lower()
 
             # Nickel calculation (assuming NiCl2·6H2O)
@@ -99,21 +102,18 @@ class ExperimentalConditions(Base):
             elif 'copper' in catalyst_name or 'cu' in catalyst_name:
                 # Molar masses: Cu = 63.55, CuCl2·2H2O = 170.48
                 elemental_metal_mass = self.catalyst_mass * (63.55 / 170.48)
-            
-            # Add other catalyst types here if needed
-            # elif 'iron' in catalyst_name or 'fe' in catalyst_name:
-            #     # Example: FeCl3·6H2O (Molar mass Fe=55.845, FeCl3·6H2O=270.30)
-            #     elemental_metal_mass = self.catalyst_mass * (55.845 / 270.30)
 
-            if elemental_metal_mass is not None:
-                # Calculate percentage (mass/mass)
-                self.catalyst_percentage = (elemental_metal_mass / self.rock_mass) * 100 # Convert ratio to percentage
+        # Step 2: If elemental mass was determined, calculate percentage and PPM based on their respective dependencies
+        if elemental_metal_mass is not None:
+            # Calculate catalyst_percentage if rock_mass is valid
+            if self.rock_mass is not None and self.rock_mass > 0:
+                self.catalyst_percentage = (elemental_metal_mass / self.rock_mass) * 100
 
-                # Calculate catalyst_ppm (parts per million by mass)
-                if self.water_volume is not None and self.water_volume > 0:
-                    # ppm = (mass_of_solute [g] / mass_of_solvent [g]) * 1,000,000
-                    # Assuming water density is 1 g/mL, water_volume in mL is equivalent to water_mass in g.
-                    self.catalyst_ppm = (elemental_metal_mass / self.water_volume) * 1_000_000
+            # Calculate catalyst_ppm if water_volume is valid (independent of rock_mass)
+            if self.water_volume is not None and self.water_volume > 0:
+                # ppm = (mass_of_solute [g] / mass_of_solvent [g]) * 1,000,000
+                # Assuming water density is 1 g/mL, water_volume in mL is equivalent to water_mass in g.
+                self.catalyst_ppm = (elemental_metal_mass / self.water_volume) * 1_000_000
 
 class ExperimentalResults(Base):
     __tablename__ = "experimental_results"
