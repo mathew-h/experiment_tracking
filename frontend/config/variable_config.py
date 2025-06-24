@@ -435,8 +435,8 @@ SCALAR_RESULTS_CONFIG = {
         'type': 'number',
         'default': 0.0,
         'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
+        'step': 0.001,
+        'format': "%.3f",
         'required': False,
         'help': "Enter the ammonium concentration in the solution in millimolar (mM)."
     },
@@ -466,8 +466,8 @@ SCALAR_RESULTS_CONFIG = {
         'type': 'number',
         'default': 0.0,
         'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
+        'step': 0.01,
+        'format': "%.2f",
         'required': False,
         'help': "Enter the yield in grams per ton (if measured)."
     },
@@ -536,13 +536,13 @@ SCALAR_RESULTS_CONFIG = {
         'help': "Final alkalinity measurement (mg/L as CaCO₃)."
     },
     'time_post_reaction': {
-        'label': "Time Post-Reaction (hours)",
+        'label': "Time Post-Reaction (days)",
         'type': 'number',
         'required': True,
         'default': 0.0,
         'min_value': 0.0,
-        'step': 0.5,
+        'step': 0.1,
         'format': "%.1f",
-        'help': "Enter the time elapsed in hours since the reaction started when these results were measured."
+        'help': "Enter the time elapsed in days since the reaction started when these results were measured."
     }
 } 

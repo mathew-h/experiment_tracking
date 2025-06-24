@@ -123,7 +123,7 @@ class ExperimentalResults(Base):
     experiment_fk = Column(Integer,
                            ForeignKey("experiments.id", ondelete="CASCADE"),
                            nullable=False)
-    time_post_reaction = Column(Float, nullable=False, index=True) # Time in hours post-reaction start
+    time_post_reaction = Column(Float, nullable=False, index=True) # Time in days post-reaction start
     description = Column(Text, nullable=False) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

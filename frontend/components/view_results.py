@@ -82,13 +82,28 @@ def render_results_section(experiment):
 # --- Helper to Display a Single Result Entry ---
 def display_single_result(result, experiment_db_id):
     """Displays a single result entry (time point) in an expander."""
-    # Create title based on primary result type
-    expander_title = f"Results at {result.time_post_reaction:.1f} hours"
+    # --- Build the expander title ---
+    title_parts = [f"Results at {result.time_post_reaction:.1f} days"]
+    
+    # Get scalar data for use in title and body
+    scalar_data = result.scalar_data
+    
+    # Add concentration if available
+    if scalar_data and scalar_data.solution_ammonium_concentration is not None:
+        conc_config = SCALAR_RESULTS_CONFIG['solution_ammonium_concentration']
+        formatted_conc = format_value(scalar_data.solution_ammonium_concentration, conc_config)
+        title_parts.append(f"{formatted_conc} mM NH₄⁺")
+    
+    # Add truncated description
+    description = result.description
+    if description:
+        max_len = 50
+        truncated_desc = (description[:max_len] + '...') if len(description) > max_len else description
+        title_parts.append(truncated_desc)
+
+    expander_title = " - ".join(title_parts)
     
     with st.expander(expander_title):
-        # --- Directly access scalar_data via relationship ---
-        scalar_data = result.scalar_data 
-
         # --- Display Scalar Results First ---
         if scalar_data:
             st.markdown("##### Scalar Measurements") # Changed header slightly
@@ -201,7 +216,7 @@ def render_results_form(experiment_db_id):
             ).first()
 
             if result_to_edit:
-                form_title = f"Edit Results at {result_to_edit.time_post_reaction:.1f} hours"
+                form_title = f"Edit Results at {result_to_edit.time_post_reaction:.1f} days"
                 editing_time = result_to_edit.time_post_reaction
                 current_data['time_post_reaction'] = editing_time # Pre-populate time
                 current_data['description'] = result_to_edit.description # Pre-populate description

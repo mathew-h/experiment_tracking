@@ -114,6 +114,7 @@ def generate_weekly_log():
         for result in new_results:
             log_data.append({
                 'ID': result.experiment_id,
+                'Type': 'New Result',
                 'Description': result.description or 'No description',
                 'Date': result.created_at.strftime('%Y-%m-%d %H:%M:%S')
             })
