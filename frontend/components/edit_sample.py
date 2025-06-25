@@ -141,12 +141,11 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
         if uploaded_files:
             for idx, uploaded_file in enumerate(uploaded_files):
                 if uploaded_file:
-                    # Use the string sample_id for the prefix
-                    filename_prefix = f"sample_{user_sample_id}_analysis_{new_analysis.id}_{idx}"
+                    # Use a structured folder path for each analysis
+                    storage_folder = f"analysis_reports/sample_{user_sample_id}/analysis_{new_analysis.id}"
                     file_path = save_uploaded_file(
                         file=uploaded_file, 
-                        base_dir_name='analysis_reports',
-                        filename_prefix=filename_prefix 
+                        storage_folder=storage_folder
                     )
                     
                     if not file_path:
@@ -221,11 +220,11 @@ def add_sample_photo(sample_info_id, photo_file, description=None):
              st.error(f"Sample with ID {sample_info_id} not found.")
              return False
 
-        # Save the file using utility
+        # Save the file using utility, creating a subfolder for the sample
+        storage_folder = f"sample_photos/{sample.sample_id}"
         file_path = save_uploaded_file(
             file=photo_file,
-            storage_folder='sample_photos',
-            filename_prefix=f"sample_{sample.sample_id}" # Use string sample_id for prefix
+            storage_folder=storage_folder
         )
 
         if not file_path:

@@ -113,7 +113,8 @@ class ExperimentalConditions(Base):
             if self.water_volume is not None and self.water_volume > 0:
                 # ppm = (mass_of_solute [g] / mass_of_solvent [g]) * 1,000,000
                 # Assuming water density is 1 g/mL, water_volume in mL is equivalent to water_mass in g.
-                self.catalyst_ppm = (elemental_metal_mass / self.water_volume) * 1_000_000
+                unrounded_ppm = (elemental_metal_mass / self.water_volume) * 1_000_000
+                self.catalyst_ppm = round(unrounded_ppm / 10) * 10
 
 class ExperimentalResults(Base):
     __tablename__ = "experimental_results"

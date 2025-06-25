@@ -210,7 +210,7 @@ def render_experiment_list():
                 catalyst_combined = "None"
             else:
                 catalyst_pct_disp = f"{catalyst_pct:.2f}" if isinstance(catalyst_pct, (int, float)) else str(catalyst_pct)
-                catalyst_ppm_disp = f"{catalyst_ppm:.2f}" if isinstance(catalyst_ppm, (int, float)) else str(catalyst_ppm)
+                catalyst_ppm_disp = f"{catalyst_ppm:.0f}" if isinstance(catalyst_ppm, (int, float)) else str(catalyst_ppm)
                 catalyst_combined = f"{catalyst} / {catalyst_pct_disp}% / {catalyst_ppm_disp} ppm"
             # Temperature
             temperature = conditions.get('temperature', FIELD_CONFIG['temperature']['default'])

@@ -427,9 +427,11 @@ def display_sample_details(sample_id):
             st.markdown("### Sample Photos")
             photos = sample.photos
             if photos:
-                for photo in photos:
+                for i, photo in enumerate(photos):
                     photo_key = f"photo_{photo.id}"
-                    with st.expander(f"Photo {photo.id} ({photo.file_name or 'details'}) - Added: {photo.created_at.strftime('%Y-%m-%d')}"):
+                    # Expand the first photo by default
+                    is_expanded = (i == 0)
+                    with st.expander(f"Photo {photo.id} ({photo.file_name or 'details'}) - Added: {photo.created_at.strftime('%Y-%m-%d')}", expanded=is_expanded):
                         if photo.file_path and os.path.exists(photo.file_path):
                             try:
                                 st.image(photo.file_path, caption=f"ID: {photo.id} - {photo.file_name}")
