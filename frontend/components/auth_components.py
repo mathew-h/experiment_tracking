@@ -3,6 +3,7 @@ import firebase_admin
 from firebase_admin import auth
 from auth.firebase_config import verify_token, get_firebase_config
 from auth.user_management import create_pending_user_request
+import requests
 
 def validate_email_domain(email):
     """Validate that the email ends with @addisenergy.com"""
@@ -35,25 +36,38 @@ def render_login_page():
                     if not validate_email_domain(email):
                         st.error("Access restricted to @addisenergy.com email addresses only.")
                         return
+
+                    # Authenticate with Firebase REST API
+                    api_key = st.session_state.firebase_config.get("apiKey")
+                    if not api_key:
+                        st.error("Firebase API key not found. Please check configuration.")
+                        return
+
+                    rest_api_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
+                    payload = {
+                        "email": email,
+                        "password": password,
+                        "returnSecureToken": True
+                    }
                     
-                    # Sign in with Firebase
-                    user = auth.get_user_by_email(email)
-                    if user:
+                    response = requests.post(rest_api_url, json=payload)
+                    
+                    if response.status_code == 200:
+                        auth_data = response.json()
+                        uid = auth_data['localId']
+                        
                         # Check if user is approved
+                        user = auth.get_user(uid)
                         if not user.custom_claims or not user.custom_claims.get('approved'):
                             st.error("Your account is pending approval. Please wait for admin approval.")
                             return
-                            
-                        # Get a custom token for the user
-                        custom_token = auth.create_custom_token(user.uid)
-                        token = custom_token.decode('utf-8')
                         
                         st.session_state.user = {
                             'uid': user.uid,
                             'email': user.email,
                             'display_name': user.display_name or user.email
                         }
-                        st.session_state.auth_token = token
+                        st.session_state.auth_token = auth_data['idToken']
                         st.success("Login successful!")
                         st.rerun()
                     else:
