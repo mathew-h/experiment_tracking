@@ -170,23 +170,25 @@ def render_experiment_list():
         st.markdown("#### Experiments")
         
         # Create a custom table layout with headers
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
+        col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([1, 1.2, 1.2, 1.4, 0.8, 0.9, 2.0, 1.1, 0.7])
         
         with col1:
             st.markdown("**Experiment ID**")
         with col2:
-            st.markdown("**Rock/Substrate**")
+            st.markdown("**Rock / Substrate**")
         with col3:
-            st.markdown(f"**{FIELD_CONFIG['initial_ph']['label']}**")
+            st.markdown("**Water (mL) / Rock Mass (g)**")
         with col4:
             st.markdown("**Cat. Type / % / PPM**")
         with col5:
-            st.markdown(f"**{FIELD_CONFIG['temperature']['label']}**")
+            st.markdown(f"**{FIELD_CONFIG['initial_ph']['label']}**")
         with col6:
-            st.markdown("**Description**")
+            st.markdown(f"**{FIELD_CONFIG['temperature']['label']}**")
         with col7:
-            st.markdown("**Status**")
+            st.markdown("**Description**")
         with col8:
+            st.markdown("**Status**")
+        with col9:
             st.markdown("**Action**")
         
         # Add a separator line
@@ -198,6 +200,15 @@ def render_experiment_list():
             exp_detail = get_experiment_by_id(exp['experiment_id'])
             conditions = exp_detail.get('conditions', {}) if exp_detail else {}
             notes = exp_detail.get('notes', []) if exp_detail else []
+
+            # Water mL and Rock Mass g
+            water_ml = conditions.get('water_volume', 0.0)
+            rock_mass_g = conditions.get('rock_mass', 0.0)
+            
+            water_ml_disp = f"{water_ml:.1f}" if isinstance(water_ml, (int, float)) else str(water_ml)
+            rock_mass_g_disp = f"{rock_mass_g:.3f}" if isinstance(rock_mass_g, (int, float)) else str(rock_mass_g)
+            water_rock_disp = f"{water_ml_disp} / {rock_mass_g_disp}"
+
             # Initial pH
             initial_ph = conditions.get('initial_ph', FIELD_CONFIG['initial_ph']['default'])
             initial_ph_disp = f"{initial_ph:.1f}" if isinstance(initial_ph, (int, float)) else str(initial_ph)
@@ -221,20 +232,22 @@ def render_experiment_list():
             status = exp.get('status', '')
             # Row layout
             with st.container():
-                col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1, 1.2, 0.8, 1.4, 0.9, 2.0, 1.1, 0.7])
+                col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([1, 1.2, 1.2, 1.4, 0.8, 0.9, 2.0, 1.1, 0.7])
                 with col1:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['experiment_id']}</div>", unsafe_allow_html=True)
                 with col2:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{exp['sample_id']}</div>", unsafe_allow_html=True)
                 with col3:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{initial_ph_disp}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{water_rock_disp}</div>", unsafe_allow_html=True)
                 with col4:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{catalyst_combined}</div>", unsafe_allow_html=True)
                 with col5:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{temperature_disp}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{initial_ph_disp}</div>", unsafe_allow_html=True)
                 with col6:
-                    st.write(f"<div style='margin: 0px; padding: 2px; white-space: pre-line; overflow-x: auto; max-width: 100%;'>{description}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{temperature_disp}</div>", unsafe_allow_html=True)
                 with col7:
+                    st.write(f"<div style='margin: 0px; padding: 2px; white-space: pre-line; overflow-x: auto; max-width: 100%;'>{description}</div>", unsafe_allow_html=True)
+                with col8:
                     new_status = st.selectbox(
                         "Status",
                         options=EXPERIMENT_STATUSES,
@@ -265,7 +278,7 @@ def render_experiment_list():
                         finally:
                             if db:
                                 db.close()
-                with col8:
+                with col9:
                     if st.button("Details", key=f"view_{index}"):
                         st.session_state.view_experiment_id = exp['experiment_id']
                         st.rerun()
