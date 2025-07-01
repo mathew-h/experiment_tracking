@@ -46,7 +46,7 @@ def render_sample_inventory():
     else:
         st.header("Rock Sample Inventory")
     
-        # Initialize pagination state
+        # Initialize pagination and filter state
         if 'samples_page' not in st.session_state:
             st.session_state.samples_page = 1
         if 'samples_per_page' not in st.session_state:
@@ -55,49 +55,71 @@ def render_sample_inventory():
             st.session_state.sort_elements = []
         if 'sort_directions' not in st.session_state:
             st.session_state.sort_directions = {}
+        if 'sample_search_term' not in st.session_state:
+            st.session_state.sample_search_term = ""
+        if 'sample_location_filter' not in st.session_state:
+            st.session_state.sample_location_filter = ""
+
+        # Define a callback to clear filters and sorting
+        def clear_filters_and_sort():
+            st.session_state.sample_search_term = ""
+            st.session_state.sample_location_filter = ""
+            st.session_state.samples_page = 1
+            st.session_state.sort_elements = []
+            st.session_state.sort_directions = {}
 
         # Add search and filter options
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
-            search_term = st.text_input("Search by Sample ID or Classification:")
+            st.text_input("Search by Sample ID or Description:", key="sample_search_term")
             
         with col2:
-            location_filter = st.text_input("Filter by Location (State/Country):", 
-                help="Enter location (e.g., 'NM' for New Mexico, or multiple locations separated by commas)")
+            st.text_input("Filter by Location (State/Country):", 
+                help="Enter location (e.g., 'NM' for New Mexico, or multiple locations separated by commas)",
+                key="sample_location_filter")
 
         with col3:
             # Multi-select for elements
-            selected_elements = st.multiselect(
-                "Sort by Elements (in priority order)",
-                [f"{el.title()} Avg" for el in PXRF_ELEMENT_COLUMNS],
-                key="sort_elements_select"
-            )
+            sort_options = ["Date Added"] + [f"{el.title()} Avg" for el in PXRF_ELEMENT_COLUMNS]
             
-            # Update session state for selected elements
-            st.session_state.sort_elements = selected_elements
+            # Use an explicit pattern to manage state persistence
+            selected_elements = st.multiselect(
+                "Sort by (in priority order)",
+                sort_options,
+                default=st.session_state.get('sort_elements', []),
+                key="sort_multiselect" # Use a distinct key for the widget
+            )
+            st.session_state.sort_elements = selected_elements # Update our source of truth
             
             # Create sort direction controls for each selected element
-            if selected_elements:
+            if st.session_state.sort_elements:
                 st.markdown("#### Sort Directions")
-                for element in selected_elements:
-                    direction = st.radio(
-                        f"Sort Direction for {element}",
-                        ["Ascending", "Descending"],
-                        key=f"sort_direction_{element}"
-                    )
-                    st.session_state.sort_directions[element] = direction == "Ascending"
+                for element in st.session_state.sort_elements:
+                    # Use columns for a compact layout
+                    sort_cols = st.columns([2, 3])
+                    with sort_cols[0]:
+                        st.markdown(f"<div style='text-align: right; padding-top: 8px;'>{element}:</div>", unsafe_allow_html=True)
+                    
+                    with sort_cols[1]:
+                        direction = st.radio(
+                            f"Sort Direction for {element}",
+                            options=["Asc", "Desc"],
+                            index=1 if element == "Date Added" else 0,
+                            key=f"sort_direction_{element}",
+                            horizontal=True,
+                            label_visibility="collapsed"
+                        )
+                        # Store boolean for ascending (True) or descending (False)
+                        st.session_state.sort_directions[element] = (direction == "Asc")
                 
-                if st.button("Clear Sort"):
-                    st.session_state.sort_elements = []
-                    st.session_state.sort_directions = {}
-                    st.rerun()
+            st.button("Clear Filters & Sort", on_click=clear_filters_and_sort)
 
         # Get sample data with filters applied at database level
         filtered_samples, total_samples = get_all_samples_with_pxrf_averages(
             page=st.session_state.samples_page,
             per_page=st.session_state.samples_per_page,
-            search_term=search_term,
-            location_filter=location_filter
+            search_term=st.session_state.sample_search_term,
+            location_filter=st.session_state.sample_location_filter
         )
 
         # Calculate total pages based on filtered count
@@ -113,10 +135,14 @@ def render_sample_inventory():
             def multi_sort_key(sample):
                 sort_keys = []
                 for element in st.session_state.sort_elements:
-                    element_name = element.split()[0].lower()
-                    sort_key = f"{element_name}_avg"
-                    value = sample[sort_key]
-                    sort_keys.append((value is None, value if value is not None else float('-inf')))
+                    if element == "Date Added":
+                        value = sample.get('created_at')
+                        sort_keys.append((value is None, value if value is not None else datetime.datetime.min))
+                    else:
+                        element_name = element.split()[0].lower()
+                        sort_key = f"{element_name}_avg"
+                        value = sample[sort_key]
+                        sort_keys.append((value is None, value if value is not None else float('-inf')))
                 return tuple(sort_keys)
 
             filtered_samples.sort(
@@ -136,9 +162,12 @@ def render_sample_inventory():
             if sort_desc:
                 st.info(f"Sorting by: {sort_desc}")
 
-            if any(sample[f"{el.split()[0].lower()}_avg"] is None 
-                   for sample in filtered_samples 
-                   for el in st.session_state.sort_elements):
+            if any(
+                (sample.get('created_at') is None) if el == "Date Added" 
+                else (sample.get(f"{el.split()[0].lower()}_avg") is None)
+                for sample in filtered_samples 
+                for el in st.session_state.sort_elements
+            ):
                 st.info("Note: Samples with no data for a selected element will appear first in ascending sort, last in descending sort.")
 
         # Display samples in a table
@@ -146,13 +175,13 @@ def render_sample_inventory():
             st.markdown("### Sample List")
 
             # --- Modify Column Layout --- 
-            base_headers = ["Sample ID", "Classification", "Location", "Coordinates"]
+            base_headers = ["Sample ID", "Description", "Location"]
             # Format element headers with proper capitalization (Fe, Ni, etc.)
             pxrf_headers = [f"{el.title()} Avg" for el in PXRF_ELEMENT_COLUMNS]
             action_header = ["Actions"]
 
             # Define column widths
-            base_widths = [1, 2, 1, 1.5]
+            base_widths = [1, 2, 1]
             pxrf_widths = [1] * len(pxrf_headers)
             action_width = [1]
 
@@ -177,14 +206,9 @@ def render_sample_inventory():
                     with cols[0]:
                         st.write(f"<div style='margin: 0px; padding: 2px;'>{sample['sample_id']}</div>", unsafe_allow_html=True)
                     with cols[1]:
-                        st.write(f"<div style='margin: 0px; padding: 2px;'>{sample.get('rock_classification', 'N/A')}</div>", unsafe_allow_html=True)
+                        st.write(f"<div style='margin: 0px; padding: 2px;'>{sample.get('description', 'N/A')}</div>", unsafe_allow_html=True)
                     with cols[2]:
                         st.write(f"<div style='margin: 0px; padding: 2px;'>{sample.get('state', 'N/A')}, {sample.get('country', 'N/A')}</div>", unsafe_allow_html=True)
-                    with cols[3]:
-                        lat = sample.get('latitude')
-                        lon = sample.get('longitude')
-                        coord_str = f"({lat:.4f}, {lon:.4f})" if lat is not None and lon is not None else "N/A"
-                        st.write(f"<div style='margin: 0px; padding: 2px;'>{coord_str}</div>", unsafe_allow_html=True)
 
                     # Display pXRF average data with proper element capitalization
                     for i, element in enumerate(PXRF_ELEMENT_COLUMNS):
@@ -624,7 +648,7 @@ def get_all_samples_with_pxrf_averages(page=1, per_page=10, search_term=None, lo
             query = query.filter(
                 or_(
                     func.lower(SampleInfo.sample_id).like(search_pattern),
-                    func.lower(SampleInfo.rock_classification).like(search_pattern)
+                    func.lower(SampleInfo.description).like(search_pattern)
                 )
             )
 
@@ -663,6 +687,7 @@ def get_all_samples_with_pxrf_averages(page=1, per_page=10, search_term=None, lo
                 for field in ROCK_SAMPLE_CONFIG.keys()
             }
             sample_data['sample_id'] = sample.sample_id  # Use sample_id instead of id
+            sample_data['created_at'] = sample.created_at
             
             sample_reading_nos = set()
             for analysis in sample.external_analyses:

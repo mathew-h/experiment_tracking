@@ -22,9 +22,9 @@ ANALYSIS_TYPES = ['pXRF', 'XRD', 'SEM', 'Elemental', 'Other', 'Magnetic Suscepti
 # Feedstock types
 FEEDSTOCK_TYPES = ['Nitrogen', 'Nitrate', 'Blank']
 
-# Expected columns in the pXRF data file
-PXRF_REQUIRED_COLUMNS = {'Reading No', 'Fe', 'Mg', 'Ni', 'Cu', 'Si', 'Co', 'Mo', 'Al'}
-PXRF_ELEMENT_COLUMNS = PXRF_REQUIRED_COLUMNS - {'Reading No'}
+# For pXRF data ingestion
+PXRF_ELEMENT_COLUMNS = ["Fe", "Mg", "Si", "Ni", "Cu", "Mo", "Co", "Al"]
+PXRF_REQUIRED_COLUMNS = set(PXRF_ELEMENT_COLUMNS) | {'Reading No'}
 
 # Configuration for rock sample form fields
 ROCK_SAMPLE_CONFIG = {
