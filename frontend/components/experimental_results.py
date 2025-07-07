@@ -61,10 +61,16 @@ def _save_or_update_scalar(db: Session, result: ExperimentalResults, scalar_data
         db.add(scalar_entry)
         result.scalar_data = scalar_entry # Associate with the main result
 
-    # TODO: Add call to calculate derived scalar values if needed
-    # if hasattr(scalar_entry, 'calculate_derived_yields'):
-    #    scalar_entry.calculate_derived_yields(db) # Might need db or other relationships
-    #    # Update new_values log with calculated fields
+    # Calculate derived scalar values automatically
+    if hasattr(scalar_entry, 'calculate_yields'):
+        # Store the calculated yield value for logging
+        calculated_yield = scalar_entry.grams_per_ton_yield
+        scalar_entry.calculate_yields()
+        
+        # If the yield was calculated and it's different from what was in new_values, update the log
+        if (scalar_entry.grams_per_ton_yield is not None and 
+            calculated_yield != scalar_entry.grams_per_ton_yield):
+            new_values['grams_per_ton_yield'] = scalar_entry.grams_per_ton_yield
 
     # Log the modification
     log_modification(
@@ -360,4 +366,7 @@ def delete_result_file(file_id):
 # TODO: Add function `calculate_derived_results(experiment_id)`
 # This function could be triggered after saving primary results
 # to calculate things like yield based on other data points.
-# Consider triggering this within save_results after commit, or as a separate process. 
+# Consider triggering this within save_results after commit, or as a separate process.
+# 
+# NOTE: grams_per_ton_yield is now automatically calculated in _save_or_update_scalar()
+# using the calculate_yields() method from the ScalarResults model. 
