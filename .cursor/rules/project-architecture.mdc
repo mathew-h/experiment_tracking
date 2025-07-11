@@ -1,23 +1,23 @@
 ---
-description: 
-globs: 
-alwaysApply: true
----
----
 description: Streamlit webapp project structure and file responsibilities
 globs:
   - app.py
   - models.py
   - variable_config.py
   - utils.py
+  - database/models.py
+  - frontend/components/bulk_uploads.py
 alwaysApply: true
 ---
-
 - Use `app.py` for routing and high-age layout in the Streamlit app.
 - Treat `models.py` as the authoritative source for all SQLAlchemy ORM database schema.
-- Use `variable_config.py` to centralize variable d for form rendering, field types, and default values.
+- Use `variable_config.py` to centralize variables for form rendering, field types, and default values.
 - Abstract reusable logic into `utils.py` instead of duplicating across files.
 - Ensure changes align with these roles to maintain modularity and clarity.
+- Do not suggest alembic migration files, we will automatically generate migration scripts
+- When `models.py` is updated, ensure that the corresponding Excel templates in `frontend/components/bulk_uploads.py` are also updated to reflect the schema changes, this ensures data integrity during bulk uploads and prevents validation errors.
+[models.py](mdc:database/models.py)
+[bulk_uploads.py](mdc:frontend/components/bulk_uploads.py)
 - Do not suggest alembic migration files, we will automatically generate migration scripts 
 [app.py](mdc:app.py)
 [models.py](mdc:database/models.py)

@@ -8,6 +8,7 @@ from frontend.components.new_rock import render_new_rock_sample
 from frontend.components.view_samples import render_sample_inventory
 from frontend.components.auth_components import init_auth_state, render_login_page, render_logout_button
 from frontend.components.issue_submission import render_issue_submission_form
+from frontend.components.bulk_uploads import render_bulk_uploads_page
 from utils.scheduler import setup_backup_scheduler, shutdown_scheduler
 from utils.database_backup import update_public_db_copy
 import os
@@ -81,6 +82,8 @@ def main():
             render_new_rock_sample()
         elif page == "View Sample Inventory":
             render_sample_inventory()
+        elif page == "Bulk Uploads":
+            render_bulk_uploads_page()
         elif page == "Issue Submission":
             render_issue_submission_form()
         # elif page == "Settings":

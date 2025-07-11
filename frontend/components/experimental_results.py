@@ -84,7 +84,7 @@ def _save_or_update_scalar(db: Session, result: ExperimentalResults, scalar_data
     return scalar_entry # Return the saved/updated entry
 
 # --- Main Save Function (Refactored) ---
-def save_results(experiment_id, time_post_reaction, result_description, scalar_data, files_to_save=None, result_id_to_edit=None):
+def save_results(experiment_id, time_post_reaction, result_description, scalar_data, files_to_save=None, result_id_to_edit=None, measurement_date=None):
     """
     Save or update experiment results for a specific time point.
     Handles creation/update of ExperimentalResults and ScalarResults.
@@ -96,6 +96,7 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
         scalar_data (dict): Dictionary of scalar field values.
         files_to_save (list[dict], optional): List of file upload data.
         result_id_to_edit (int, optional): The ID of the ExperimentalResults entry to update.
+        measurement_date (datetime, optional): Custom measurement date to override created_at.
 
     Returns:
         bool: True if save was successful, False otherwise.
@@ -112,6 +113,20 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
             if not result:
                 st.error(f"Result entry with ID {result_id_to_edit} not found for editing.")
                 return False
+
+            # Update measurement date if it has changed
+            if measurement_date and result.created_at.date() != measurement_date.date():
+                old_date = result.created_at
+                result.created_at = measurement_date
+                log_modification(
+                    db=db,
+                    experiment_id=result.experiment.experiment_id,
+                    modified_table=ExperimentalResults.__tablename__,
+                    modification_type="update",
+                    old_values={"created_at": old_date.isoformat()},
+                    new_values={"created_at": measurement_date.isoformat()}
+                )
+            
             # Update description if it has changed
             if result.description != result_description:
                 old_desc = result.description
@@ -151,6 +166,10 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
                 time_post_reaction=time_post_reaction,
                 description=result_description # Set the description
             )
+            
+            # Override created_at with measurement_date if provided
+            if measurement_date:
+                result.created_at = measurement_date
             db.add(result)
             # Log creation of the main entry? Optional, depends on desired log granularity.
             log_modification(
@@ -358,15 +377,5 @@ def delete_result_file(file_id):
     finally:
         db.close()
 
-# TODO: Add function `process_uploaded_results_file(file)`
-# This function would handle parsing CSV/Excel, validating data,
-# and returning structured data ready for `save_results`.
-# It could potentially use the ResultHandler classes mentioned above.
 
-# TODO: Add function `calculate_derived_results(experiment_id)`
-# This function could be triggered after saving primary results
-# to calculate things like yield based on other data points.
-# Consider triggering this within save_results after commit, or as a separate process.
-# 
-# NOTE: grams_per_ton_yield is now automatically calculated in _save_or_update_scalar()
-# using the calculate_yields() method from the ScalarResults model. 
+

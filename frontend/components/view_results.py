@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import datetime
+import pytz
 from sqlalchemy import orm
 from database.database import SessionLocal
 from database.models import (
@@ -92,7 +94,8 @@ def display_single_result(result, experiment_db_id):
     if scalar_data and scalar_data.solution_ammonium_concentration is not None:
         conc_config = SCALAR_RESULTS_CONFIG['solution_ammonium_concentration']
         formatted_conc = format_value(scalar_data.solution_ammonium_concentration, conc_config)
-        title_parts.append(f"{formatted_conc} mM NH₄⁺")
+        method = f" ({scalar_data.ammonium_quant_method})" if scalar_data.ammonium_quant_method else ""
+        title_parts.append(f"{formatted_conc} mM NH₄⁺{method}")
     
     # Add truncated description
     description = result.description
@@ -103,12 +106,31 @@ def display_single_result(result, experiment_db_id):
 
     expander_title = " - ".join(title_parts)
     
+    # Add measurement date to title if available
+    if result.created_at:
+        # Format the date for display
+        date_str = result.created_at.strftime("%m/%d/%Y")
+        expander_title += f" (Measured: {date_str})"
+    
     with st.expander(expander_title):
+        # --- Prepare Measurement Date for Table ---
+        measurement_date_str = None
+        if result.created_at:
+            est = pytz.timezone('US/Eastern')
+            if result.created_at.tzinfo is None:
+                utc_time = pytz.utc.localize(result.created_at)
+            else:
+                utc_time = result.created_at
+            eastern_time = utc_time.astimezone(est)
+            measurement_date_str = eastern_time.strftime('%B %d, %Y at %I:%M %p')
+        
         # --- Display Scalar Results First ---
         if scalar_data:
             st.markdown("##### Scalar Measurements") # Changed header slightly
             scalar_data_dict = {}
-            
+            # Insert measurement date as the first row
+            if measurement_date_str:
+                scalar_data_dict["Measurement Date"] = measurement_date_str
             # Display all scalar fields based on the order in SCALAR_RESULTS_CONFIG
             skip_fields = ['time_post_reaction'] # Already in expander title
             for field_name, config in SCALAR_RESULTS_CONFIG.items():
@@ -116,7 +138,6 @@ def display_single_result(result, experiment_db_id):
                     value = getattr(scalar_data, field_name, None)
                     if value is not None:  # Only add non-null values
                         scalar_data_dict[config['label']] = format_value(value, config)
-            
             if scalar_data_dict:
                 scalar_df = pd.DataFrame([scalar_data_dict]).T.rename(columns={0: "Value"})
                 scalar_df["Value"] = scalar_df["Value"].astype(str) # Ensure string type
@@ -220,6 +241,7 @@ def render_results_form(experiment_db_id):
                 editing_time = result_to_edit.time_post_reaction
                 current_data['time_post_reaction'] = editing_time # Pre-populate time
                 current_data['description'] = result_to_edit.description # Pre-populate description
+                current_data['measurement_date'] = result_to_edit.created_at # Pre-populate date for editing
 
                 # Pre-populate from ScalarResults first
                 if result_to_edit.scalar_data:
@@ -246,6 +268,7 @@ def render_results_form(experiment_db_id):
         for field_name, config in SCALAR_RESULTS_CONFIG.items():
             current_data[field_name] = config['default']
         current_data['description'] = "" # Default to empty for new results
+        current_data['measurement_date'] = datetime.datetime.now().date()
 
     st.markdown(f"#### {form_title}")
 
@@ -281,7 +304,7 @@ def render_results_form(experiment_db_id):
 
         # --- Render form fields ---
         st.markdown("**Result Metadata**")
-        col1_meta, col2_meta = st.columns(2)
+        col1_meta, col2_meta, col3_meta = st.columns(3)
         with col1_meta:
             form_values['time_post_reaction'] = st.number_input(
                 label=SCALAR_RESULTS_CONFIG['time_post_reaction']['label'],
@@ -299,6 +322,19 @@ def render_results_form(experiment_db_id):
                 value=current_data.get('description', ''),
                 key=f"{base_key_part}_desc"
             )
+            
+        with col3_meta:
+            # Measurement date field - show for new results and when editing
+            measurement_date = st.date_input(
+                "Measurement Date",
+                value=current_data.get('measurement_date', datetime.datetime.now().date()),
+                help="The date when this measurement was taken",
+                format="MM/DD/YYYY"
+            )
+            # Convert date to datetime with timezone
+            est = pytz.timezone('US/Eastern')
+            measurement_datetime = datetime.datetime.combine(measurement_date, datetime.time.min).replace(tzinfo=est)
+            form_values['measurement_date'] = measurement_datetime
 
         st.markdown("---")
         
@@ -330,7 +366,20 @@ def render_results_form(experiment_db_id):
                         key=field_key,
                         disabled=config.get('readonly', False)
                     )
-        
+                elif config['type'] == 'select':
+                    # Find index for default value, default to 0 if not found
+                    try:
+                        index = config['options'].index(default_val)
+                    except ValueError:
+                        index = 0
+                    form_values[field_name] = st.selectbox(
+                        label=config['label'],
+                        options=config['options'],
+                        index=index,
+                        help=config.get('help'),
+                        key=field_key
+                    )
+
         with col2:
             for field_name in fields_col2:
                 config = SCALAR_RESULTS_CONFIG[field_name]
@@ -348,6 +397,19 @@ def render_results_form(experiment_db_id):
                         help=config.get('help'),
                         key=field_key,
                         disabled=config.get('readonly', False)
+                    )
+                elif config['type'] == 'select':
+                    # Find index for default value, default to 0 if not found
+                    try:
+                        index = config['options'].index(default_val)
+                    except ValueError:
+                        index = 0
+                    form_values[field_name] = st.selectbox(
+                        label=config['label'],
+                        options=config['options'],
+                        index=index,
+                        help=config.get('help'),
+                        key=field_key
                     )
 
         # --- Submit Button ---
@@ -380,7 +442,8 @@ def render_results_form(experiment_db_id):
             result_description=result_description,
             scalar_data=form_values,
             files_to_save=files_to_save,
-            result_id_to_edit=st.session_state.editing_result_id
+            result_id_to_edit=st.session_state.editing_result_id,
+            measurement_date=form_values.get('measurement_date')
         )
 
         # Clear buffer and reset state

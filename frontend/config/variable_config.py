@@ -440,6 +440,13 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the ammonium concentration in the solution in millimolar (mM)."
     },
+    'ammonium_quant_method': {
+        'label': 'Ammonium Quant. Method',
+        'type': 'select',
+        'options': ['NMR', 'Colorimetric Assay'],
+        'default': 'Colorimetric Assay',
+        'help': 'Method used for quantifying ammonium concentration.'
+    },
     'final_ph': {
         'label': "Final pH",
         'type': 'number',
