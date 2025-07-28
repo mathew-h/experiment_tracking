@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, JSON, ForeignKey, Enum as SQLEnum, Text, UniqueConstraint, and_
-from sqlalchemy.orm import relationship, foreign
+from sqlalchemy import Column, Integer, String, DateTime, Float, JSON, ForeignKey, Enum as SQLEnum, Text, UniqueConstraint, and_, Boolean
+from sqlalchemy.orm import relationship, foreign, validates
 from sqlalchemy.sql import func
 import enum
 from .database import Base
@@ -286,6 +286,7 @@ class SampleInfo(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     description = Column(Text)
+    characterized = Column(Boolean, default=False, server_default='false', nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -338,8 +339,84 @@ class ExternalAnalysis(Base):
         foreign_keys=[sample_id] # Join on sample_id
     )
     analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan")
-    # Add relationship to PXRFReading
+    # Add one-to-one relationships for specific analysis types
     pxrf_reading = relationship("PXRFReading", back_populates="external_analyses")
+    xrd_analysis = relationship("XRDAnalysis", back_populates="external_analysis", uselist=False, cascade="all, delete-orphan")
+    elemental_analysis = relationship("ElementalAnalysis", back_populates="external_analysis", uselist=False, cascade="all, delete-orphan")
+
+class XRDAnalysis(Base):
+    __tablename__ = "xrd_analysis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_analysis_id = Column(Integer, ForeignKey("external_analyses.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    mineral_phases = Column(JSON)  # e.g., {"quartz": 45.2, "feldspar": 23.8}
+    peak_positions = Column(JSON)  # e.g., {"2-theta": [20.8, 26.6, ...]}
+    intensities = Column(JSON)     # e.g., {"counts": [1500, 8000, ...]}
+    d_spacings = Column(JSON)      # e.g., {"angstrom": [4.26, 3.34, ...]}
+    analysis_parameters = Column(JSON) # e.g., {"xray_source": "CuKa", "scan_range": "5-90"}
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    external_analysis = relationship("ExternalAnalysis", back_populates="xrd_analysis")
+
+    @validates('mineral_phases', 'peak_positions', 'intensities', 'd_spacings', 'analysis_parameters')
+    def validate_json(self, key, value):
+        if value is not None and not isinstance(value, (dict, list)):
+             raise ValueError(f"{key} must be a valid JSON object or array.")
+        return value
+
+    def get_mineral_percentage(self, mineral_name):
+        """Returns the percentage of a given mineral, or 0 if not found."""
+        if self.mineral_phases and isinstance(self.mineral_phases, dict):
+            return self.mineral_phases.get(mineral_name.lower(), 0)
+        return 0
+
+    def validate_mineral_percentages(self, tolerance=5):
+        """Validates if the mineral percentages sum to 100 ± tolerance."""
+        if not self.mineral_phases or not isinstance(self.mineral_phases, dict):
+            return True # No data to validate
+        
+        total_percentage = sum(self.mineral_phases.values())
+        return (100 - tolerance) <= total_percentage <= (100 + tolerance)
+
+class ElementalAnalysis(Base):
+    __tablename__ = "elemental_analysis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_analysis_id = Column(Integer, ForeignKey("external_analyses.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    major_elements = Column(JSON) # e.g., {"SiO2": 65.5, "Al2O3": 15.2}
+    minor_elements = Column(JSON) # e.g., {"TiO2": 0.8, "Fe2O3": 4.5}
+    trace_elements = Column(JSON) # e.g., {"Sr": 400, "Ba": 850} (in ppm)
+    detection_method = Column(String) # e.g., "XRF", "ICP-MS"
+    detection_limits = Column(JSON) # e.g., {"Sr": 0.5, "Ba": 1} (in ppm)
+    analytical_conditions = Column(JSON) # e.g., {"instrument": "Thermo Fisher iCAP Q", "digestion_method": "HF-HNO3"}
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    external_analysis = relationship("ExternalAnalysis", back_populates="elemental_analysis")
+
+    @validates('major_elements', 'minor_elements', 'trace_elements', 'detection_limits', 'analytical_conditions')
+    def validate_json(self, key, value):
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{key} must be a valid JSON object.")
+        return value
+
+    def get_element_concentration(self, element_type, element_name):
+        """
+        Returns the concentration of a given element from the specified type.
+        Element types can be 'major', 'minor', or 'trace'.
+        """
+        target_dict = getattr(self, f"{element_type}_elements", None)
+        if target_dict and isinstance(target_dict, dict):
+            # Case-insensitive lookup for element name
+            for key, val in target_dict.items():
+                if key.lower() == element_name.lower():
+                    return val
+        return 0
 
 class PXRFReading(Base):
     __tablename__ = "pxrf_readings"

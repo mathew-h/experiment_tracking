@@ -60,6 +60,9 @@ def render_sample_inventory():
         if 'sample_location_filter' not in st.session_state:
             st.session_state.sample_location_filter = ""
 
+        # Remove "Al" from display and sorting
+        display_pxrf_elements = [el for el in PXRF_ELEMENT_COLUMNS if el != 'Al']
+
         # Define a callback to clear filters and sorting
         def clear_filters_and_sort():
             st.session_state.sample_search_term = ""
@@ -80,7 +83,7 @@ def render_sample_inventory():
 
         with col3:
             # Multi-select for elements
-            sort_options = ["Date Added"] + [f"{el.title()} Avg" for el in PXRF_ELEMENT_COLUMNS]
+            sort_options = ["Date Added", "Characterized"] + [f"{el.title()} Avg" for el in display_pxrf_elements]
             
             # Use an explicit pattern to manage state persistence
             selected_elements = st.multiselect(
@@ -104,7 +107,7 @@ def render_sample_inventory():
                         direction = st.radio(
                             f"Sort Direction for {element}",
                             options=["Asc", "Desc"],
-                            index=1 if element == "Date Added" else 0,
+                            index=1 if element in ["Date Added", "Characterized"] else 0,
                             key=f"sort_direction_{element}",
                             horizontal=True,
                             label_visibility="collapsed"
@@ -138,6 +141,9 @@ def render_sample_inventory():
                     if element == "Date Added":
                         value = sample.get('created_at')
                         sort_keys.append((value is None, value if value is not None else datetime.datetime.min))
+                    elif element == "Characterized":
+                        value = sample.get('characterized')
+                        sort_keys.append((value is None, value if value is not None else False))
                     else:
                         element_name = element.split()[0].lower()
                         sort_key = f"{element_name}_avg"
@@ -163,7 +169,8 @@ def render_sample_inventory():
                 st.info(f"Sorting by: {sort_desc}")
 
             if any(
-                (sample.get('created_at') is None) if el == "Date Added" 
+                (sample.get('created_at') is None) if el == "Date Added"
+                else (sample.get('characterized') is None) if el == "Characterized"
                 else (sample.get(f"{el.split()[0].lower()}_avg") is None)
                 for sample in filtered_samples 
                 for el in st.session_state.sort_elements
@@ -175,15 +182,15 @@ def render_sample_inventory():
             st.markdown("### Sample List")
 
             # --- Modify Column Layout --- 
-            base_headers = ["Sample ID", "Description", "Location"]
+            base_headers = ["Sample ID", "Description", "Location", "Characterized"]
             # Format element headers with proper capitalization (Fe, Ni, etc.)
-            pxrf_headers = [f"{el.title()} Avg" for el in PXRF_ELEMENT_COLUMNS]
+            pxrf_headers = [f"{el.title()} Avg" for el in display_pxrf_elements]
             action_header = ["Actions"]
 
             # Define column widths
-            base_widths = [1, 2, 1]
-            pxrf_widths = [1] * len(pxrf_headers)
-            action_width = [1]
+            base_widths = [1.2, 1.6, 0.7, 0.9]
+            pxrf_widths = [0.8] * len(pxrf_headers)
+            action_width = [0.8]
 
             all_headers = base_headers + pxrf_headers + action_header
             all_widths = base_widths + pxrf_widths + action_width
@@ -210,8 +217,13 @@ def render_sample_inventory():
                     with cols[2]:
                         st.write(f"<div style='margin: 0px; padding: 2px;'>{sample.get('state', 'N/A')}, {sample.get('country', 'N/A')}</div>", unsafe_allow_html=True)
 
+                    # Display characterized status
+                    with cols[3]:
+                        characterized_status = "Yes" if sample.get('characterized') else "No"
+                        st.write(f"<div style='margin: 0px; padding: 2px;'>{characterized_status}</div>", unsafe_allow_html=True)
+
                     # Display pXRF average data with proper element capitalization
-                    for i, element in enumerate(PXRF_ELEMENT_COLUMNS):
+                    for i, element in enumerate(display_pxrf_elements):
                         with cols[len(base_headers) + i]:
                             avg_key = f"{element.lower()}_avg"
                             value = sample.get(avg_key)
@@ -688,6 +700,7 @@ def get_all_samples_with_pxrf_averages(page=1, per_page=10, search_term=None, lo
             }
             sample_data['sample_id'] = sample.sample_id  # Use sample_id instead of id
             sample_data['created_at'] = sample.created_at
+            sample_data['characterized'] = sample.characterized
             
             sample_reading_nos = set()
             for analysis in sample.external_analyses:

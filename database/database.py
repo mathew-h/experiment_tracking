@@ -16,6 +16,9 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Create declarative base
 Base = declarative_base()
 
+# Import to register listeners. This must be done after Base is defined to avoid circular imports.
+from . import event_listeners
+
 def init_db():
     """Initialize the database by creating all tables."""
     Base.metadata.create_all(bind=engine)
