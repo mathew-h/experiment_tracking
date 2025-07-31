@@ -5,6 +5,12 @@ from database.database import SessionLocal
 from database.models import Experiment, ExperimentalResults, ScalarResults, SampleInfo, PXRFReading, ExperimentalConditions
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
+
+EXPERIMENTAL_RESULTS_REQUIRED_COLS = {
+    "experiment_id", "time_post_reaction", "description",
+    "solution_ammonium_concentration"
+}
 
 def render_bulk_uploads_page():
     """
@@ -15,42 +21,54 @@ def render_bulk_uploads_page():
 
     upload_option = st.selectbox(
         "Select data type to upload:",
-        ("Select data type", "Experimental Results", "Rock Samples (Sample Info)", "pXRF Readings")
+        ("Select data type", "NMR Results", "Rock Samples (Sample Info)", "pXRF Readings")
     )
 
-    if upload_option == "Experimental Results":
-        handle_experimental_results_upload()
+    if upload_option == "NMR Results":
+        handle_nmr_results_upload()
     elif upload_option == "Rock Samples (Sample Info)":
         st.info("Bulk upload for Rock Samples is not yet implemented.")
     elif upload_option == "pXRF Readings":
         st.info("Bulk upload for pXRF Readings is not yet implemented.")
 
-def handle_experimental_results_upload():
+def handle_nmr_results_upload():
     """
-    Handles the UI and logic for bulk uploading experimental results.
+    Handles the UI and logic for bulk uploading NMR results.
     """
-    st.header("Bulk Upload Experimental Results")
+    st.header("Bulk Upload NMR Results")
     st.markdown("""
-    Upload an Excel file with experimental results. The file should have the
-    following columns. Please ensure `experiment_id` exists in the database.
+    Upload an Excel file for NMR results. The file should have the
+    following columns. Please ensure `Experiment ID` is in the database.
+
+    **Columns marked with an asterisk (*) are required.**
     """)
 
     # --- Template Generation ---
-    template_df = pd.DataFrame({
+    template_data = {
         "experiment_id": ["EXP-001"],
         "time_post_reaction": [1.0],
-        "description": ["First data point"],
-        "ferrous_iron_yield": [0.0],
+        "description": ["Sampled after acid addition"],
+        "ammonium_quant_method": ["NMR"],
         "solution_ammonium_concentration": [10.5],
-        "ammonium_quant_method": ["Colorimetric Assay"],
+        "sampling_volume": [5.0],
         "final_ph": [7.2],
+        "ferrous_iron_yield": [0.0],
         "final_nitrate_concentration": [0.1],
         "final_dissolved_oxygen": [2.5],
         "co2_partial_pressure": [14.7],
         "final_conductivity": [1500.0],
         "final_alkalinity": [120.0],
-        "sampling_volume": [5.0]
-    })
+
+    }
+
+    template_cols_ordered = {}
+    for col, val in template_data.items():
+        if col in EXPERIMENTAL_RESULTS_REQUIRED_COLS:
+            template_cols_ordered[f"{col}*"] = val
+        else:
+            template_cols_ordered[col] = val
+    
+    template_df = pd.DataFrame(template_cols_ordered)
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -69,21 +87,20 @@ def handle_experimental_results_upload():
     if uploaded_file:
         try:
             df = pd.read_excel(uploaded_file)
-            _process_experimental_results_df(df)
+            _process_nmr_results_df(df)
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
-def _process_experimental_results_df(df):
+def _process_nmr_results_df(df):
     """
-    Processes the DataFrame from the uploaded Excel file.
+    Processes the DataFrame from the uploaded Excel file for NMR results.
     Validates data and inserts it into the database.
     """
-    required_cols = {
-        "experiment_id", "time_post_reaction", "description",
-        "solution_ammonium_concentration"
-    }
-    if not required_cols.issubset(df.columns):
-        st.error(f"File is missing required columns. Required: {', '.join(required_cols)}")
+    # Clean column names by removing the asterisk
+    df.columns = df.columns.str.replace('*', '', regex=False)
+
+    if not EXPERIMENTAL_RESULTS_REQUIRED_COLS.issubset(df.columns):
+        st.error(f"File is missing required columns. Required: {', '.join(EXPERIMENTAL_RESULTS_REQUIRED_COLS)}")
         return
 
     db = SessionLocal()
@@ -91,11 +108,17 @@ def _process_experimental_results_df(df):
         results_to_add = []
         errors = []
         for index, row in df.iterrows():
-            exp_id = row['experiment_id']
-            experiment = db.query(Experiment).options(joinedload(Experiment.conditions)).filter(Experiment.experiment_id == exp_id).first()
+            exp_id_raw = row['experiment_id']
+            # Normalize experiment_id: lower case and remove hyphens and underscores
+            exp_id_normalized = exp_id_raw.lower().replace('-', '').replace('_', '')
+
+            # Query by normalized experiment_id
+            experiment = db.query(Experiment).filter(
+                func.lower(func.replace(func.replace(Experiment.experiment_id, '-', ''), '_', '')) == exp_id_normalized
+            ).options(joinedload(Experiment.conditions)).first()
 
             if not experiment:
-                errors.append(f"Row {index+2}: Experiment with ID '{exp_id}' not found.")
+                errors.append(f"Row {index+2}: Experiment with ID '{exp_id_raw}' not found.")
                 continue
 
             # Check for existing result to prevent duplicates
@@ -105,11 +128,11 @@ def _process_experimental_results_df(df):
             ).first()
 
             if existing_result:
-                errors.append(f"Row {index+2}: Result for experiment '{exp_id}' at time {row['time_post_reaction']} already exists.")
+                errors.append(f"Row {index+2}: Result for experiment '{exp_id_raw}' at time {row['time_post_reaction']} already exists.")
                 continue
 
             new_result = ExperimentalResults(
-                experiment_id=exp_id,
+                experiment_id=experiment.experiment_id,  # Use the ID from the database
                 experiment_fk=experiment.id,
                 time_post_reaction=row['time_post_reaction'],
                 description=row['description']
@@ -138,7 +161,7 @@ def _process_experimental_results_df(df):
         if results_to_add and not errors:
             db.add_all(results_to_add)
             db.commit()
-            st.success(f"Successfully uploaded {len(results_to_add)} new experimental results.")
+            st.success(f"Successfully uploaded {len(results_to_add)} new NMR results.")
         elif not results_to_add and not errors:
             st.info("No new data to upload.")
         else:
