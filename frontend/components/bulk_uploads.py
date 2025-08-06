@@ -212,21 +212,40 @@ def _process_icp_csv(file_content: bytes):
             
             results, upload_errors = ICPService.bulk_create_icp_results(db, processed_data)
             
+            # Separate errors from overwrite notifications
+            actual_errors = [msg for msg in upload_errors if not msg.startswith("Sample") or "Updated existing ICP data" not in msg]
+            overwrite_notifications = [msg for msg in upload_errors if "Updated existing ICP data" in msg]
+            
             # Handle upload feedback
-            if upload_errors:
+            if actual_errors:
                 st.subheader("❌ Upload Errors")
-                for error in upload_errors:
+                for error in actual_errors:
                     st.error(error)
             
-            if results and not upload_errors:
+            if overwrite_notifications:
+                st.subheader("🔄 Data Updates")
+                for notification in overwrite_notifications:
+                    st.info(notification.replace("Sample ", "Entry "))
+            
+            if results and not actual_errors:
                 db.commit()
-                st.success(f"✅ Successfully uploaded {len(results)} ICP results.")
+                st.success(f"✅ Successfully processed {len(results)} ICP results.")
                 
                 # Show success summary
                 experiments = list(set([data['experiment_id'] for data in processed_data if data['experiment_id']]))
-                st.info(f"**Summary:** Uploaded ICP data for {len(experiments)} experiments")
+                new_count = len(results) - len(overwrite_notifications)
+                update_count = len(overwrite_notifications)
                 
-            elif not results and not upload_errors:
+                summary_parts = []
+                if new_count > 0:
+                    summary_parts.append(f"{new_count} new")
+                if update_count > 0:
+                    summary_parts.append(f"{update_count} updated")
+                
+                summary = " and ".join(summary_parts)
+                st.info(f"**Summary:** {summary} ICP results for {len(experiments)} experiments")
+                
+            elif not results and not actual_errors:
                 st.info("ℹ️ No new ICP data to upload.")
             else:
                 st.error("❌ Upload failed due to errors. Please correct the issues and try again.")

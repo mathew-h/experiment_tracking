@@ -292,7 +292,7 @@ class ICPService:
         return symbol_mapping.get(clean_symbol, clean_symbol)
     
     @staticmethod
-    def create_icp_result(db: Session, experiment_id: str, result_data: Dict[str, Any]) -> Optional[ExperimentalResults]:
+    def create_icp_result(db: Session, experiment_id: str, result_data: Dict[str, Any]) -> Tuple[Optional[ExperimentalResults], bool]:
         """
         Create an experimental result with ICP elemental analysis data.
         Uses unique result tracking improvements to allow multiple data types per time point.
@@ -303,10 +303,11 @@ class ICPService:
             result_data: Dictionary containing result data fields and elemental concentrations
             
         Returns:
-            ExperimentalResults object (existing or new) with ICP data attached
+            Tuple of (ExperimentalResults object, was_update: bool)
+            was_update is True if existing ICP data was updated, False if new data was created
             
         Raises:
-            ValueError: If experiment not found or ICP data already exists for this time point
+            ValueError: If experiment not found
         """
         # Find experiment with normalization
         experiment = ICPService._find_experiment(db, experiment_id)
@@ -321,10 +322,6 @@ class ICPService:
             description=f"ICP Analysis - {result_data.get('raw_label', 'Unknown')}"
         )
         
-        # Check if ICPResults already exists for this ExperimentalResults
-        if experimental_result.icp_data:
-            raise ValueError(f"ICP data already exists for experiment '{experiment_id}' at time {result_data['time_post_reaction']}.")
-        
         # Separate fixed columns from all elemental data
         fixed_elements = ['fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al']
         fixed_column_data = {}
@@ -337,6 +334,23 @@ class ICPService:
                 all_elements_data[key] = value  # Also store in JSON for completeness
             elif key not in ['experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label'] and value is not None:
                 all_elements_data[key] = value  # Store additional elements in JSON only
+        
+        # Check if ICPResults already exists for this ExperimentalResults
+        if experimental_result.icp_data:
+            # Update existing ICP data instead of rejecting
+            existing_icp = experimental_result.icp_data
+            
+            # Update fixed columns
+            for element in fixed_elements:
+                setattr(existing_icp, element, fixed_column_data.get(element))
+            
+            # Update JSON and metadata
+            existing_icp.all_elements = all_elements_data if all_elements_data else None
+            existing_icp.dilution_factor = result_data.get('dilution_factor')
+            existing_icp.raw_label = result_data.get('raw_label')
+            
+            db.flush()  # Flush to ensure update is applied
+            return experimental_result, True  # True indicates this was an update
         
         # Create ICP data with elemental concentrations
         icp_data = ICPResults(
@@ -366,7 +380,7 @@ class ICPService:
         db.add(experimental_result)  # May be existing or new
         db.flush()  # Flush to get IDs assigned
         
-        return experimental_result
+        return experimental_result, False  # False indicates this was a new creation
     
     @staticmethod
     def bulk_create_icp_results(db: Session, processed_data: List[Dict[str, Any]]) -> Tuple[List[ExperimentalResults], List[str]]:
@@ -396,15 +410,19 @@ class ICPService:
                     errors.append(f"Sample {idx + 1}: Missing time_post_reaction.")
                     continue
                 
-                # Create the ICP result
-                new_result = ICPService.create_icp_result(
+                # Create or update the ICP result
+                result, was_update = ICPService.create_icp_result(
                     db=db,
                     experiment_id=experiment_id,
                     result_data=data
                 )
                 
-                if new_result:
-                    results_to_add.append(new_result)
+                if result:
+                    results_to_add.append(result)
+                    
+                    # Add informational message for overwrites
+                    if was_update:
+                        errors.append(f"Sample {idx + 1}: Updated existing ICP data for experiment '{experiment_id}' at time {time_post_reaction} days")
                     
             except ValueError as e:
                 errors.append(f"Sample {idx + 1}: {str(e)}")
