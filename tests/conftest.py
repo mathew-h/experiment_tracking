@@ -5,7 +5,7 @@ from sqlalchemy.pool import StaticPool
 from azure.storage.blob import BlobServiceClient, BlobClient
 import datetime
 
-from database.models import Base, PXRFReading, Experiment, ExperimentalConditions, ExperimentalResults, ResultType, NMRResults, ScalarResults
+from database.models import Base, PXRFReading, Experiment, ExperimentalConditions, ExperimentalResults, ScalarResults, ICPResults
 
 @pytest.fixture
 def test_db() -> Session:
@@ -99,13 +99,13 @@ def test_experimental_result(test_db: Session, test_experiment: Experiment) -> E
     return result_entry
 
 @pytest.fixture
-def test_scalar_result(test_db: Session, test_experimental_result: ExperimentalResults, test_nmr_result: NMRResults) -> ScalarResults:
-    """Create a ScalarResults entry linked to the test ExperimentalResults,
-       ensuring associated NMR data exists via fixture dependency."""
-    # test_experimental_result already has nmr_data linked by test_nmr_result fixture
+def test_scalar_result(test_db: Session, test_experimental_result: ExperimentalResults) -> ScalarResults:
+    """Create a ScalarResults entry linked to the test ExperimentalResults."""
     scalar_data = ScalarResults(
         result_id=test_experimental_result.id,
-        final_ph=7.0 # Add some dummy data
+        final_ph=7.0,  # Add some dummy data
+        solution_ammonium_concentration=10.5,
+        ammonium_quant_method='NMR'
     )
     # Manually link back (SQLAlchemy doesn't always do this automatically before commit)
     test_experimental_result.scalar_data = scalar_data
@@ -113,29 +113,4 @@ def test_scalar_result(test_db: Session, test_experimental_result: ExperimentalR
     test_db.commit()
     test_db.refresh(scalar_data)
     test_db.refresh(test_experimental_result) # Refresh parent too
-    return scalar_data
-
-@pytest.fixture
-def test_nmr_result(test_db: Session, test_experimental_result: ExperimentalResults) -> NMRResults:
-    """Create an NMRResults entry linked to the test ExperimentalResults with some data."""
-    # Ensure the parent result type is NMR if creating NMR data
-    if test_experimental_result.result_type != ResultType.NMR:
-        test_experimental_result.result_type = ResultType.NMR
-        test_db.commit()
-        test_db.refresh(test_experimental_result)
-
-    nmr_data = NMRResults(
-        result_id=test_experimental_result.id,
-        is_concentration_mm=0.025,
-        is_protons=2,
-        sampled_rxn_volume_ul=500.0,
-        nmr_total_volume_ul=700.0,
-        nh4_peak_area_1=1.5
-    )
-    # Manually link back
-    test_experimental_result.nmr_data = nmr_data
-    test_db.add(nmr_data)
-    test_db.commit()
-    test_db.refresh(nmr_data)
-    test_db.refresh(test_experimental_result)
-    return nmr_data 
+    return scalar_data 

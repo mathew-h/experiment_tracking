@@ -9,6 +9,7 @@ from database.database import SessionLocal
 from database.models import (
     ExperimentalResults,
     ScalarResults, # Import ScalarResults
+    ICPResults, # Import ICPResults
     ResultFiles
 )
 from frontend.config.variable_config import (
@@ -38,6 +39,7 @@ def render_results_section(experiment):
         all_results = db.query(ExperimentalResults).options(
             # Eager load specific result data and files
             orm.selectinload(ExperimentalResults.scalar_data),
+            orm.selectinload(ExperimentalResults.icp_data),
             orm.selectinload(ExperimentalResults.files)
         ).filter(
             ExperimentalResults.experiment_id == experiment['experiment_id'] # Use experiment_id string
@@ -89,6 +91,7 @@ def display_single_result(result, experiment_db_id):
     
     # Get scalar data for use in title and body
     scalar_data = result.scalar_data
+    icp_data = result.icp_data
     
     # Add concentration if available
     if scalar_data and scalar_data.solution_ammonium_concentration is not None:
@@ -96,6 +99,13 @@ def display_single_result(result, experiment_db_id):
         formatted_conc = format_value(scalar_data.solution_ammonium_concentration, conc_config)
         method = f" ({scalar_data.ammonium_quant_method})" if scalar_data.ammonium_quant_method else ""
         title_parts.append(f"{formatted_conc} mM NH₄⁺{method}")
+    
+    # Add ICP data indicator if available
+    if icp_data:
+        all_elements = icp_data.get_all_detected_elements()
+        detected_count = len([e for e in all_elements.values() if e is not None and e > 0])
+        if detected_count > 0:
+            title_parts.append(f"ICP: {detected_count} elements")
     
     # Add truncated description
     description = result.description
@@ -143,8 +153,50 @@ def display_single_result(result, experiment_db_id):
                 scalar_df["Value"] = scalar_df["Value"].astype(str) # Ensure string type
                 st.table(scalar_df)
             # Display message only if no scalar_data object exists at all
-        else:
-             st.info("No associated scalar measurements recorded for this time point.")
+
+        # --- Display ICP Elemental Analysis Data ---
+        icp_data = result.icp_data
+        if icp_data:
+            st.markdown("##### ICP Elemental Analysis") 
+            
+            # Get all detected elements using the model's method
+            all_elements = icp_data.get_all_detected_elements()
+            
+            if all_elements:
+                # Create DataFrame similar to bulk_uploads preview
+                icp_summary = {}
+                
+                # Add metadata first
+                if icp_data.dilution_factor:
+                    icp_summary["Dilution Factor"] = f"{icp_data.dilution_factor:.1f}x"
+                if icp_data.analysis_date:
+                    date_str = icp_data.analysis_date.strftime("%m/%d/%Y")
+                    icp_summary["Analysis Date"] = date_str
+                if icp_data.instrument_used:
+                    icp_summary["Instrument"] = icp_data.instrument_used
+                
+                # Sort elements by concentration (descending) for better display
+                sorted_elements = sorted(all_elements.items(), key=lambda x: x[1] if x[1] is not None else 0, reverse=True)
+                
+                # Display elements with concentrations
+                element_count = 0
+                for element, concentration in sorted_elements:
+                    if concentration is not None and concentration > 0:  # Only show detected elements
+                        element_title = element.capitalize()
+                        icp_summary[f"{element_title} (ppm)"] = f"{concentration:.3f}"
+                        element_count += 1
+                        
+                        # Limit display to first 10 elements to avoid overwhelming the UI
+                        if element_count >= 10:
+                            break
+                
+                if len(sorted_elements) > 10:
+                    icp_summary["Note"] = f"Showing top 10 elements. Total detected: {len([e for e in sorted_elements if e[1] is not None and e[1] > 0])}"
+                
+                if icp_summary:
+                    icp_df = pd.DataFrame([icp_summary]).T.rename(columns={0: "Value"})
+                    icp_df["Value"] = icp_df["Value"].astype(str)
+                    st.table(icp_df)
 
         # --- Display Primary Result Data (e.g., NMR) Second ---
         primary_data_displayed = False
@@ -154,7 +206,7 @@ def display_single_result(result, experiment_db_id):
         
         # If no specific data was found/displayed for the primary type
         if not primary_data_displayed:
-             st.info("No specific data recorded for this time point.")
+            pass  # File uploads are not routine for database uploading
 
         # --- Display Associated Files ---
         if result.files:
@@ -191,14 +243,14 @@ def display_single_result(result, experiment_db_id):
         col1, col2, col3 = st.columns([1, 1, 5])
         with col1:
             # Button text reflects what can be edited
-            edit_button_label = f"Edit Data / Add Files"
+            edit_button_label = f"Edit Data"
             if st.button(edit_button_label, key=f"edit_result_{result.id}"):
                 st.session_state.show_results_form = True
                 st.session_state.editing_result_id = result.id
                 st.session_state.current_experiment_id_results = experiment_db_id
                 st.rerun()
         with col2:
-            if st.button("Delete Time Point", key=f"delete_result_{result.id}"):
+            if st.button("Delete Measurement", key=f"delete_result_{result.id}"):
                 try:
                     delete_experimental_results(result.id)
                     st.session_state.experiment_updated = True

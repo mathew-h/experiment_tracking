@@ -504,6 +504,7 @@ def get_experiment_by_id(experiment_id):
                 selectinload(Experiment.notes),
                 selectinload(Experiment.modifications),
                 selectinload(Experiment.results).selectinload(ExperimentalResults.scalar_data), # Eager load scalar data
+                selectinload(Experiment.results).selectinload(ExperimentalResults.icp_data),   # Eager load ICP data
                 selectinload(Experiment.results).selectinload(ExperimentalResults.files)       # Eager load files
             ).filter(Experiment.experiment_id == experiment_id).first()
         else:
@@ -512,6 +513,7 @@ def get_experiment_by_id(experiment_id):
                 selectinload(Experiment.notes),
                 selectinload(Experiment.modifications),
                 selectinload(Experiment.results).selectinload(ExperimentalResults.scalar_data), # Eager load scalar data
+                selectinload(Experiment.results).selectinload(ExperimentalResults.icp_data),   # Eager load ICP data
                 selectinload(Experiment.results).selectinload(ExperimentalResults.files)       # Eager load files
             ).filter(Experiment.id == experiment_id).first()
         

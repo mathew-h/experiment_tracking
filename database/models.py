@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Float, JSON, ForeignKe
 from sqlalchemy.orm import relationship, foreign, validates
 from sqlalchemy.sql import func
 import enum
+from typing import Dict
 from .database import Base
 
 class ExperimentStatus(enum.Enum):
@@ -141,6 +142,13 @@ class ExperimentalResults(Base):
         uselist=False,
         cascade="all, delete-orphan"
     )
+    
+    icp_data = relationship(
+        "ICPResults",
+        back_populates="result_entry",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
 
     # Add a unique constraint on experiment_fk and time_post_reaction
     __table_args__ = (
@@ -209,6 +217,97 @@ class ScalarResults(Base):
         #    self.ferrous_iron_yield = ... calculation ...
         # else:
         #    self.ferrous_iron_yield = None # Or leave as is if manually entered
+
+class ICPResults(Base):
+    __tablename__ = "icp_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    result_id = Column(Integer, ForeignKey("experimental_results.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    # Fixed columns for common elements (all concentrations in ppm)
+    fe = Column(Float, nullable=True)   # Iron
+    si = Column(Float, nullable=True)   # Silicon
+    ni = Column(Float, nullable=True)   # Nickel
+    cu = Column(Float, nullable=True)   # Copper
+    mo = Column(Float, nullable=True)   # Molybdenum
+    zn = Column(Float, nullable=True)   # Zinc
+    mn = Column(Float, nullable=True)   # Manganese
+    cr = Column(Float, nullable=True)   # Chromium
+    co = Column(Float, nullable=True)   # Cobalt
+    mg = Column(Float, nullable=True)   # Magnesium
+    al = Column(Float, nullable=True)   # Aluminum
+
+    # JSON storage for all elements (including the fixed ones above for completeness)
+    all_elements = Column(JSON, nullable=True)  # e.g., {"fe": 125.0, "mg": 45.8, "ca": 12.3, "k": 8.9}
+    
+    # ICP-specific metadata
+    dilution_factor = Column(Float, nullable=True)
+    analysis_date = Column(DateTime(timezone=True), nullable=True)
+    instrument_used = Column(String, nullable=True)
+    detection_limits = Column(JSON, nullable=True)  # Store per-element detection limits
+    raw_label = Column(String, nullable=True)  # Original sample label from ICP file
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationship back to the main entry using result_id
+    result_entry = relationship(
+        "ExperimentalResults",
+        back_populates="icp_data",
+    )
+
+    @validates('all_elements', 'detection_limits')
+    def validate_json(self, key, value):
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{key} must be a valid JSON object.")
+        return value
+
+    def get_element_concentration(self, element_symbol: str) -> float:
+        """
+        Get concentration for any element, checking fixed columns first, then JSON.
+        
+        Args:
+            element_symbol: Element symbol (e.g., 'Fe', 'Mg', 'Ca')
+            
+        Returns:
+            Concentration in ppm, or 0 if not found
+        """
+        element_lower = element_symbol.lower()
+        
+        # Check fixed columns first (faster)
+        if hasattr(self, element_lower):
+            value = getattr(self, element_lower)
+            if value is not None:
+                return value
+        
+        # Check JSON storage
+        if self.all_elements and isinstance(self.all_elements, dict):
+            return self.all_elements.get(element_lower, 0)
+        
+        return 0
+
+    def get_all_detected_elements(self) -> Dict[str, float]:
+        """
+        Get all detected elements with their concentrations.
+        
+        Returns:
+            Dictionary of {element: concentration_ppm}
+        """
+        elements = {}
+        
+        # Add fixed columns
+        fixed_elements = ['fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al']
+        for element in fixed_elements:
+            value = getattr(self, element)
+            if value is not None:
+                elements[element] = value
+        
+        # Add JSON elements (may override fixed columns with same values)
+        if self.all_elements and isinstance(self.all_elements, dict):
+            elements.update(self.all_elements)
+        
+        return elements
 
 # --- Add classes for GCResults, PXRFResults, etc. later ---
 
