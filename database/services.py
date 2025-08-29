@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Session
-from database.models import ScalarResults
+from .models import ScalarResults
 
 class ScalarResultsService:
     def __init__(self, db: Session):

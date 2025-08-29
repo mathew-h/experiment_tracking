@@ -8,7 +8,7 @@ from sqlalchemy import pool
 from alembic import context
 
 # Import your SQLAlchemy models and metadata
-from database.models import Base
+from database import Base
 
 # Load environment variables
 load_dotenv()
