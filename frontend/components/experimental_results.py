@@ -3,14 +3,7 @@ import streamlit as st
 import os
 import json
 from sqlalchemy.orm import Session, selectinload # Import Session and selectinload for type hinting and eager loading
-from database.database import SessionLocal
-from database.models import (
-    Experiment,
-    ExperimentalResults,
-    ResultFiles,
-    ModificationsLog,
-    ScalarResults,
-)
+from database import SessionLocal, Experiment, ExperimentalResults, ResultFiles, ModificationsLog, ScalarResults
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
 from frontend.config.variable_config import SCALAR_RESULTS_CONFIG# Import the main config mapping

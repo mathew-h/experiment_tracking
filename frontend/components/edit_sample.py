@@ -1,6 +1,5 @@
 import streamlit as st
-from database.database import SessionLocal
-from database.models import ExternalAnalysis, SampleInfo, AnalysisFiles, SamplePhotos
+from database import SessionLocal, ExternalAnalysis, SampleInfo, AnalysisFiles, SamplePhotos
 from .utils import log_modification, delete_file_if_exists, save_uploaded_file
 import json
 import datetime

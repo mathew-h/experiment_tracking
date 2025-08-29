@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
-from database.models import ExperimentalConditions, Experiment
+from database import ExperimentalConditions, Experiment
 
 class ExperimentalConditionsService:
     

@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from database.models import Experiment, ExperimentalResults, ScalarResults
+from database import Experiment, ExperimentalResults, ScalarResults
 
 class ScalarResultsService:
     """Service for handling scalar results (solution chemistry) operations."""

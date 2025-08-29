@@ -7,8 +7,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from database.database import SessionLocal
-from database.models import ScalarResults, ExperimentalResults, Experiment
+from database import SessionLocal, ScalarResults, ExperimentalResults, Experiment
 
 def run_migration():
     """

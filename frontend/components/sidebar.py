@@ -2,11 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
-from database.database import SessionLocal
-from database.models import (
-    Experiment, SampleInfo, ExperimentalConditions, ExperimentNotes,
-    ExperimentalResults, ScalarResults, ExternalAnalysis, PXRFReading,
-)
+from database import SessionLocal, Experiment, SampleInfo, ExperimentalConditions, ExperimentNotes, ExperimentalResults, ScalarResults, ExternalAnalysis, PXRFReading
 from sqlalchemy import text, and_
 
 def download_database_as_excel():

@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker, Session
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
 
-from database.models import Base, PXRFReading
+from database import Base, PXRFReading
 # Import the function to test *after* potentially patching its dependencies
 # We will patch PXRF_DATA_PATH and SessionLocal/engine inside tests or fixtures
 

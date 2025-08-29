@@ -4,17 +4,7 @@ import os
 import json
 from datetime import datetime, date, time
 import re  # Add re module for regex support
-from database.database import SessionLocal
-from database.models import (
-    Experiment, 
-    ExperimentStatus, 
-    ExperimentalResults, 
-    ExperimentNotes, 
-    ExperimentalConditions, 
-    ModificationsLog,
-    SampleInfo,
-    ExternalAnalysis,
-)
+from database import SessionLocal, Experiment, ExperimentStatus, ExperimentalResults, ExperimentNotes, ExperimentalConditions, ModificationsLog, SampleInfo, ExternalAnalysis
 
 from frontend.components.experiment_details import display_experiment_details
 from frontend.components.edit_experiment import edit_experiment, handle_delete_experiment

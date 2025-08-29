@@ -1,5 +1,5 @@
 import pytest
-from database.models import PXRFReading
+from database import PXRFReading
 from sqlalchemy.exc import IntegrityError
 
 def test_pxrf_reading_fixture(test_db, pxrf_reading):

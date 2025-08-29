@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
-from database.database import SessionLocal
-from database.models import Experiment, ExperimentalResults, ScalarResults, SampleInfo, PXRFReading, ExperimentalConditions
+from database import SessionLocal, Experiment, ExperimentalResults, ScalarResults, SampleInfo, PXRFReading, ExperimentalConditions
 from backend.services.scalar_results_service import ScalarResultsService
 from backend.services.icp_service import ICPService
 from sqlalchemy.exc import IntegrityError

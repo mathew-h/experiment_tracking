@@ -19,8 +19,7 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 # --- Database, Model and Storage Imports --- 
-from database.database import engine, SessionLocal, init_db
-from database.models import PXRFReading, ExternalAnalysis
+from database import engine, SessionLocal, init_db, PXRFReading, ExternalAnalysis
 from frontend.config.variable_config import PXRF_REQUIRED_COLUMNS
 from utils.storage import get_file # Added storage utility import
 
