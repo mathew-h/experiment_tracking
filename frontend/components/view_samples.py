@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-from database.database import SessionLocal
-from database.models import SampleInfo, ExternalAnalysis, ModificationsLog, SamplePhotos, AnalysisFiles, PXRFReading
+from database import SessionLocal, SampleInfo, ExternalAnalysis, ModificationsLog, SamplePhotos, AnalysisFiles, PXRFReading
 import os
 import datetime
 import json

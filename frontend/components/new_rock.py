@@ -1,6 +1,5 @@
 import streamlit as st
-from database.database import SessionLocal
-from database.models import SampleInfo, ModificationsLog
+from database import SessionLocal, SampleInfo, ModificationsLog
 import os
 from frontend.components.utils import save_uploaded_file, log_modification, generate_form_fields
 from frontend.config.variable_config import ROCK_SAMPLE_CONFIG
@@ -110,7 +109,7 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
         )
         # If pXRF Reading No is provided, create an ExternalAnalysis entry
         if pxrf_reading_no and pxrf_reading_no.strip():
-            from database.models import ExternalAnalysis
+            from database import ExternalAnalysis
             ext_analysis = ExternalAnalysis(
                 sample_id=sample.sample_id,
                 analysis_type='pXRF',
@@ -129,7 +128,7 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
             )
         # If Magnetic Susceptibility is provided, create an ExternalAnalysis entry
         if mag_susc and mag_susc.strip():
-            from database.models import ExternalAnalysis
+            from database import ExternalAnalysis
             mag_susc_analysis = ExternalAnalysis(
                 sample_id=sample.sample_id,
                 analysis_type='Magnetic Susceptibility',

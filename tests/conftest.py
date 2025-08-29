@@ -5,7 +5,7 @@ from sqlalchemy.pool import StaticPool
 from azure.storage.blob import BlobServiceClient, BlobClient
 import datetime
 
-from database.models import Base, PXRFReading, Experiment, ExperimentalConditions, ExperimentalResults, ScalarResults, ICPResults
+from database import Base, PXRFReading, Experiment, ExperimentalConditions, ExperimentalResults, ScalarResults, ICPResults
 
 @pytest.fixture
 def test_db() -> Session:

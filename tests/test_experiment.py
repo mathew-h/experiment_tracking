@@ -5,7 +5,7 @@ import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database.models import Base, Experiment, ExperimentStatus, ExperimentalConditions, ExperimentNotes
+from database import Base, Experiment, ExperimentStatus, ExperimentalConditions, ExperimentNotes
 from frontend.components import save_experiment
 import streamlit as st
 

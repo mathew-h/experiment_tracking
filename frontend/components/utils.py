@@ -3,17 +3,17 @@ from frontend.config.variable_config import (
 )
 import os
 import streamlit as st
-from database.models import ModificationsLog, SampleInfo
+from database import ModificationsLog, SampleInfo
 import json # Added for JSON serialization in logging
 import datetime # Added for timestamp in logging and date input
-from database.database import SessionLocal
+from database import SessionLocal
 import pandas as pd
 from pathlib import Path
 import logging
 # Import the centralized storage functions
 from utils.storage import save_file, get_file, delete_file
 from sqlalchemy.orm import Session, joinedload
-from database.models import ExperimentalResults, ScalarResults, ExperimentalConditions, Experiment
+from database import ExperimentalResults, ScalarResults, ExperimentalConditions, Experiment
 import pytz
 
 logger = logging.getLogger(__name__)

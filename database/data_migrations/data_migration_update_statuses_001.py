@@ -10,7 +10,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from database.database import DATABASE_URL
-from database.models import Experiment # Still needed for table metadata and update
+from database import Experiment # Still needed for table metadata and update
 
 def run_data_migration():
     """

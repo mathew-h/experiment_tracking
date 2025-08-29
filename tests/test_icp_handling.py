@@ -8,7 +8,7 @@ import pandas as pd
 from io import StringIO
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database.models import Base, Experiment, ExperimentalResults, ICPResults, ScalarResults
+from database import Base, Experiment, ExperimentalResults, ICPResults, ScalarResults
 from backend.services.icp_service import ICPService
 from backend.services.scalar_results_service import ScalarResultsService
 from datetime import datetime
@@ -408,7 +408,7 @@ class TestICPModelMethods:
     
     def test_icp_model_json_validation(self, test_db):
         """Test ICPResults model JSON field validation."""
-        from database.models import ExperimentalResults
+        from database import ExperimentalResults
         
         # Create an experimental result first
         exp_result = ExperimentalResults(

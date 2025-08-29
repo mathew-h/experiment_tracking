@@ -6,7 +6,7 @@ from sqlalchemy import inspect
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATABASE_URL
-from database.database import engine, init_db
+from database import engine, init_db
 
 def check_sqlite_tables():
     """Check if tables exist in SQLite database."""

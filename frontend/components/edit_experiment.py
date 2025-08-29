@@ -3,15 +3,7 @@ import streamlit as st
 import os
 import json
 from sqlalchemy.orm import Session # Import Session for type hinting
-from database.database import SessionLocal
-from database.models import (
-    Experiment,
-    ExperimentStatus,
-    ExperimentalConditions,
-    ModificationsLog,
-    ExperimentNotes,
-    ExternalAnalysis
-)
+from database import SessionLocal, Experiment, ExperimentStatus, ExperimentalConditions, ModificationsLog, ExperimentNotes, ExternalAnalysis
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists, generate_form_fields, get_sample_options
 from frontend.config.variable_config import EXPERIMENT_TYPES, EXPERIMENT_STATUSES, FIELD_CONFIG, SCALAR_RESULTS_CONFIG

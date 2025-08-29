@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from database.models import Experiment, ExperimentalResults, ICPResults
+from database import Experiment, ExperimentalResults, ICPResults
 from io import StringIO
 
 class ICPService:

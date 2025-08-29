@@ -1,5 +1,4 @@
-from database.database import SessionLocal
-from database.models import SampleInfo, ExternalAnalysis, PXRFReading
+from database import SessionLocal, SampleInfo, ExternalAnalysis, PXRFReading
 import streamlit as st
 from frontend.config.variable_config import ROCK_SAMPLE_CONFIG, PXRF_ELEMENT_COLUMNS
 from sqlalchemy.orm import selectinload

@@ -1,7 +1,7 @@
 import datetime
 import streamlit as st
-from database.database import SessionLocal
-from database.models import Experiment, ExperimentalConditions, ExperimentNotes, ExperimentStatus
+from database import SessionLocal
+from database import Experiment, ExperimentalConditions, ExperimentNotes, ExperimentStatus
 from frontend.components.utils import log_modification, generate_form_fields, get_sample_options
 from frontend.config.variable_config import FIELD_CONFIG, EXPERIMENT_STATUSES
 # Import the new service

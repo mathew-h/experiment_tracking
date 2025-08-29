@@ -5,13 +5,7 @@ import json
 import datetime
 import pytz
 from sqlalchemy import orm
-from database.database import SessionLocal
-from database.models import (
-    ExperimentalResults,
-    ScalarResults, # Import ScalarResults
-    ICPResults, # Import ICPResults
-    ResultFiles
-)
+from database import SessionLocal, ExperimentalResults, ScalarResults, ICPResults, ResultFiles
 from frontend.config.variable_config import (
     SCALAR_RESULTS_CONFIG,
 )
