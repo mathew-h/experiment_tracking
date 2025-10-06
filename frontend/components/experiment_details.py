@@ -4,7 +4,7 @@ import datetime
 import os
 import json
 from sqlalchemy import orm
-from database import SessionLocal, SampleInfo, ExternalAnalysis, ExperimentNotes, Experiment, ExperimentStatus, ExperimentalConditions, PXRFReading
+from database import SessionLocal, SampleInfo, ExternalAnalysis, ExperimentNotes, Experiment, ExperimentStatus, ExperimentalConditions, PXRFReading, ChemicalAdditive, Compound
 from frontend.config.variable_config import (
     FIELD_CONFIG,
     EXPERIMENT_TYPES,
@@ -109,6 +109,37 @@ def display_experiment_details(experiment):
             st.dataframe(df_opt, hide_index=True, use_container_width=True)
         else:
             st.info("No secondary parameters recorded.")
+
+    # --- Compounds used in this experiment ---
+    try:
+        db = SessionLocal()
+        conditions_row = db.query(ExperimentalConditions).filter(ExperimentalConditions.experiment_fk == experiment['id']).first()
+        if conditions_row:
+            additives = (
+                db.query(ChemicalAdditive, Compound)
+                .join(Compound, ChemicalAdditive.compound_id == Compound.id)
+                .filter(ChemicalAdditive.experiment_id == conditions_row.id)
+                .order_by(Compound.name.asc(), ChemicalAdditive.addition_order.asc().nulls_last())
+                .all()
+            )
+            if additives:
+                st.markdown("#### Compounds")
+                rows = []
+                for add, comp in additives:
+                    rows.append({
+                        'Compound': comp.name,
+                        'Amount': add.amount,
+                        'Unit': getattr(add.unit, 'value', str(add.unit))
+                    })
+                df_compounds = pd.DataFrame(rows, columns=['Compound', 'Amount', 'Unit'])
+                st.dataframe(df_compounds, hide_index=True, use_container_width=True)
+    except Exception as e:
+        st.warning(f"Could not load compounds: {e}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
     # --- Results Section (Delegated) ---
     render_results_section(experiment)

@@ -4,11 +4,12 @@ from .conditions import ExperimentalConditions
 from .results import ExperimentalResults, ScalarResults, ICPResults, ResultFiles
 from .samples import SampleInfo, SamplePhotos
 from .analysis import AnalysisFiles, ExternalAnalysis, XRDAnalysis, ElementalAnalysis, PXRFReading
+from .chemicals import Compound, ChemicalAdditive
 from .characterization import *  # Future characterization models
 from .enums import (
     ExperimentStatus, ExperimentType, FeedstockType, ComponentType,
     AnalysisType, AmmoniumQuantMethod, TitrationType, CharacterizationStatus,
-    ConcentrationUnit, PressureUnit
+    ConcentrationUnit, PressureUnit, AmountUnit
 )
 
 # Ensure all models are available at package level
@@ -23,8 +24,10 @@ __all__ = [
     'SampleInfo', 'SamplePhotos',
     # Analysis
     'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'ElementalAnalysis', 'PXRFReading',
+    # Chemicals
+    'Compound', 'ChemicalAdditive',
     # Enums
     'ExperimentStatus', 'ExperimentType', 'FeedstockType', 'ComponentType',
     'AnalysisType', 'AmmoniumQuantMethod', 'TitrationType', 'CharacterizationStatus',
-    'ConcentrationUnit', 'PressureUnit',
+    'ConcentrationUnit', 'PressureUnit', 'AmountUnit',
 ]

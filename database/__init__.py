@@ -13,8 +13,10 @@ from .models import (
     # Enums
     ExperimentStatus, ExperimentType, FeedstockType, ComponentType,
     AnalysisType, AmmoniumQuantMethod, TitrationType, CharacterizationStatus,
-    ConcentrationUnit, PressureUnit
+    ConcentrationUnit, PressureUnit, AmountUnit
 )
+# Import chemicals after other models to avoid circular imports
+from .models import Compound, ChemicalAdditive
 
 __all__ = [
     # Database utilities
@@ -33,8 +35,10 @@ __all__ = [
     'SampleInfo', 'SamplePhotos',
     # Analysis
     'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'ElementalAnalysis', 'PXRFReading',
+    # Chemicals
+    'Compound', 'ChemicalAdditive',
     # Enums
     'ExperimentStatus', 'ExperimentType', 'FeedstockType', 'ComponentType',
     'AnalysisType', 'AmmoniumQuantMethod', 'TitrationType', 'CharacterizationStatus',
-    'ConcentrationUnit', 'PressureUnit'
+    'ConcentrationUnit', 'PressureUnit', 'AmountUnit'
 ] 

@@ -112,3 +112,20 @@ class PressureUnit(enum.Enum):
     PA = "Pa"
     KPA = "kPa"
     MPA = "MPa"
+
+class AmountUnit(enum.Enum):
+    """Units for mass and volume measurements"""
+    GRAM = "g"
+    MILLIGRAM = "mg"
+    MICROGRAM = "μg"
+    KILOGRAM = "kg"
+    MICROLITER = "μL"
+    MILLILITER = "mL"
+    LITER = "L"
+    MICROMOLE = "μmol"
+    MILLIMOLE = "mmol"
+    MOLE = "mol"
+    # Added concentration-style units for additive entry convenience
+    PPM = "ppm"
+    MILLIMOLAR = "mM"
+    MOLAR = "M"

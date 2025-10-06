@@ -52,12 +52,12 @@ def render_sidebar():
         page = st.radio(
             "Go to",
             ["New Experiment", "View Experiments", 
-             "New Rock Sample", "View Sample Inventory", "Bulk Uploads", "Issue Submission"]
+             "New Rock Sample", "View Sample Inventory", "Compound Management", "Bulk Uploads", "Issue Submission"]
         )
          # Add some statistics or summary information
         st.markdown("---") # Separator
         st.markdown("### Quick Statistics")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             try:
@@ -78,6 +78,22 @@ def render_sidebar():
                 st.metric("Samples", total_samples)
             except Exception as e:
                 st.error(f"Error retrieving sample count: {str(e)}")
+            finally:
+                db.close()
+        
+        with col3:
+            try:
+                db = SessionLocal()
+                # Use raw SQL to count compounds without relying on the model
+                result = db.execute(text("SELECT COUNT(*) FROM compounds"))
+                total_compounds = result.scalar()
+                st.metric("Compounds", total_compounds)
+            except Exception as e:
+                # If table doesn't exist yet, show 0 instead of error
+                if "no such table" in str(e).lower():
+                    st.metric("Compounds", 0)
+                else:
+                    st.error(f"Error retrieving compounds count: {str(e)}")
             finally:
                 db.close()
 

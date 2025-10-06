@@ -7,6 +7,7 @@ from frontend.config.variable_config import FIELD_CONFIG, EXPERIMENT_STATUSES
 # Import the new service
 from backend.services.experimental_conditions_service import ExperimentalConditionsService
 import pytz
+from frontend.components.chemical_managing import render_compound_manager
 
 # Helper function to get default values from FIELD_CONFIG
 def get_default_conditions():
@@ -180,6 +181,15 @@ def render_new_experiment():
     # STEP 2: Show a success message and allow another experiment
     elif st.session_state.step == 2:
         st.success(f"Experiment {st.session_state.get('last_created_experiment_id', '')} (Number: {st.session_state.get('last_created_experiment_number', '')}) created successfully!")
+
+        # Render compound manager to add associated compounds immediately after creation
+        created_conditions_id = st.session_state.get('created_conditions_id')
+        if created_conditions_id:
+            st.markdown("---")
+            st.subheader("Add Compounds to This Experiment")
+            render_compound_manager(conditions_id=created_conditions_id, key_prefix="newexp")
+        else:
+            st.info("Experimental conditions are not available yet for compound assignment.")
         if st.button("Create Another Experiment"):
             st.session_state.step = 1
             
@@ -214,6 +224,10 @@ def render_new_experiment():
                 del st.session_state['last_created_experiment_number']
             if 'last_created_experiment_id' in st.session_state:
                 del st.session_state['last_created_experiment_id']
+            if 'created_conditions_id' in st.session_state:
+                del st.session_state['created_conditions_id']
+            if 'created_experiment_fk' in st.session_state:
+                del st.session_state['created_experiment_fk']
             st.rerun()
 
 def save_experiment():
@@ -271,6 +285,13 @@ def save_experiment():
         # Note: The service adds 'conditions' to the session and calls calculate_derived_conditions
         # --- End Service Usage ---
         
+        # Store created identifiers for immediate compound management (step 2)
+        try:
+            st.session_state.created_conditions_id = conditions.id
+            st.session_state.created_experiment_fk = experiment.id
+        except Exception:
+            pass
+
         # Add initial notes if any
         initial_note_text = exp_data.get('initial_note')
         if initial_note_text:

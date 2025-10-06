@@ -55,7 +55,8 @@ def main():
         'calculate_grams_per_ton_yield_004',
         'recalculate_yields_002', 
         'recalculate_derived_conditions_001',
-        'update_catalyst_ppm_rounding_003'
+        'update_catalyst_ppm_rounding_003',
+        'chemical_migration'
     ]
     
     if migration_name not in available_migrations:

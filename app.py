@@ -9,8 +9,11 @@ from frontend.components.view_samples import render_sample_inventory
 from frontend.components.auth_components import init_auth_state, render_login_page, render_logout_button
 from frontend.components.issue_submission import render_issue_submission_form
 from frontend.components.bulk_uploads import render_bulk_uploads_page
+from frontend.components.chemical_additives import render_compound_management, render_edit_compound_form
 from utils.scheduler import setup_backup_scheduler, shutdown_scheduler
 from utils.database_backup import update_public_db_copy
+from database import SessionLocal
+from database.models import Experiment
 import os
 import logging
 import atexit
@@ -57,6 +60,14 @@ try:
 except Exception as e:
     logger.error(f"Error initializing backup scheduler: {str(e)}")
 
+def render_compound_management_page():
+    """Render the compound management page"""
+    # Check if we're editing a compound
+    if st.session_state.get('edit_compound_id'):
+        render_edit_compound_form(st.session_state.edit_compound_id)
+    else:
+        render_compound_management()
+
 def main():
     try:
         # Show login page if user is not authenticated
@@ -82,6 +93,8 @@ def main():
             render_new_rock_sample()
         elif page == "View Sample Inventory":
             render_sample_inventory()
+        elif page == "Compound Management":
+            render_compound_management_page()
         elif page == "Bulk Uploads":
             render_bulk_uploads_page()
         elif page == "Issue Submission":

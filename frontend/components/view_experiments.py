@@ -4,7 +4,7 @@ import os
 import json
 from datetime import datetime, date, time
 import re  # Add re module for regex support
-from database import SessionLocal, Experiment, ExperimentStatus, ExperimentalResults, ExperimentNotes, ExperimentalConditions, ModificationsLog, SampleInfo, ExternalAnalysis
+from database import SessionLocal, Experiment, ExperimentStatus, ExperimentalResults, ExperimentNotes, ExperimentalConditions, ModificationsLog, SampleInfo, ExternalAnalysis, ChemicalAdditive, Compound
 
 from frontend.components.experiment_details import display_experiment_details
 from frontend.components.edit_experiment import edit_experiment, handle_delete_experiment
@@ -169,7 +169,7 @@ def render_experiment_list():
         with col3:
             st.markdown("**Water (mL) / Rock Mass (g)**")
         with col4:
-            st.markdown("**Cat. Type / % / PPM**")
+            st.markdown("**Compounds**")
         with col5:
             st.markdown(f"**{FIELD_CONFIG['initial_ph']['label']}**")
         with col6:
@@ -202,17 +202,27 @@ def render_experiment_list():
             # Initial pH
             initial_ph = conditions.get('initial_ph', FIELD_CONFIG['initial_ph']['default'])
             initial_ph_disp = f"{initial_ph:.1f}" if isinstance(initial_ph, (int, float)) else str(initial_ph)
-            # Catalyst and Catalyst Percentage
-            catalyst = conditions.get('catalyst', FIELD_CONFIG['catalyst']['default'])
-            catalyst_pct = conditions.get('catalyst_percentage', 0.0)
-            catalyst_ppm = conditions.get('catalyst_ppm', 0.0)
-            
-            if not catalyst or not str(catalyst).strip():
-                catalyst_combined = "None"
-            else:
-                catalyst_pct_disp = f"{catalyst_pct:.2f}" if isinstance(catalyst_pct, (int, float)) else str(catalyst_pct)
-                catalyst_ppm_disp = f"{catalyst_ppm:.0f}" if isinstance(catalyst_ppm, (int, float)) else str(catalyst_ppm)
-                catalyst_combined = f"{catalyst} / {catalyst_pct_disp}% / {catalyst_ppm_disp} ppm"
+            # Compounds summary from ChemicalAdditives
+            compounds_text = "None"
+            try:
+                db = SessionLocal()
+                cond = db.query(ExperimentalConditions).filter(ExperimentalConditions.experiment_id == exp['experiment_id']).first()
+                if cond:
+                    names = [n[0] for n in db.query(Compound.name)
+                                 .join(ChemicalAdditive, ChemicalAdditive.compound_id == Compound.id)
+                                 .filter(ChemicalAdditive.experiment_id == cond.id)
+                                 .order_by(Compound.name.asc())
+                                 .all()]
+                    if names:
+                        if len(names) <= 2:
+                            compounds_text = ", ".join(names)
+                        else:
+                            compounds_text = f"{', '.join(names[:2])} (+{len(names)-2})"
+            except Exception:
+                compounds_text = "None"
+            finally:
+                if 'db' in locals() and db:
+                    db.close()
             # Temperature
             temperature = conditions.get('temperature', FIELD_CONFIG['temperature']['default'])
             temperature_disp = f"{temperature:.1f}" if isinstance(temperature, (int, float)) else str(temperature)
@@ -230,7 +240,7 @@ def render_experiment_list():
                 with col3:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{water_rock_disp}</div>", unsafe_allow_html=True)
                 with col4:
-                    st.write(f"<div style='margin: 0px; padding: 2px;'>{catalyst_combined}</div>", unsafe_allow_html=True)
+                    st.write(f"<div style='margin: 0px; padding: 2px;'>{compounds_text}</div>", unsafe_allow_html=True)
                 with col5:
                     st.write(f"<div style='margin: 0px; padding: 2px;'>{initial_ph_disp}</div>", unsafe_allow_html=True)
                 with col6:

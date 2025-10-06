@@ -192,23 +192,6 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Enter the mass of the rock sample in grams."
     },
-    'catalyst': {
-        'label': "Catalyst",
-        'default': '',
-        'type': 'text',
-        'required': True,
-        'help': "Enter the catalyst used (e.g., 'Fe', 'Ni/Al2O3'). Leave blank if none."
-    },
-    'catalyst_mass': {
-        'label': "Catalyst Mass (g)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.0001,
-        'format': "%.4f",
-        'required': True,
-        'help': "Enter the mass of catalyst used in grams."
-    },
     'water_volume': {
         'label': "Water Volume (mL)",
         'default': 0.0,
@@ -252,29 +235,6 @@ FIELD_CONFIG = {
         'help': "This is automatically calculated based on rock mass and water volume.",
         'readonly': True # Make this field read-only
     },
-    'catalyst_percentage': {
-        'label': "Catalyst Percentage (%)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'max_value': 100.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Enter the catalyst percentage relative to rock mass (optional).",
-        'readonly': True
-    },
-    'catalyst_ppm': {
-        'label': "Catalyst Concentration (ppm)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Calculated concentration of catalyst in the water (mg/L).",
-        'readonly': True
-    },
     'feedstock': {
         'label': "Feedstock Type",
         'type': 'select',
@@ -282,33 +242,6 @@ FIELD_CONFIG = {
         'default': FeedstockType.NITRATE.value,
         'required': True,
         'help': "Feedstock type. Valid values: Nitrogen, Nitrate, or Blank."
-    },
-    'buffer_system': {
-        'label': "Buffer System",
-        'default': '',
-        'type': 'text',
-        'required': False,
-        'help': "Specify the buffer system used, if any (e.g., 'Phosphate', 'Tris')."
-    },
-    'buffer_concentration': {
-        'label': "Buffer Concentration (M)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Enter the buffer concentration in molar (M)."
-    },
-    'ammonium_chloride_concentration': {
-        'label': "Ammonium Chloride Concentration (mM)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Enter the ammonium chloride concentration in millimolar (mM)."
     },
     'initial_nitrate_concentration': {
         'label': "Initial Nitrate Concentration (mM)",
@@ -330,23 +263,6 @@ FIELD_CONFIG = {
         'format': "%.1f",
         'required': False,
         'help': "Enter the initial dissolved oxygen concentration in parts per million (ppm)."
-    },
-    'surfactant_type': {
-        'label': "Surfactant Type",
-        'default': '',
-        'type': 'text',
-        'required': False,
-        'help': "Enter the type of surfactant used, if any."
-    },
-    'surfactant_concentration': {
-        'label': "Surfactant Concentration (mM)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
-        'required': False,
-        'help': "Enter the surfactant concentration in millimolar (mM)."
     },
     'stir_speed': {
         'label': "Stir Speed (RPM)",

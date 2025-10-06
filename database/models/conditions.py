@@ -44,6 +44,7 @@ class ExperimentalConditions(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     experiment = relationship("Experiment", back_populates="conditions", foreign_keys=[experiment_fk])
+    chemical_additives = relationship("ChemicalAdditive", back_populates="experiment", cascade="all, delete-orphan")
 
     def calculate_derived_conditions(self):
         """
