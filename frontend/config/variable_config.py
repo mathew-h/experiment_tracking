@@ -457,6 +457,67 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
     },
+    # --- Hydrogen tracking fields ---
+    'h2_concentration': {
+        'label': "H₂ Concentration",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.01,
+        'format': "%.2f",
+        'required': False,
+        'help': "Measured hydrogen concentration in the gas (% vol or ppm)."
+    },
+    'h2_concentration_unit': {
+        'label': "H₂ Concentration Unit",
+        'type': 'select',
+        'options': [ConcentrationUnit.PERCENT.value, ConcentrationUnit.PPM.value],
+        'default': ConcentrationUnit.PPM.value,
+        'required': False,
+        'help': "Unit for H₂ concentration (choose % or ppm)."
+    },
+    'gas_sampling_volume_ml': {
+        'label': "Gas Sampling Volume (mL)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.1f",
+        'required': False,
+        'help': "Volume of gas sampled for the measurement (mL)."
+    },
+    'gas_sampling_pressure': {
+        'label': "Gas Sampling Pressure (psi)",
+        'type': 'number',
+        'default': 14.6959,
+        'min_value': 0.0,
+        'step': 0.1,
+        'format': "%.2f",
+        'required': False,
+        'help': "Pressure of the gas sample during measurement (psi). Required for H₂ calculation."
+    },
+    'h2_moles': {
+        'label': "H₂ Amount (μmol)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.001,
+        'format': "%.3f",
+        'required': False,
+        'readonly': True,
+        'help': "Calculated micromoles of H₂ in the sampled gas."
+    },
+    'h2_mass_g': {
+        'label': "H₂ Mass (μg)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.001,
+        'format': "%.3f",
+        'required': False,
+        'readonly': True,
+        'help': "Calculated micrograms of H₂ in the sampled gas."
+    },
     'final_nitrate_concentration': {
         'label': "Final Nitrate Concentration (mM)",
         'type': 'number',

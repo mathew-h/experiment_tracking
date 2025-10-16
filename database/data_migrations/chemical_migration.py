@@ -3,21 +3,21 @@ from database.models import ExperimentalConditions, ChemicalAdditive, Compound, 
 from sqlalchemy import func
 
 
-def _get_or_create_compound(db, name: str) -> Compound:
-    """Return a Compound by name (case-insensitive); create if missing."""
+def _get_or_create_compound(db, name: str) -> tuple[Compound, bool]:
+    """Return (Compound, created_flag) by name (case-insensitive); create if missing."""
     if not name or not name.strip():
-        return None
+        return None, False
     existing = (
         db.query(Compound)
         .filter(func.lower(Compound.name) == name.strip().lower())
         .first()
     )
     if existing:
-        return existing
+        return existing, False
     comp = Compound(name=name.strip(), notes="Created by chemical migration")
     db.add(comp)
     db.flush()
-    return comp
+    return comp, True
 
 
 def _upsert_additive(
@@ -92,8 +92,8 @@ def migrate_conditions_to_additives(
                 if cond.catalyst and cond.catalyst_mass is not None and cond.catalyst_mass > 0:
                     comp = None
                     if create_missing_compounds:
-                        comp = _get_or_create_compound(db, cond.catalyst)
-                        if comp and comp.created_at == comp.updated_at:
+                        comp, was_created = _get_or_create_compound(db, cond.catalyst)
+                        if was_created:
                             summary["compounds_created"] += 1
                     else:
                         comp = (
@@ -120,8 +120,8 @@ def migrate_conditions_to_additives(
                 if cond.surfactant_type and cond.surfactant_concentration is not None and cond.surfactant_concentration > 0:
                     comp = None
                     if create_missing_compounds:
-                        comp = _get_or_create_compound(db, cond.surfactant_type)
-                        if comp and comp.created_at == comp.updated_at:
+                        comp, was_created = _get_or_create_compound(db, cond.surfactant_type)
+                        if was_created:
                             summary["compounds_created"] += 1
                     else:
                         comp = (
@@ -144,12 +144,12 @@ def migrate_conditions_to_additives(
                         else:
                             summary["additives_updated"] += 1
 
-                # Buffer -> M (optional)
+                # Buffer -> mM (optional; buffer_concentration documented as mM)
                 if cond.buffer_system and cond.buffer_concentration is not None and cond.buffer_concentration > 0:
                     comp = None
                     if create_missing_compounds:
-                        comp = _get_or_create_compound(db, cond.buffer_system)
-                        if comp and comp.created_at == comp.updated_at:
+                        comp, was_created = _get_or_create_compound(db, cond.buffer_system)
+                        if was_created:
                             summary["compounds_created"] += 1
                     else:
                         comp = (
@@ -163,8 +163,40 @@ def migrate_conditions_to_additives(
                             conditions_id=cond.id,
                             compound_id=comp.id,
                             amount=float(cond.buffer_concentration),
-                            unit=AmountUnit.MOLAR,
+                            unit=AmountUnit.MILLIMOLAR,
                             order_val=3,
+                            method="migration",
+                        )
+                        if created:
+                            summary["additives_created"] += 1
+                        else:
+                            summary["additives_updated"] += 1
+
+                # Ammonium chloride (deprecated) -> mM
+                if (
+                    hasattr(cond, "ammonium_chloride_concentration")
+                    and cond.ammonium_chloride_concentration is not None
+                    and cond.ammonium_chloride_concentration > 0
+                ):
+                    comp = None
+                    if create_missing_compounds:
+                        comp, was_created = _get_or_create_compound(db, "Ammonium Chloride")
+                        if was_created:
+                            summary["compounds_created"] += 1
+                    else:
+                        comp = (
+                            db.query(Compound)
+                            .filter(func.lower(Compound.name) == "ammonium chloride")
+                            .first()
+                        )
+                    if comp:
+                        created = _upsert_additive(
+                            db,
+                            conditions_id=cond.id,
+                            compound_id=comp.id,
+                            amount=float(cond.ammonium_chloride_concentration),
+                            unit=AmountUnit.MILLIMOLAR,
+                            order_val=4,
                             method="migration",
                         )
                         if created:

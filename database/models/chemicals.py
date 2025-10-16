@@ -22,6 +22,11 @@ class Compound(Base):
     solubility = Column(String(100), nullable=True)         # Description of solubility
     hazard_class = Column(String(50), nullable=True)       # Safety information
 
+    # Catalyst-specific properties for service functions
+    preferred_unit = Column(Enum(AmountUnit), nullable=True)  # Expected input unit (PPM for catalysts, mM for additives)
+    catalyst_formula = Column(String(50), nullable=True)      # Full formula with hydration (e.g., "NiCl2·6H2O")
+    elemental_fraction = Column(Float, nullable=True)         # Pre-calculated elemental fraction (e.g., 58.69/237.69 for Ni from NiCl2·6H2O)
+
     # Metadata
     supplier = Column(String(100), nullable=True)
     catalog_number = Column(String(50), nullable=True)
@@ -63,6 +68,11 @@ class ChemicalAdditive(Base):
     # Calculated fields (auto-populated)
     mass_in_grams = Column(Float, nullable=True)           # Normalized mass in grams
     moles_added = Column(Float, nullable=True)             # Calculated moles if molecular weight known
+    
+    # Catalyst-specific calculated fields
+    elemental_metal_mass = Column(Float, nullable=True)    # Elemental metal mass for catalysts (g)
+    catalyst_percentage = Column(Float, nullable=True)     # Catalyst % relative to rock mass
+    catalyst_ppm = Column(Float, nullable=True)            # Catalyst concentration in solution (ppm)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -85,15 +95,22 @@ class ChemicalAdditive(Base):
         This leverages the associated `ExperimentalConditions` (via `experiment`) for
         solution volume to compute concentrations where possible, assuming water density ~1 g/mL
         for conversions between mass and volume if needed.
+        
+        For catalysts, also calculates elemental metal mass, catalyst percentage, and catalyst ppm.
         """
         volume_liters = None
+        water_volume_ml = None
+        rock_mass = None
+        
         if getattr(self, 'experiment', None) is not None:
             try:
                 water_volume_ml = getattr(self.experiment, 'water_volume', None)
                 if isinstance(water_volume_ml, (int, float)) and water_volume_ml and water_volume_ml > 0:
                     volume_liters = float(water_volume_ml) / 1000.0
+                rock_mass = getattr(self.experiment, 'rock_mass', None)
             except Exception:
                 volume_liters = None
+                rock_mass = None
 
         molecular_weight = getattr(self.compound, 'molecular_weight', None) if self.compound else None
 
@@ -102,6 +119,9 @@ class ChemicalAdditive(Base):
         self.moles_added = None
         self.final_concentration = None
         self.concentration_units = None
+        self.elemental_metal_mass = None
+        self.catalyst_percentage = None
+        self.catalyst_ppm = None
 
         # Handle concentration-style inputs first
         if self.unit == AmountUnit.PPM:
@@ -181,6 +201,43 @@ class ChemicalAdditive(Base):
                     self.concentration_units = 'ppm'
                 except Exception:
                     pass
+        
+        # === Catalyst-specific calculations (migrated from ExperimentalConditions) ===
+        # Calculate elemental metal mass for catalysts if mass_in_grams is available
+        if self.mass_in_grams and self.mass_in_grams > 0 and self.compound:
+            elemental_fraction = None
+            
+            # First, check if compound has pre-calculated elemental_fraction
+            if hasattr(self.compound, 'elemental_fraction') and self.compound.elemental_fraction:
+                elemental_fraction = self.compound.elemental_fraction
+            else:
+                # Fall back to name-based detection for backwards compatibility
+                compound_name = self.compound.name.lower() if self.compound.name else ""
+                
+                # Nickel calculation (assuming NiCl2·6H2O)
+                if 'nickel' in compound_name or 'ni' in compound_name:
+                    # Molar masses: Ni = 58.69, NiCl2·6H2O = 237.69
+                    elemental_fraction = 58.69 / 237.69
+                
+                # Copper calculation (assuming CuCl2·2H2O)
+                elif 'copper' in compound_name or 'cu' in compound_name:
+                    # Molar masses: Cu = 63.55, CuCl2·2H2O = 170.48
+                    elemental_fraction = 63.55 / 170.48
+            
+            # Calculate elemental metal mass if fraction was determined
+            if elemental_fraction:
+                self.elemental_metal_mass = self.mass_in_grams * elemental_fraction
+                
+                # Calculate catalyst_percentage if rock_mass is available
+                if rock_mass is not None and rock_mass > 0:
+                    self.catalyst_percentage = (self.elemental_metal_mass / rock_mass) * 100
+                
+                # Calculate catalyst_ppm if water_volume is available (independent of rock_mass)
+                if water_volume_ml is not None and water_volume_ml > 0:
+                    # ppm = (mass_of_solute [g] / mass_of_solvent [g]) * 1,000,000
+                    # Assuming water density is 1 g/mL, water_volume in mL is equivalent to water_mass in g
+                    unrounded_ppm = (self.elemental_metal_mass / water_volume_ml) * 1_000_000
+                    self.catalyst_ppm = round(unrounded_ppm / 10) * 10
 
     def _convert_to_grams(self):
         """Convert amount to grams based on unit"""

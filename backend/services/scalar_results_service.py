@@ -47,6 +47,11 @@ class ScalarResultsService:
             ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
             solution_ammonium_concentration=result_data.get('solution_ammonium_concentration'),
             ammonium_quant_method=result_data.get('ammonium_quant_method'),
+            # Hydrogen fields from bulk upload (optional)
+            h2_concentration=result_data.get('h2_concentration'),
+            h2_concentration_unit=result_data.get('h2_concentration_unit'),
+            gas_sampling_volume_ml=result_data.get('gas_sampling_volume_ml'),
+            gas_sampling_pressure=result_data.get('gas_sampling_pressure'),
             final_ph=result_data.get('final_ph'),
             final_nitrate_concentration=result_data.get('final_nitrate_concentration'),
             final_dissolved_oxygen=result_data.get('final_dissolved_oxygen'),

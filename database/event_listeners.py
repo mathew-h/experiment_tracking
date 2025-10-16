@@ -1,6 +1,6 @@
 from sqlalchemy import event
 from sqlalchemy.orm import Session, attributes
-from .models import ExternalAnalysis, SampleInfo
+from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive
 
 def update_sample_characterized_status(session: Session, sample_id: str):
     """
@@ -62,4 +62,14 @@ def before_flush_handler(session, flush_context, instances):
     # Process all collected sample_ids
     for sample_id in samples_to_update:
         if sample_id:
-            update_sample_characterized_status(session, sample_id) 
+            update_sample_characterized_status(session, sample_id)
+
+@event.listens_for(ChemicalAdditive, 'before_insert')
+@event.listens_for(ChemicalAdditive, 'before_update')
+def calculate_additive_derived_values(mapper, connection, target):
+    """
+    Automatically calculate derived values for ChemicalAdditive before insert or update.
+    This includes mass conversions, molar calculations, concentrations, and catalyst-specific
+    values (elemental_metal_mass, catalyst_percentage, catalyst_ppm).
+    """
+    target.calculate_derived_values() 

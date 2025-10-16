@@ -22,8 +22,9 @@ def render_bulk_uploads_page():
         "Select data type to upload:",
         (
             "Select data type",
-            "Scalar Results (NMR/pH/Conductivity/Alkalinity)",
+            "NMR / Hydrogen / pH / Conductivity / Alkalinity",
             "ICP Elemental Analysis",
+            "XRD Mineralogy",
             "Rock Samples (Sample Info)",
             "pXRF Readings",
             "Chemical Inventory (Compounds)",
@@ -31,10 +32,12 @@ def render_bulk_uploads_page():
         )
     )
 
-    if upload_option == "Scalar Results (NMR/pH/Conductivity/Alkalinity)":
+    if upload_option == "NMR / Hydrogen / pH / Conductivity / Alkalinity":
         handle_solution_chemistry_upload()
     elif upload_option == "ICP Elemental Analysis":
         handle_icp_upload()
+    elif upload_option == "XRD Mineralogy":
+        handle_xrd_upload()
     elif upload_option == "Rock Samples (Sample Info)":
         st.info("Bulk upload for Rock Samples is not yet implemented.")
     elif upload_option == "pXRF Readings":
@@ -43,6 +46,203 @@ def render_bulk_uploads_page():
         upload_chemical_inventory()
     elif upload_option == "Experiment Additives (Compounds per Experiment)":
         experiments_additives()
+
+
+def handle_xrd_upload():
+    """
+    Bulk upload of XRD mineralogy per sample.
+    Excel format: first column is sample_id; remaining columns are mineral names; cells are amounts (typically %).
+    Creates/updates ExternalAnalysis (analysis_type="XRD"), XRDAnalysis JSON, and normalized XRDPhase rows.
+    """
+    st.header("Bulk Upload XRD Mineralogy")
+
+    # Provide template
+    template_df = pd.DataFrame([
+        {"sample_id": "Rock_1", "Quartz": 45.0, "Feldspar": 25.0, "Calcite": 10.0}
+    ], columns=["sample_id", "Quartz", "Feldspar", "Calcite"])
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        template_df.to_excel(writer, index=False, sheet_name='xrd')
+    buf.seek(0)
+    st.download_button(
+        label="Download XRD Template",
+        data=buf,
+        file_name="xrd_mineralogy_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.markdown("---")
+    uploaded = st.file_uploader("Upload filled XRD template (xlsx)", type=["xlsx"])
+
+    if not uploaded:
+        return
+
+    try:
+        df = pd.read_excel(uploaded)
+    except Exception as e:
+        st.error(f"Failed to read Excel: {e}")
+        return
+
+    # Normalize headers
+    if df.shape[1] < 2:
+        st.error("Template must include 'sample_id' and at least one mineral column.")
+        return
+
+    original_cols = list(df.columns)
+    normalized = [str(c).strip() for c in original_cols]
+    df.columns = normalized
+
+    # Resolve sample_id column (case-insensitive match)
+    sample_col = None
+    for c in df.columns:
+        if c.lower() == "sample_id":
+            sample_col = c
+            break
+    if not sample_col:
+        st.error("First column must be 'sample_id'.")
+        return
+
+    mineral_cols = [c for c in df.columns if c != sample_col]
+    if not mineral_cols:
+        st.error("No mineral columns detected.")
+        return
+
+    db = SessionLocal()
+    from database import SampleInfo, ExternalAnalysis
+    # XRDAnalysis and XRDPhase were added to database.models package exports
+    from database import XRDAnalysis
+    from database.models import XRDPhase  # not top-level for clarity
+
+    created_ext, updated_ext = 0, 0
+    created_json, updated_json = 0, 0
+    created_phase, updated_phase, skipped, errors = 0, 0, 0, []
+
+    try:
+        for idx, row in df.iterrows():
+            try:
+                sample_id = str(row.get(sample_col) or '').strip()
+                if not sample_id:
+                    skipped += 1
+                    continue
+
+                # Validate sample exists
+                sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
+                if not sample:
+                    errors.append(f"Row {idx+2}: sample_id '{sample_id}' not found")
+                    continue
+
+                # Build mineral dict from columns, skipping blanks and non-numeric
+                mineral_data = {}
+                for mcol in mineral_cols:
+                    val = row.get(mcol)
+                    try:
+                        if val is None or (isinstance(val, float) and pd.isna(val)):
+                            continue
+                        fval = float(val)
+                    except Exception:
+                        continue
+                    # Store key in lower-case for consistency in JSON; keep display name in normalized table
+                    mineral_data[mcol.strip().lower()] = fval
+
+                # Find or create ExternalAnalysis for this sample/type
+                ext = (
+                    db.query(ExternalAnalysis)
+                    .filter(
+                        ExternalAnalysis.sample_id == sample_id,
+                        ExternalAnalysis.analysis_type == "XRD",
+                    )
+                    .first()
+                )
+                if not ext:
+                    ext = ExternalAnalysis(sample_id=sample_id, analysis_type="XRD")
+                    db.add(ext)
+                    db.flush()
+                    created_ext += 1
+                else:
+                    updated_ext += 1
+
+                # Upsert JSON model
+                xrd = db.query(XRDAnalysis).filter(XRDAnalysis.external_analysis_id == ext.id).first()
+                if xrd:
+                    xrd.mineral_phases = mineral_data or None
+                    updated_json += 1
+                else:
+                    xrd = XRDAnalysis(external_analysis_id=ext.id, mineral_phases=mineral_data or None)
+                    db.add(xrd)
+                    created_json += 1
+
+                # Upsert normalized phases per mineral
+                for mcol in mineral_cols:
+                    display_name = str(mcol).strip()
+                    key = display_name.lower()
+                    if key not in mineral_data:
+                        continue
+                    amount_val = mineral_data[key]
+
+                    phase = (
+                        db.query(XRDPhase)
+                        .filter(
+                            XRDPhase.sample_id == sample_id,
+                            XRDPhase.mineral_name == display_name,
+                        )
+                        .first()
+                    )
+                    if phase:
+                        phase.amount = amount_val
+                        if phase.external_analysis_id is None:
+                            phase.external_analysis_id = ext.id
+                        updated_phase += 1
+                    else:
+                        phase = XRDPhase(
+                            sample_id=sample_id,
+                            external_analysis_id=ext.id,
+                            mineral_name=display_name,
+                            amount=amount_val,
+                        )
+                        db.add(phase)
+                        created_phase += 1
+
+            except Exception as e:
+                errors.append(f"Row {idx+2}: {e}")
+
+        if errors:
+            db.rollback()
+            st.error("Upload failed; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors)-50} more errors")
+        else:
+            db.commit()
+            st.success(
+                f"ExternalAnalysis (XRD) created: {created_ext}, updated: {updated_ext}. "
+                f"XRDAnalysis JSON created: {created_json}, updated: {updated_json}. "
+                f"XRDPhase created: {created_phase}, updated: {updated_phase}, skipped rows: {skipped}."
+            )
+
+            # Optional advisory: sum-to-100 check (best-effort; no failure)
+            try:
+                totals = []
+                for _, r in df.iterrows():
+                    try:
+                        nums = [float(r[c]) for c in mineral_cols if r.get(c) is not None and not pd.isna(r.get(c))]
+                        if nums:
+                            totals.append(sum(nums))
+                    except Exception:
+                        pass
+                if totals:
+                    off = [t for t in totals if not (95 <= t <= 105)]
+                    if off:
+                        st.info("Note: Some rows have mineral totals outside 100±5; verify your inputs.")
+            except Exception:
+                pass
+
+    except Exception as e:
+        db.rollback()
+        st.error(f"Unexpected error during XRD upload: {e}")
+    finally:
+        db.close()
 
 def upload_chemical_inventory():
     """
@@ -406,8 +606,8 @@ def handle_solution_chemistry_upload():
     """
     st.header("Bulk Upload Solution Chemistry Results")
     st.markdown("""
-    Upload an Excel file for solution chemistry results quantified by NMR. 
-    The file should have the following columns. Please ensure `Experiment ID` is in the database.
+    Upload an Excel file for results such as NMR, Hydrogen, pH, Conductivity, Alkalinity. 
+    The file should have the following columns found in the template below.
 
     **Columns marked with an asterisk (*) are required.**
     """)
@@ -420,6 +620,11 @@ def handle_solution_chemistry_upload():
         "ammonium_quant_method": ["NMR"],
         "solution_ammonium_concentration": [10.5],
         "sampling_volume": [5.0],
+        # Hydrogen gas sampling fields
+        "h2_concentration": [0.00],
+        "h2_concentration_unit": ["ppm"],
+        "gas_sampling_volume_ml": [0.0],
+        "gas_sampling_pressure": [14.6959],
         "final_ph": [7.2],
         "ferrous_iron_yield": [0.0],
         "final_nitrate_concentration": [0],

@@ -1,23 +1,20 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import os
-import json
 from sqlalchemy import orm
-from database import SessionLocal, SampleInfo, ExternalAnalysis, ExperimentNotes, Experiment, ExperimentStatus, ExperimentalConditions, PXRFReading, ChemicalAdditive, Compound
+from database import SessionLocal, SampleInfo, ExperimentNotes, Experiment, ExperimentStatus, ExperimentalConditions, ChemicalAdditive, Compound
 from frontend.config.variable_config import (
     FIELD_CONFIG,
     EXPERIMENT_TYPES,
     EXPERIMENT_STATUSES,
-    FEEDSTOCK_TYPES,
-    PXRF_ELEMENT_COLUMNS
+    FEEDSTOCK_TYPES
 )
 from frontend.components.utils import (
     split_conditions_for_display,
     get_condition_display_dict,
     format_value
 )
-from frontend.components.load_info import get_sample_info, get_external_analyses
+from frontend.components.load_info import get_sample_info
 
 from frontend.components.edit_experiment import (
     save_note,
@@ -25,7 +22,6 @@ from frontend.components.edit_experiment import (
 )
 from frontend.components.view_results import render_results_section
 
-from frontend.components.edit_sample import delete_external_analysis
 
 import pytz
 
@@ -126,12 +122,30 @@ def display_experiment_details(experiment):
                 st.markdown("#### Compounds")
                 rows = []
                 for add, comp in additives:
-                    rows.append({
+                    row = {
                         'Compound': comp.name,
                         'Amount': add.amount,
                         'Unit': getattr(add.unit, 'value', str(add.unit))
-                    })
-                df_compounds = pd.DataFrame(rows, columns=['Compound', 'Amount', 'Unit'])
+                    }
+                    
+                    # Add calculated mass if available
+                    if add.mass_in_grams is not None:
+                        row['Mass (g)'] = f"{add.mass_in_grams:.4f}"
+                    
+                    # Add final concentration if available
+                    if add.final_concentration is not None and add.concentration_units:
+                        row['Final Conc.'] = f"{add.final_concentration:.2f} {add.concentration_units}"
+                    
+                    # Add catalyst-specific values if available
+                    if add.elemental_metal_mass is not None:
+                        row['Elemental Mass (g)'] = f"{add.elemental_metal_mass:.4f}"
+                    if add.catalyst_percentage is not None:
+                        row['Catalyst %'] = f"{add.catalyst_percentage:.3f}%"
+                    if add.catalyst_ppm is not None:
+                        row['Catalyst (ppm)'] = f"{add.catalyst_ppm:.0f}"
+                    
+                    rows.append(row)
+                df_compounds = pd.DataFrame(rows)
                 st.dataframe(df_compounds, hide_index=True, use_container_width=True)
     except Exception as e:
         st.warning(f"Could not load compounds: {e}")

@@ -61,6 +61,16 @@ class ScalarResults(Base):
     final_alkalinity = Column(Float, nullable=True) # in mg/L CaCO3
     sampling_volume = Column(Float, nullable=True) # in mL
 
+    # Hydrogen tracking inputs
+    h2_concentration = Column(Float, nullable=True)  # % (vol) or ppm
+    h2_concentration_unit = Column(String, nullable=True)  # '%' or 'ppm'
+    gas_sampling_volume_ml = Column(Float, nullable=True)  # mL at sampling conditions
+    gas_sampling_pressure = Column(Float, nullable=True)  # psi at sampling conditions
+
+    # Hydrogen derived outputs (stored as microunits per requirements)
+    h2_moles = Column(Float, nullable=True)  # micromoles (μmol)
+    h2_mass_g = Column(Float, nullable=True)  # micrograms (μg)
+
     # Relationship back to the main entry using result_id
     result_entry = relationship(
         "ExperimentalResults",
@@ -72,6 +82,8 @@ class ScalarResults(Base):
         # Ensure necessary parent relationships exist
         if not self.result_entry or not self.result_entry.experiment or not self.result_entry.experiment.conditions:
             self.grams_per_ton_yield = None
+            # Still try hydrogen calc which uses only scalar inputs and user-provided pressure
+            self.calculate_hydrogen()
             return
 
         rock_mass = self.result_entry.experiment.conditions.rock_mass
@@ -98,12 +110,97 @@ class ScalarResults(Base):
             # Set to None if required data is missing or invalid
             self.grams_per_ton_yield = None
 
+        # Hydrogen calculations (PV = nRT at 25°C, pressure required)
+        self.calculate_hydrogen()
+
         # TODO: Calculate ferrous_iron_yield when the calculation method is determined
         # Example: Check if specific inputs for Fe yield are present
         # if required_input_for_fe_yield is not None:
         #    self.ferrous_iron_yield = ... calculation ...
         # else:
         #    self.ferrous_iron_yield = None # Or leave as is if manually entered
+
+    @validates('h2_concentration', 'gas_sampling_volume_ml', 'gas_sampling_pressure')
+    def validate_non_negative(self, key, value):
+        if value is not None and value < 0:
+            raise ValueError(f"{key} must be non-negative.")
+        return value
+
+    @validates('h2_concentration_unit')
+    def validate_h2_unit(self, key, value):
+        if value is None:
+            return value
+        allowed = ['%', 'ppm']
+        if value not in allowed:
+            raise ValueError(f"h2_concentration_unit must be one of {allowed}")
+        return value
+
+    def calculate_hydrogen(self):
+        """
+        Calculate hydrogen amount from gas concentration and sample volume using PV = nRT.
+        Assumptions:
+        - Temperature fixed at 25°C (298.15 K)
+        - Pressure must be provided by user in psi; converted to atm
+        - Volume provided in mL; converted to L
+        Stores:
+        - h2_moles as micromoles (μmol)
+        - h2_mass_g as micrograms (μg)
+        """
+        # Validate required inputs
+        if (
+            self.h2_concentration is None or
+            self.h2_concentration_unit is None or
+            self.gas_sampling_volume_ml is None or self.gas_sampling_volume_ml <= 0 or
+            self.gas_sampling_pressure is None or self.gas_sampling_pressure <= 0
+        ):
+            self.h2_moles = None
+            self.h2_mass_g = None
+            return
+
+        # Constants
+        R = 0.082057  # L·atm/(mol·K)
+        T_K = 298.15  # 25°C fixed
+        P_atm = self.gas_sampling_pressure / 14.6959  # psi -> atm
+
+        if P_atm <= 0:
+            self.h2_moles = None
+            self.h2_mass_g = None
+            return
+
+        V_L = self.gas_sampling_volume_ml / 1000.0
+
+        # Total moles of gas in the sample
+        try:
+            total_moles = (P_atm * V_L) / (R * T_K)
+        except ZeroDivisionError:
+            self.h2_moles = None
+            self.h2_mass_g = None
+            return
+
+        # Convert concentration to fraction
+        unit = (self.h2_concentration_unit or '').lower()
+        if unit == '%':
+            fraction = self.h2_concentration / 100.0
+        elif unit == 'ppm':
+            fraction = self.h2_concentration / 1_000_000.0
+        else:
+            self.h2_moles = None
+            self.h2_mass_g = None
+            return
+
+        if fraction is None or fraction < 0:
+            self.h2_moles = None
+            self.h2_mass_g = None
+            return
+
+        h2_moles = total_moles * fraction
+
+        # Store in microunits per requirements
+        h2_micromoles = h2_moles * 1_000_000.0
+        h2_micrograms = h2_moles * 2.01588 * 1_000_000.0  # g/mol * mol -> g, then g to μg
+
+        self.h2_moles = h2_micromoles
+        self.h2_mass_g = h2_micrograms
 
 class ICPResults(Base):
     __tablename__ = "icp_results"
