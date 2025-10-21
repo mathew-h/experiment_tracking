@@ -22,10 +22,12 @@ def render_new_rock_sample():
         col1, col2 = st.columns(2)
         with col1:
             # Generate form fields using the configuration
+            excluded_fields = {"characterized"}
+            field_names = [k for k in ROCK_SAMPLE_CONFIG.keys() if k not in excluded_fields]
             form_values = generate_form_fields(
                 ROCK_SAMPLE_CONFIG,
                 {},  # Empty dict for new sample
-                list(ROCK_SAMPLE_CONFIG.keys()),
+                field_names,
                 'rock_sample'
             )
         with col2:
@@ -63,8 +65,12 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
         photo_file (UploadedFile): Optional photo file
         photo_desc (str): Optional photo description
     """
-    # Validate required fields using ROCK_SAMPLE_CONFIG
-    required_fields = [field for field, config in ROCK_SAMPLE_CONFIG.items() if config.get('required', False)]
+    # Validate required fields using ROCK_SAMPLE_CONFIG (exclude computed fields like 'characterized')
+    excluded_fields = {"characterized"}
+    required_fields = [
+        field for field, config in ROCK_SAMPLE_CONFIG.items()
+        if config.get('required', False) and field not in excluded_fields
+    ]
     missing_fields = []
     for field in required_fields:
         value = form_values.get(field)
@@ -82,40 +88,58 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
             missing_fields.append(config['label']) # Use label for error message
     if missing_fields:
         st.error(f"Please fill in all required fields: {', '.join(missing_fields)}")
+        with st.expander("What does this mean?", expanded=False):
+            st.markdown("- Ensure required text fields are not blank\n- Ensure required numbers are provided (0 is allowed where applicable)")
         return
     try:
         db = SessionLocal()
         # Check if sample ID already exists
         existing_sample = db.query(SampleInfo).filter(SampleInfo.sample_id == form_values['sample_id']).first()
         if existing_sample:
-            st.error(f"Sample ID {form_values['sample_id']} already exists")
+            st.error(f"Sample ID '{form_values['sample_id']}' already exists.")
+            with st.expander("How to proceed", expanded=False):
+                st.markdown("- Choose a different `sample_id` for a new record\n- Or open the existing sample in 'View Sample Inventory' to edit")
             db.close()
             return
-        # Create sample using all fields from ROCK_SAMPLE_CONFIG
-        sample = SampleInfo(**{
-            field: form_values.get(field)
-            for field in ROCK_SAMPLE_CONFIG.keys()
-        })
+        # Create sample using allowed fields only (exclude computed fields)
+        allowed_fields = [k for k in ROCK_SAMPLE_CONFIG.keys() if k not in excluded_fields]
+        sample = SampleInfo(**{field: form_values.get(field) for field in allowed_fields})
+        # Ensure boolean field has a proper bool type (avoid string 'False')
+        try:
+            if hasattr(sample, 'characterized'):
+                # Force to False on creation; it will be updated by listeners later if analyses exist
+                sample.characterized = False
+        except Exception:
+            pass
         db.add(sample)
-        # Log modification using all fields from ROCK_SAMPLE_CONFIG, plus mag_susc if provided
+        # Log modification using allowed fields, plus mag_susc if provided
         log_modification(
             db=db,
             modified_table="sample_info",
             modification_type="create",
             new_values={
-                **{field: getattr(sample, field) for field in ROCK_SAMPLE_CONFIG.keys()},
+                **{field: getattr(sample, field) for field in allowed_fields},
                 **({"magnetic_susceptibility": mag_susc} if mag_susc else {})
             }
         )
         # If pXRF Reading No is provided, create an ExternalAnalysis entry
         if pxrf_reading_no and pxrf_reading_no.strip():
-            from database import ExternalAnalysis
+            from database import ExternalAnalysis, PXRFReading
+            reading_no_clean = pxrf_reading_no.strip()
             ext_analysis = ExternalAnalysis(
                 sample_id=sample.sample_id,
                 analysis_type='pXRF',
-                pxrf_reading_no=pxrf_reading_no.strip(),
+                pxrf_reading_no=reading_no_clean,
             )
             db.add(ext_analysis)
+            # Warn if the referenced pXRF reading is not yet in the database
+            try:
+                exists_reading = db.query(PXRFReading).filter(PXRFReading.reading_no == reading_no_clean).first()
+                if not exists_reading:
+                    st.warning(f"pXRF reading '{reading_no_clean}' not found in database yet. You can upload it later via Bulk Uploads → pXRF Readings.")
+            except Exception:
+                # Non-fatal warning, continue
+                pass
             log_modification(
                 db=db,
                 modified_table="external_analyses",
@@ -157,7 +181,18 @@ def save_rock_sample(form_values, pxrf_reading_no=None, mag_susc=None, photo_fil
                 st.warning("Sample saved, but photo upload failed.")
     except Exception as e:
         db.rollback()
-        st.error(f"Error saving rock sample: {str(e)}")
+        err_text = str(e)
+        st.error("Error saving rock sample.")
+        if "UNIQUE constraint failed" in err_text and "sample_info.sample_id" in err_text:
+            st.error("Duplicate sample_id. Please use a unique identifier.")
+        elif "FOREIGN KEY constraint failed" in err_text:
+            st.error("Foreign key error. Please ensure related records exist (e.g., valid references).")
+        elif "database is locked" in err_text.lower():
+            st.error("Database is locked. Please wait a moment and try again.")
+        else:
+            st.error(err_text)
+        with st.expander("Troubleshooting", expanded=False):
+            st.markdown("- Verify required fields\n- Check for duplicate `sample_id`\n- Ensure DB is reachable and not locked\n- Retry after refreshing the page")
     finally:
         if 'db' in locals() and db.is_active:
             db.close()

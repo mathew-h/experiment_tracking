@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from database import Experiment, ExperimentalConditions, ChemicalAdditive, Compound, AmountUnit
 
@@ -69,7 +70,18 @@ class ExperimentAdditivesService:
                     continue
 
                 # Resolve experiment
-                experiment = db.query(Experiment).filter(Experiment.experiment_id == exp_id).first()
+                exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
+                experiment = db.query(Experiment).filter(
+                    func.lower(
+                        func.replace(
+                            func.replace(
+                                func.replace(Experiment.experiment_id, '-', ''),
+                                '_', ''
+                            ),
+                            ' ', ''
+                        )
+                    ) == exp_id_norm
+                ).first()
                 if not experiment:
                     errors.append(f"Row {idx+2}: experiment_id '{exp_id}' not found")
                     continue

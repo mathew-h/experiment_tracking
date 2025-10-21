@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple, Optional, Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from database import (
     Experiment,
@@ -93,8 +94,19 @@ class NewExperimentsUploadService:
                     overwrite_flag = parse_bool(row.get('overwrite'))
                     overwrite_by_exp_id[exp_id] = overwrite_flag
 
-                    # Resolve existing experiment
-                    experiment = db.query(Experiment).filter(Experiment.experiment_id == exp_id).first()
+                    # Resolve existing experiment (ignore hyphens/underscores/spaces, case-insensitive)
+                    exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
+                    experiment = db.query(Experiment).filter(
+                        func.lower(
+                            func.replace(
+                                func.replace(
+                                    func.replace(Experiment.experiment_id, '-', ''),
+                                    '_', ''
+                                ),
+                                ' ', ''
+                            )
+                        ) == exp_id_norm
+                    ).first()
 
                     # Parse fields
                     sample_id = str(row.get('sample_id').strip()) if isinstance(row.get('sample_id'), str) and row.get('sample_id').strip() != '' else None
@@ -187,7 +199,18 @@ class NewExperimentsUploadService:
                         if not exp_id:
                             skipped += 1
                             continue
-                        experiment = db.query(Experiment).filter(Experiment.experiment_id == exp_id).first()
+                        exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
+                        experiment = db.query(Experiment).filter(
+                            func.lower(
+                                func.replace(
+                                    func.replace(
+                                        func.replace(Experiment.experiment_id, '-', ''),
+                                        '_', ''
+                                    ),
+                                    ' ', ''
+                                )
+                            ) == exp_id_norm
+                        ).first()
                         if not experiment:
                             errors.append(f"[conditions] Row {idx+2}: experiment_id '{exp_id}' not found")
                             continue
@@ -241,7 +264,18 @@ class NewExperimentsUploadService:
                 for exp_id, group in grouped:
                     if not exp_id:
                         continue
-                    experiment = db.query(Experiment).filter(Experiment.experiment_id == exp_id).first()
+                    exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
+                    experiment = db.query(Experiment).filter(
+                        func.lower(
+                            func.replace(
+                                func.replace(
+                                    func.replace(Experiment.experiment_id, '-', ''),
+                                    '_', ''
+                                ),
+                                ' ', ''
+                            )
+                        ) == exp_id_norm
+                    ).first()
                     if not experiment:
                         # Accumulate error per group header
                         errors.append(f"[additives] experiment_id '{exp_id}' not found")

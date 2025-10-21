@@ -5,8 +5,10 @@ from typing import List, Tuple, Optional, Dict
 
 import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
-from database import SampleInfo, SamplePhotos
+from database import SampleInfo, SamplePhotos, ExternalAnalysis
+from database.models.analysis import PXRFReading
 from utils.storage import save_file
 
 
@@ -74,9 +76,22 @@ class RockInventoryService:
                     continue
 
                 # Find existing or create new
-                sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
+                # Normalize sample_id for matching: ignore hyphens/underscores/spaces, case-insensitive
+                sid_norm = ''.join(ch for ch in sample_id.lower() if ch not in ['-', '_', ' '])
+                sample = db.query(SampleInfo).filter(
+                    func.lower(
+                        func.replace(
+                            func.replace(
+                                func.replace(SampleInfo.sample_id, '-', ''),
+                                '_', ''
+                            ),
+                            ' ', ''
+                        )
+                    ) == sid_norm
+                ).first()
                 is_new = False
                 if not sample:
+                    # Use original sample_id string for storage
                     sample = SampleInfo(sample_id=sample_id)
                     db.add(sample)
                     is_new = True
@@ -95,6 +110,40 @@ class RockInventoryService:
                             val = parsed if parsed is not None else getattr(sample, attr)
                         # Allow None to clear only for non-PK
                         setattr(sample, attr, val)
+
+                # Create ExternalAnalysis for pXRF if pxrf_reading_no column present
+                if 'pxrf_reading_no' in df.columns:
+                    try:
+                        pxrf_val = row.get('pxrf_reading_no')
+                        pxrf_str = str(pxrf_val).strip() if pxrf_val is not None else ''
+                        if pxrf_str:
+                            # Prevent duplicates
+                            existing_ext = (
+                                db.query(ExternalAnalysis)
+                                .filter(
+                                    ExternalAnalysis.sample_id == sample_id,
+                                    ExternalAnalysis.analysis_type == 'pXRF',
+                                    ExternalAnalysis.pxrf_reading_no == pxrf_str
+                                )
+                                .first()
+                            )
+                            if not existing_ext:
+                                # Link only if the PXRFReading exists to satisfy FK; otherwise store as description
+                                reading = db.query(PXRFReading).filter(PXRFReading.reading_no == pxrf_str).first()
+                                if reading:
+                                    db.add(ExternalAnalysis(
+                                        sample_id=sample_id,
+                                        analysis_type='pXRF',
+                                        pxrf_reading_no=pxrf_str,
+                                    ))
+                                else:
+                                    db.add(ExternalAnalysis(
+                                        sample_id=sample_id,
+                                        analysis_type='pXRF',
+                                        description=f"pXRF reading no: {pxrf_str} (not found)",
+                                    ))
+                    except Exception as e:
+                        errors.append(f"Row {idx+2}: failed to create pXRF link — {e}")
 
                 if is_new:
                     created += 1

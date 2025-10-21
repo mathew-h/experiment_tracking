@@ -318,11 +318,11 @@ def handle_rock_samples_upload():
             "latitude": 39.7392,
             "longitude": -104.9903,
             "description": "Dark fine-grained rock",
-            "characterized": False,
+            "pxrf_reading_no": "12345A",
         }
     ], columns=[
         "sample_id", "rock_classification", "state", "country", "locality",
-        "latitude", "longitude", "description", "characterized"
+        "latitude", "longitude", "description", "pxrf_reading_no"
     ])
 
     buf = io.BytesIO()
