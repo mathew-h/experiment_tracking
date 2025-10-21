@@ -51,8 +51,8 @@ def render_sidebar():
         st.title("Navigation")
         page = st.radio(
             "Go to",
-            ["New Experiment", "View Experiments", 
-             "New Rock Sample", "View Sample Inventory", "Compound Management", "Bulk Uploads", "Issue Submission"]
+            ["Bulk Uploads", "New Experiment", "View Experiments", 
+             "New Rock Sample", "View Sample Inventory", "Compound Management", "Issue Submission"]
         )
          # Add some statistics or summary information
         st.markdown("---") # Separator

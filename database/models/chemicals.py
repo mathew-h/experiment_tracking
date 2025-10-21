@@ -124,7 +124,22 @@ class ChemicalAdditive(Base):
         self.catalyst_ppm = None
 
         # Handle concentration-style inputs first
-        if self.unit == AmountUnit.PPM:
+        if self.unit == AmountUnit.PERCENT_OF_ROCK:
+            # Interpret amount as mass percentage relative to rock mass
+            # mass_in_grams = (percent / 100) * rock_mass
+            try:
+                if rock_mass is not None and isinstance(rock_mass, (int, float)) and rock_mass > 0:
+                    self.mass_in_grams = (float(self.amount) / 100.0) * float(rock_mass)
+            except Exception:
+                self.mass_in_grams = None
+            # If molecular weight is known and mass computed, set moles
+            if self.mass_in_grams and molecular_weight:
+                try:
+                    self.moles_added = self.mass_in_grams / molecular_weight
+                except Exception:
+                    self.moles_added = None
+
+        elif self.unit == AmountUnit.PPM:
             # ppm input is mg/L; compute grams if volume known
             if volume_liters is not None:
                 try:

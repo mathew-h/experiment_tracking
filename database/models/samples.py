@@ -41,3 +41,5 @@ class SampleInfo(Base):
         foreign_keys="[ExternalAnalysis.sample_id]" # Join on sample_id
     )
     photos = relationship("SamplePhotos", back_populates="sample_info", cascade="all, delete-orphan", foreign_keys="[SamplePhotos.sample_id]")
+    # Elemental analysis results (normalized) relationship
+    elemental_results = relationship("ElementalAnalysis", backref="sample_info", cascade="all, delete-orphan", foreign_keys="[ElementalAnalysis.sample_id]")

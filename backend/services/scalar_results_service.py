@@ -10,8 +10,9 @@ class ScalarResultsService:
     @staticmethod
     def create_scalar_result(db: Session, experiment_id: str, result_data: Dict[str, Any]) -> Optional[ExperimentalResults]:
         """
-        Create an experimental result with scalar chemistry data.
-        Uses unique result tracking improvements to allow multiple data types per time point.
+        Create or upsert an experimental result with scalar chemistry data.
+        If an ExperimentalResults entry already exists for the experiment and time point,
+        this method will update (merge) the existing ScalarResults record instead of erroring.
         
         Args:
             db: Database session
@@ -37,38 +38,50 @@ class ScalarResultsService:
             description=result_data.get('description')
         )
         
-        # Check if ScalarResults already exists for this ExperimentalResults
+        # Upsert ScalarResults: update if exists; otherwise create new
         if experimental_result.scalar_data:
-            raise ValueError(f"Scalar data already exists for experiment '{experiment_id}' at time {result_data['time_post_reaction']}.")
-        
-        # Create scalar data with chemistry measurements
-        scalar_data = ScalarResults(
-            result_id=experimental_result.id,  # Link to ExperimentalResults
-            ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
-            solution_ammonium_concentration=result_data.get('solution_ammonium_concentration'),
-            ammonium_quant_method=result_data.get('ammonium_quant_method'),
-            # Hydrogen fields from bulk upload (optional)
-            h2_concentration=result_data.get('h2_concentration'),
-            h2_concentration_unit=result_data.get('h2_concentration_unit'),
-            gas_sampling_volume_ml=result_data.get('gas_sampling_volume_ml'),
-            gas_sampling_pressure=result_data.get('gas_sampling_pressure'),
-            final_ph=result_data.get('final_ph'),
-            final_nitrate_concentration=result_data.get('final_nitrate_concentration'),
-            final_dissolved_oxygen=result_data.get('final_dissolved_oxygen'),
-            co2_partial_pressure=result_data.get('co2_partial_pressure'),
-            final_conductivity=result_data.get('final_conductivity'),
-            final_alkalinity=result_data.get('final_alkalinity'),
-            sampling_volume=result_data.get('sampling_volume'),
-            result_entry=experimental_result
-        )
-        
+            scalar_data = experimental_result.scalar_data
+            # Update only provided fields (leave others untouched)
+            updatable_fields = [
+                'ferrous_iron_yield', 'solution_ammonium_concentration', 'ammonium_quant_method',
+                'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure',
+                'final_ph', 'final_nitrate_concentration', 'final_dissolved_oxygen', 'co2_partial_pressure',
+                'final_conductivity', 'final_alkalinity', 'sampling_volume'
+            ]
+            for field in updatable_fields:
+                if field in result_data:
+                    setattr(scalar_data, field, result_data.get(field))
+                # If a field is omitted in the upload row, we leave existing DB value unchanged (no deletion)
+        else:
+            # Create scalar data with chemistry measurements
+            scalar_data = ScalarResults(
+                result_id=experimental_result.id,  # Link to ExperimentalResults
+                ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
+                solution_ammonium_concentration=result_data.get('solution_ammonium_concentration'),
+                ammonium_quant_method=result_data.get('ammonium_quant_method'),
+                # Hydrogen fields from bulk upload (optional)
+                h2_concentration=result_data.get('h2_concentration'),
+                h2_concentration_unit=result_data.get('h2_concentration_unit'),
+                gas_sampling_volume_ml=result_data.get('gas_sampling_volume_ml'),
+                gas_sampling_pressure=result_data.get('gas_sampling_pressure'),
+                final_ph=result_data.get('final_ph'),
+                final_nitrate_concentration=result_data.get('final_nitrate_concentration'),
+                final_dissolved_oxygen=result_data.get('final_dissolved_oxygen'),
+                co2_partial_pressure=result_data.get('co2_partial_pressure'),
+                final_conductivity=result_data.get('final_conductivity'),
+                final_alkalinity=result_data.get('final_alkalinity'),
+                sampling_volume=result_data.get('sampling_volume'),
+                result_entry=experimental_result
+            )
+            db.add(scalar_data)
+
         # Calculate derived values (yields, conversions, etc.)
         scalar_data.calculate_yields()
-        
-        # Add to session (commit handled by caller)
-        db.add(experimental_result)  # May be existing or new
-        db.flush()  # Flush to get IDs assigned
-        
+
+        # Touch parent entry and flush IDs if needed
+        db.add(experimental_result)
+        db.flush()
+
         return experimental_result
     
     @staticmethod

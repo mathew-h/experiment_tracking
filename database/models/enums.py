@@ -129,3 +129,4 @@ class AmountUnit(enum.Enum):
     PPM = "ppm"
     MILLIMOLAR = "mM"
     MOLAR = "M"
+    PERCENT_OF_ROCK = "% of Rock"

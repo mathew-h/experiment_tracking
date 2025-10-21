@@ -46,45 +46,9 @@ class ExternalAnalysis(Base):
     # Add one-to-one relationships for specific analysis types
     pxrf_reading = relationship("PXRFReading", back_populates="external_analyses")
     xrd_analysis = relationship("XRDAnalysis", back_populates="external_analysis", uselist=False, cascade="all, delete-orphan")
-    elemental_analysis = relationship("ElementalAnalysis", back_populates="external_analysis", uselist=False, cascade="all, delete-orphan")
 
 
-class ElementalAnalysis(Base):
-    __tablename__ = "elemental_analysis"
 
-    id = Column(Integer, primary_key=True, index=True)
-    external_analysis_id = Column(Integer, ForeignKey("external_analyses.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    
-    major_elements = Column(JSON) # e.g., {"SiO2": 65.5, "Al2O3": 15.2}
-    minor_elements = Column(JSON) # e.g., {"TiO2": 0.8, "Fe2O3": 4.5}
-    trace_elements = Column(JSON) # e.g., {"Sr": 400, "Ba": 850} (in ppm)
-    detection_method = Column(String) # e.g., "XRF", "ICP-MS"
-    detection_limits = Column(JSON) # e.g., {"Sr": 0.5, "Ba": 1} (in ppm)
-    analytical_conditions = Column(JSON) # e.g., {"instrument": "Thermo Fisher iCAP Q", "digestion_method": "HF-HNO3"}
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    external_analysis = relationship("ExternalAnalysis", back_populates="elemental_analysis")
-
-    @validates('major_elements', 'minor_elements', 'trace_elements', 'detection_limits', 'analytical_conditions')
-    def validate_json(self, key, value):
-        if value is not None and not isinstance(value, dict):
-            raise ValueError(f"{key} must be a valid JSON object.")
-        return value
-
-    def get_element_concentration(self, element_type, element_name):
-        """
-        Returns the concentration of a given element from the specified type.
-        Element types can be 'major', 'minor', or 'trace'.
-        """
-        target_dict = getattr(self, f"{element_type}_elements", None)
-        if target_dict and isinstance(target_dict, dict):
-            # Case-insensitive lookup for element name
-            for key, val in target_dict.items():
-                if key.lower() == element_name.lower():
-                    return val
-        return 0
 
 class PXRFReading(Base):
     __tablename__ = "pxrf_readings"
@@ -112,3 +76,36 @@ class PXRFReading(Base):
 
     def __repr__(self):
         return f"<PXRFReading(reading_no='{self.reading_no}')>"
+
+
+class Analyte(Base):
+    __tablename__ = "analytes"
+
+    id = Column(Integer, primary_key=True, index=True)  # analyte_id
+    analyte_symbol = Column(String, unique=True, nullable=False, index=True)  # e.g., FeO, SiO2
+    unit = Column(String, nullable=False)  # e.g., ppm, %
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    elemental_results = relationship("ElementalAnalysis", back_populates="analyte")
+
+
+class ElementalAnalysis(Base):
+    __tablename__ = "elemental_analysis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Link to SampleInfo via its string primary key sample_id
+    sample_id = Column(String, ForeignKey("sample_info.sample_id", ondelete="CASCADE"), nullable=False, index=True)
+    analyte_id = Column(Integer, ForeignKey("analytes.id", ondelete="CASCADE"), nullable=False, index=True)
+    analyte_composition = Column(Float, nullable=True)  # numeric value in the unit defined by Analyte.unit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Uniqueness: one row per (sample_id, analyte_id)
+    __table_args__ = (
+        UniqueConstraint('sample_id', 'analyte_id', name='uq_elemental_analysis_sample_analyte'),
+    )
+
+    # Relationships
+    analyte = relationship("Analyte", back_populates="elemental_results")

@@ -15,6 +15,7 @@ from utils.storage import save_file, get_file, delete_file
 from sqlalchemy.orm import Session, joinedload
 from database import ExperimentalResults, ScalarResults, ExperimentalConditions, Experiment
 import pytz
+from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,47 @@ def generate_form_fields(config, current_values, field_names, key_prefix=""):
                     key=widget_key
                 )
     return new_values
+
+# --- Excel Utilities ---
+
+def autosize_excel_columns(writer, sheet_name: str, min_width: int = 10, max_width: int = 60) -> None:
+    """
+    Autosize columns for a given sheet in an openpyxl-backed ExcelWriter.
+
+    Args:
+        writer: pandas.ExcelWriter with engine='openpyxl'
+        sheet_name: Name of the sheet that has already been written
+        min_width: Minimum width to apply
+        max_width: Maximum width to apply
+    """
+    try:
+        ws = writer.sheets.get(sheet_name)
+        if ws is None:
+            return
+        for col_cells in ws.columns:
+            try:
+                first_cell = next(iter(col_cells), None)
+                if first_cell is None:
+                    continue
+                col_letter = get_column_letter(first_cell.column)
+                max_len = 0
+                for cell in col_cells:
+                    val = cell.value
+                    if val is None:
+                        continue
+                    try:
+                        length = len(str(val))
+                        if length > max_len:
+                            max_len = length
+                    except Exception:
+                        continue
+                ws.column_dimensions[col_letter].width = max(min_width, min(max_len + 2, max_width))
+            except Exception:
+                # Ignore per-column sizing errors
+                continue
+    except Exception:
+        # Ignore if engine is not openpyxl or sheets not accessible
+        pass
 
 # --- Modification Logging Utility ---
 

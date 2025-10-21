@@ -3,7 +3,7 @@ from .experiments import Experiment, ExperimentNotes, ModificationsLog
 from .conditions import ExperimentalConditions
 from .results import ExperimentalResults, ScalarResults, ICPResults, ResultFiles
 from .samples import SampleInfo, SamplePhotos
-from .analysis import AnalysisFiles, ExternalAnalysis, ElementalAnalysis, PXRFReading
+from .analysis import AnalysisFiles, ExternalAnalysis, PXRFReading, Analyte, ElementalAnalysis
 from .xrd import XRDAnalysis, XRDPhase
 from .chemicals import Compound, ChemicalAdditive
 from .characterization import *  # Future characterization models
@@ -24,7 +24,8 @@ __all__ = [
     # Samples
     'SampleInfo', 'SamplePhotos',
     # Analysis
-    'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'ElementalAnalysis', 'PXRFReading', 'XRDPhase',
+    'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'PXRFReading', 'XRDPhase',
+    'Analyte', 'ElementalAnalysis',
     # Chemicals
     'Compound', 'ChemicalAdditive',
     # Enums

@@ -2,6 +2,16 @@ import streamlit as st
 import pandas as pd
 import io
 from database import SessionLocal, Experiment, ExperimentalResults, ScalarResults, SampleInfo, PXRFReading, ExperimentalConditions, Compound, ChemicalAdditive, AmountUnit
+from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
+from backend.services.bulk_uploads.experiment_additives import ExperimentAdditivesService
+from backend.services.bulk_uploads.actlabs_xrd_report import XRDUploadService
+from backend.services.bulk_uploads.scalar_results import ScalarResultsUploadService
+from backend.services.bulk_uploads.actlabs_titration_data import (
+    ElementalCompositionService,
+    ActlabsRockTitrationService,
+)
+from backend.services.bulk_uploads.pxrf_data import PXRFUploadService
+from backend.services.bulk_uploads.rock_inventory import RockInventoryService
 from backend.services.scalar_results_service import ScalarResultsService
 from backend.services.icp_service import ICPService
 from sqlalchemy.exc import IntegrityError
@@ -22,26 +32,35 @@ def render_bulk_uploads_page():
         "Select data type to upload:",
         (
             "Select data type",
+            "New Experiments",
             "NMR / Hydrogen / pH / Conductivity / Alkalinity",
-            "ICP Elemental Analysis",
-            "XRD Mineralogy",
-            "Rock Samples (Sample Info)",
+            "ICP-OES Elemental Analysis",
+            # For EDS Later "Elemental Composition (Titration/ICP)",
+            "ActLabs XRD",
+            "ActLabs Rock Titration",
+            "Rock Inventory",
             "pXRF Readings",
             "Chemical Inventory (Compounds)",
             "Experiment Additives (Compounds per Experiment)"
         )
     )
 
-    if upload_option == "NMR / Hydrogen / pH / Conductivity / Alkalinity":
+    if upload_option == "New Experiments":
+        handle_new_experiments_upload()
+    elif upload_option == "NMR / Hydrogen / pH / Conductivity / Alkalinity":
         handle_solution_chemistry_upload()
-    elif upload_option == "ICP Elemental Analysis":
+    elif upload_option == "ICP-OES Elemental Analysis":
         handle_icp_upload()
-    elif upload_option == "XRD Mineralogy":
+    elif upload_option == "ActLabs XRD":
         handle_xrd_upload()
-    elif upload_option == "Rock Samples (Sample Info)":
-        st.info("Bulk upload for Rock Samples is not yet implemented.")
+    # elif upload_option == "Elemental Composition (Titration/ICP)":
+    #     handle_elemental_composition_upload()
+    elif upload_option == "ActLabs Rock Titration":
+        handle_actlabs_titration_upload()
+    elif upload_option == "Rock Inventory":
+        handle_rock_samples_upload()
     elif upload_option == "pXRF Readings":
-        st.info("Bulk upload for pXRF Readings is not yet implemented.")
+        handle_pxrf_upload()
     elif upload_option == "Chemical Inventory (Compounds)":
         upload_chemical_inventory()
     elif upload_option == "Experiment Additives (Compounds per Experiment)":
@@ -55,6 +74,14 @@ def handle_xrd_upload():
     Creates/updates ExternalAnalysis (analysis_type="XRD"), XRDAnalysis JSON, and normalized XRDPhase rows.
     """
     st.header("Bulk Upload XRD Mineralogy")
+    st.markdown(
+        """
+        Provide an Excel with one sheet named `xrd` where:
+        - The first column is `sample_id` (required)
+        - Each additional column is a mineral name with percentage values per row
+        The importer creates or updates XRD records per sample.
+        """
+    )
 
     # Provide template
     template_df = pd.DataFrame([
@@ -78,134 +105,350 @@ def handle_xrd_upload():
     if not uploaded:
         return
 
+    db = SessionLocal()
     try:
-        df = pd.read_excel(uploaded)
+        created_ext, updated_ext, created_json, updated_json, created_phase, updated_phase, skipped, errors = XRDUploadService.bulk_upsert_from_excel(db, uploaded.read())
+        if errors:
+            db.rollback()
+            st.error("Upload failed; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors)-50} more errors")
+            return
+        db.commit()
+        st.success(
+            f"ExternalAnalysis (XRD) created: {created_ext}, updated: {updated_ext}. "
+            f"XRDAnalysis JSON created: {created_json}, updated: {updated_json}. "
+            f"XRDPhase created: {created_phase}, updated: {updated_phase}, skipped rows: {skipped}."
+        )
     except Exception as e:
-        st.error(f"Failed to read Excel: {e}")
-        return
+        db.rollback()
+        st.error(f"Unexpected error during XRD upload: {e}")
+    finally:
+        db.close()
 
-    # Normalize headers
-    if df.shape[1] < 2:
-        st.error("Template must include 'sample_id' and at least one mineral column.")
-        return
 
-    original_cols = list(df.columns)
-    normalized = [str(c).strip() for c in original_cols]
-    df.columns = normalized
+def handle_new_experiments_upload():
+    """
+    Bulk upload to create/update experiments, conditions, additives via multi-sheet Excel.
+    Includes optional compounds sheet for pre-upserting inventory.
+    """
+    from backend.services.bulk_uploads.new_experiments import NewExperimentsUploadService
+    st.header("Bulk Upload: New Experiments")
 
-    # Resolve sample_id column (case-insensitive match)
-    sample_col = None
-    for c in df.columns:
-        if c.lower() == "sample_id":
-            sample_col = c
-            break
-    if not sample_col:
-        st.error("First column must be 'sample_id'.")
-        return
+    st.markdown(
+        """
+        Use this multi-sheet Excel template to create or update experiments.
+        Columns with an asterisk (*) are required.
 
-    mineral_cols = [c for c in df.columns if c != sample_col]
-    if not mineral_cols:
-        st.error("No mineral columns detected.")
+        Sheets and required fields:
+        - experiments: experiment_id* (unique), sample_id, researcher, date, status, initial_note, overwrite
+          - overwrite: when true for an existing experiment, metadata/conditions are updated and all additives are replaced by the additives sheet
+          - status: use ExperimentStatus name or value (e.g., ONGOING, COMPLETED)
+          - date: Excel date or ISO (YYYY-MM-DD)
+        - conditions: experiment_id* plus valid condition columns inferred from the model (deprecated catalyst/buffer/surfactant fields are excluded)
+        - additives: experiment_id*, compound*, amount*, unit* with optional order, method
+          - unit must be one of the allowed units shown in the template (e.g., g, mg, mL, ppm, mM, M)
+        """
+    )
+
+    # Build template
+    unit_options = [u.value for u in AmountUnit]
+    experiments_cols = [
+        "experiment_id",  # required
+        "sample_id",
+        "researcher",
+        "date",           # any Excel/ISO date
+        "status",         # ExperimentStatus name or value
+        "initial_note",   # first ExperimentNotes entry
+        "overwrite",      # True/False
+    ]
+
+    example_exp = {
+        "experiment_id": "Serum_MH_101",
+        "sample_id": "Rock_1",
+        "researcher": "Mathew",
+        "date": pd.Timestamp.today().date(),
+        "status": "ONGOING",
+        "initial_note": "Baseline run",
+        "overwrite": False,
+    }
+
+    # Derive conditions headers from model columns to avoid hardcoding
+    # We exclude PK/FKs/metadata
+    from database import ExperimentalConditions as _EC
+    cond_reserved = {"id", "experiment_id", "experiment_fk", "created_at", "updated_at"}
+    cond_blacklist = {
+        "catalyst", "catalyst_mass",
+        "buffer_system", "buffer_concentration",
+        "surfactant_type", "surfactant_concentration",
+        "catalyst_percentage", "catalyst_ppm",
+    }
+    conditions_cols = [
+        c.name for c in _EC.__table__.columns
+        if c.name not in cond_reserved and c.name not in cond_blacklist
+    ]
+
+    additives_cols = ["experiment_id", "compound", "amount", "unit", "order", "method"]
+    example_add = {
+        "experiment_id": example_exp["experiment_id"],
+        "compound": "Sodium Chloride",
+        "amount": 100.0,
+        "unit": unit_options[0] if unit_options else "mg",
+        "order": 1,
+        "method": "solution",
+    }
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df_exp = pd.DataFrame([example_exp], columns=experiments_cols)
+        # Display: mark required fields with asterisks
+        display_experiments_cols = ["experiment_id*", "sample_id", "researcher", "date", "status", "initial_note", "overwrite"]
+        df_exp.columns = display_experiments_cols
+        df_exp.to_excel(writer, index=False, sheet_name='experiments')
+        # conditions: one example row with blanks
+        df_cond = pd.DataFrame([{c: None for c in ["experiment_id"] + conditions_cols}]).assign(experiment_id=example_exp["experiment_id"]) 
+        # Display: mark required experiment_id with asterisk
+        display_conditions_cols = ["experiment_id*"] + conditions_cols
+        df_cond.columns = display_conditions_cols
+        df_cond.to_excel(writer, index=False, sheet_name='conditions')
+        df_add = pd.DataFrame([example_add], columns=additives_cols)
+        # Display: mark required columns with asterisks
+        display_additives_cols = ["experiment_id*", "compound*", "amount*", "unit*", "order", "method"]
+        df_add.columns = display_additives_cols
+        df_add.to_excel(writer, index=False, sheet_name='additives')
+
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'experiments')
+            autosize_excel_columns(writer, 'conditions')
+            autosize_excel_columns(writer, 'additives')
+        except Exception:
+            pass
+    buf.seek(0)
+
+    st.download_button(
+        label="Download New Experiments Template",
+        data=buf,
+        file_name="new_experiments_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.markdown("---")
+    uploaded = st.file_uploader("Upload filled New Experiments template (xlsx)", type=["xlsx"])
+
+    if not uploaded:
         return
 
     db = SessionLocal()
-    from database import SampleInfo, ExternalAnalysis
-    # XRDAnalysis and XRDPhase were added to database.models package exports
-    from database import XRDAnalysis
-    from database.models import XRDPhase  # not top-level for clarity
-
-    created_ext, updated_ext = 0, 0
-    created_json, updated_json = 0, 0
-    created_phase, updated_phase, skipped, errors = 0, 0, 0, []
-
     try:
-        for idx, row in df.iterrows():
+        created, updated, skipped, errors = NewExperimentsUploadService.bulk_upsert_from_excel(db, uploaded.read())
+        if errors:
+            db.rollback()
+            st.error("Upload encountered issues; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors)-50} more errors")
+        else:
+            db.commit()
+            st.success(f"Experiments created: {created}, updated: {updated}, skipped rows: {skipped}")
+    except Exception as e:
+        db.rollback()
+        st.error(f"Unexpected error during New Experiments upload: {e}")
+    finally:
+        db.close()
+
+
+def handle_pxrf_upload():
+    """Bulk upload pXRF Excel via backend service. No template required."""
+    st.header("Bulk Upload pXRF Readings (Excel)")
+    st.markdown(
+        """
+        Upload the pXRF Excel exported from the instrument/lab. The importer expects:
+        - A `Reading No` column and element concentration columns per row
+        - Optional: set "Update existing" to overwrite matching readings
+        """
+    )
+
+    update_existing = st.checkbox("Update existing readings if present", value=False)
+    uploaded = st.file_uploader("Upload pXRF Excel", type=["xlsx", "xlsm", "xls"])
+    if not uploaded:
+        return
+
+    db = SessionLocal()
+    try:
+        inserted, updated, skipped, errors = PXRFUploadService.ingest_from_bytes(db, uploaded.read(), update_existing=update_existing)
+        if errors:
+            db.rollback()
+            st.error("Upload encountered issues; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors)-50} more errors")
+            return
+        db.commit()
+        st.success(f"pXRF readings — inserted: {inserted}, updated: {updated}, skipped: {skipped}")
+    except Exception as e:
+        db.rollback()
+        st.error(f"Unexpected error during pXRF upload: {e}")
+    finally:
+        db.close()
+
+def handle_rock_samples_upload():
+    """Bulk upload rock inventory and attach photos."""
+    st.header("Bulk Upload Rock Inventory")
+    st.markdown(
+        """
+        Use the template to add or update rock samples. Columns include `sample_id` (required),
+        classification and location fields. Optionally upload photos whose filenames match `sample_id`.
+        """
+    )
+
+    # Template
+    template_df = pd.DataFrame([
+        {
+            "sample_id": "Rock_1",
+            "rock_classification": "Basalt",
+            "state": "CO",
+            "country": "USA",
+            "locality": "Somewhere",
+            "latitude": 39.7392,
+            "longitude": -104.9903,
+            "description": "Dark fine-grained rock",
+            "characterized": False,
+        }
+    ], columns=[
+        "sample_id", "rock_classification", "state", "country", "locality",
+        "latitude", "longitude", "description", "characterized"
+    ])
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        template_df.to_excel(writer, index=False, sheet_name='samples')
+    buf.seek(0)
+    st.download_button(
+        label="Download Rock Inventory Template",
+        data=buf,
+        file_name="rock_inventory_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.markdown("---")
+    uploaded = st.file_uploader("Upload filled rock inventory template (xlsx)", type=["xlsx"])
+    images = st.file_uploader("Optional: Upload sample photos (filenames must match sample_id)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+
+    if not uploaded:
+        return
+
+    # Prepare images list
+    image_tuples = []
+    if images:
+        for img in images:
             try:
-                sample_id = str(row.get(sample_col) or '').strip()
-                if not sample_id:
-                    skipped += 1
-                    continue
+                image_tuples.append((img.name, img.read(), img.type))
+            except Exception:
+                continue
 
-                # Validate sample exists
-                sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
-                if not sample:
-                    errors.append(f"Row {idx+2}: sample_id '{sample_id}' not found")
-                    continue
+    db = SessionLocal()
+    try:
+        created, updated, images_attached, skipped, errors = RockInventoryService.bulk_upsert_samples(db, uploaded.read(), image_tuples)
+        if errors:
+            db.rollback()
+            st.error("Upload encountered issues; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors)-50} more errors")
+        else:
+            db.commit()
+            st.success(f"Rock inventory — created: {created}, updated: {updated}, images attached: {images_attached}, skipped rows: {skipped}")
+    except Exception as e:
+        db.rollback()
+        st.error(f"Unexpected error during rock inventory upload: {e}")
+    finally:
+        db.close()
 
-                # Build mineral dict from columns, skipping blanks and non-numeric
-                mineral_data = {}
-                for mcol in mineral_cols:
-                    val = row.get(mcol)
-                    try:
-                        if val is None or (isinstance(val, float) and pd.isna(val)):
-                            continue
-                        fval = float(val)
-                    except Exception:
-                        continue
-                    # Store key in lower-case for consistency in JSON; keep display name in normalized table
-                    mineral_data[mcol.strip().lower()] = fval
+def handle_actlabs_titration_upload():
+    """Thin UI wrapper to import ActLabs Excel via backend service."""
+    st.header("Bulk Upload ActLabs Rock Titration Sheet")
+    st.markdown(
+        """
+        Upload the raw ActLabs report (Excel or CSV). The importer auto-detects headers and formats
+        and loads titration results per sample.
+        """
+    )
 
-                # Find or create ExternalAnalysis for this sample/type
-                ext = (
-                    db.query(ExternalAnalysis)
-                    .filter(
-                        ExternalAnalysis.sample_id == sample_id,
-                        ExternalAnalysis.analysis_type == "XRD",
-                    )
-                    .first()
-                )
-                if not ext:
-                    ext = ExternalAnalysis(sample_id=sample_id, analysis_type="XRD")
-                    db.add(ext)
-                    db.flush()
-                    created_ext += 1
-                else:
-                    updated_ext += 1
+    uploaded = st.file_uploader("Upload ActLabs report (Excel or CSV)", type=["xlsx", "xlsm", "xls", "csv"])
+    if not uploaded:
+        return
 
-                # Upsert JSON model
-                xrd = db.query(XRDAnalysis).filter(XRDAnalysis.external_analysis_id == ext.id).first()
-                if xrd:
-                    xrd.mineral_phases = mineral_data or None
-                    updated_json += 1
-                else:
-                    xrd = XRDAnalysis(external_analysis_id=ext.id, mineral_phases=mineral_data or None)
-                    db.add(xrd)
-                    created_json += 1
+    db = SessionLocal()
+    try:
+        created, updated, skipped, errors = ActlabsRockTitrationService.import_excel(db, uploaded.read())
+        if errors:
+            db.rollback()
+            st.error("Upload encountered issues; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors)-50} more errors")
+        else:
+            db.commit()
+            st.success(f"Imported ActLabs titration results — created: {created}, updated: {updated}, skipped rows: {skipped}")
+    except Exception as e:
+        db.rollback()
+        st.error(f"Unexpected error during ACTLABS upload: {e}")
+    finally:
+        db.close()
 
-                # Upsert normalized phases per mineral
-                for mcol in mineral_cols:
-                    display_name = str(mcol).strip()
-                    key = display_name.lower()
-                    if key not in mineral_data:
-                        continue
-                    amount_val = mineral_data[key]
+## analyte upload removed: analytes are created during ACTLABS titration upload
 
-                    phase = (
-                        db.query(XRDPhase)
-                        .filter(
-                            XRDPhase.sample_id == sample_id,
-                            XRDPhase.mineral_name == display_name,
-                        )
-                        .first()
-                    )
-                    if phase:
-                        phase.amount = amount_val
-                        if phase.external_analysis_id is None:
-                            phase.external_analysis_id = ext.id
-                        updated_phase += 1
-                    else:
-                        phase = XRDPhase(
-                            sample_id=sample_id,
-                            external_analysis_id=ext.id,
-                            mineral_name=display_name,
-                            amount=amount_val,
-                        )
-                        db.add(phase)
-                        created_phase += 1
 
-            except Exception as e:
-                errors.append(f"Row {idx+2}: {e}")
+def handle_elemental_composition_upload():
+    """Thin UI wrapper that delegates composition upsert to backend service."""
+    st.header("Bulk Upload Elemental Composition (Titration/ICP)")
+    st.markdown(
+        """
+        Download the template to enter elemental compositions per sample. The sheet contains `sample_id`
+        and one column per analyte. Upload the filled template to upsert composition values.
+        """
+    )
 
+    # Build template based on existing analytes via backend-friendly DB call
+    db = SessionLocal()
+    try:
+        # Lazy import to avoid circulars; keep simple here
+        from database import Analyte as _Analyte
+        analytes = db.query(_Analyte).order_by(_Analyte.analyte_symbol.asc()).all()
+        analyte_cols = [a.analyte_symbol for a in analytes] if analytes else ["FeO", "SiO2"]
+    finally:
+        db.close()
+
+    cols = ["sample_id"] + analyte_cols
+    template_df = pd.DataFrame([{c: None for c in cols}])
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        template_df.to_excel(writer, index=False, sheet_name='composition')
+    buf.seek(0)
+    st.download_button(
+        label="Download Composition Template",
+        data=buf,
+        file_name="elemental_composition_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.markdown("---")
+    uploaded = st.file_uploader("Upload filled composition template (xlsx)", type=["xlsx"])
+    if not uploaded:
+        return
+
+    db = SessionLocal()
+    try:
+        created, updated, skipped, errors = ElementalCompositionService.bulk_upsert_wide_from_excel(db, uploaded.read())
         if errors:
             db.rollback()
             st.error("Upload failed; no changes were applied.")
@@ -215,32 +458,10 @@ def handle_xrd_upload():
                 st.info(f"...and {len(errors)-50} more errors")
         else:
             db.commit()
-            st.success(
-                f"ExternalAnalysis (XRD) created: {created_ext}, updated: {updated_ext}. "
-                f"XRDAnalysis JSON created: {created_json}, updated: {updated_json}. "
-                f"XRDPhase created: {created_phase}, updated: {updated_phase}, skipped rows: {skipped}."
-            )
-
-            # Optional advisory: sum-to-100 check (best-effort; no failure)
-            try:
-                totals = []
-                for _, r in df.iterrows():
-                    try:
-                        nums = [float(r[c]) for c in mineral_cols if r.get(c) is not None and not pd.isna(r.get(c))]
-                        if nums:
-                            totals.append(sum(nums))
-                    except Exception:
-                        pass
-                if totals:
-                    off = [t for t in totals if not (95 <= t <= 105)]
-                    if off:
-                        st.info("Note: Some rows have mineral totals outside 100±5; verify your inputs.")
-            except Exception:
-                pass
-
+            st.success(f"Compositions created: {created}, updated: {updated}, skipped rows: {skipped}")
     except Exception as e:
         db.rollback()
-        st.error(f"Unexpected error during XRD upload: {e}")
+        st.error(f"Unexpected error during composition upload: {e}")
     finally:
         db.close()
 
@@ -251,6 +472,12 @@ def upload_chemical_inventory():
     - Accepts an uploaded Excel and upserts rows into the `compounds` table
     """
     st.header("Bulk Upload Chemical Inventory (Compounds)")
+    st.markdown(
+        """
+        Create or update compound records. `name` is required; other fields (formula, CAS, molecular weight,
+        density, melting/boiling point, supplier, etc.) are optional. Later uploads can enrich existing entries.
+        """
+    )
 
     # Template definition (column order preserved)
     template_columns = [
@@ -303,96 +530,10 @@ def upload_chemical_inventory():
     if not uploaded_file:
         return
 
-    try:
-        df = pd.read_excel(uploaded_file)
-    except Exception as e:
-        st.error(f"Failed to read Excel: {e}")
-        return
-
-    # Normalize column names (case-insensitive match to template)
-    col_map = {c.lower().strip(): c for c in df.columns}
-    missing_required = []
-    if "name" not in col_map:
-        missing_required.append("name")
-    if missing_required:
-        st.error(f"Missing required column(s): {', '.join(missing_required)}")
-        return
-
-    # Reindex to expected columns (optional ones may be absent)
-    normalized_cols = [c for c in template_columns if c in col_map]
-    df = df.rename(columns={col_map[c]: c for c in normalized_cols if c in col_map})
-
-    created, updated, skipped, errors = 0, 0, 0, []
     db = SessionLocal()
     try:
-        for idx, row in df.iterrows():
-            try:
-                name = str(row.get("name") or "").strip()
-                if not name:
-                    skipped += 1
-                    continue
-
-                formula = str(row.get("formula")) if not pd.isna(row.get("formula")) else None
-                cas_number = str(row.get("cas_number")) if not pd.isna(row.get("cas_number")) else None
-
-                # Numeric fields safe parse
-                def num(val):
-                    try:
-                        return float(val)
-                    except Exception:
-                        return None
-
-                molecular_weight = num(row.get("molecular_weight"))
-                density = num(row.get("density"))
-                melting_point = num(row.get("melting_point"))
-                boiling_point = num(row.get("boiling_point"))
-                solubility = str(row.get("solubility")) if not pd.isna(row.get("solubility")) else None
-                hazard_class = str(row.get("hazard_class")) if not pd.isna(row.get("hazard_class")) else None
-                supplier = str(row.get("supplier")) if not pd.isna(row.get("supplier")) else None
-                catalog_number = str(row.get("catalog_number")) if not pd.isna(row.get("catalog_number")) else None
-                notes = str(row.get("notes")) if not pd.isna(row.get("notes")) else None
-
-                # Duplicate checks: by name (case-insensitive), and CAS if provided
-                existing = db.query(Compound).filter(Compound.name.ilike(name)).first()
-                if not existing and cas_number:
-                    existing = db.query(Compound).filter(Compound.cas_number == cas_number).first()
-
-                if existing:
-                    # Update existing compound
-                    existing.formula = formula or existing.formula
-                    existing.cas_number = cas_number or existing.cas_number
-                    existing.molecular_weight = molecular_weight if molecular_weight is not None else existing.molecular_weight
-                    existing.density = density if density is not None else existing.density
-                    existing.melting_point = melting_point if melting_point is not None else existing.melting_point
-                    existing.boiling_point = boiling_point if boiling_point is not None else existing.boiling_point
-                    existing.solubility = solubility or existing.solubility
-                    existing.hazard_class = hazard_class or existing.hazard_class
-                    existing.supplier = supplier or existing.supplier
-                    existing.catalog_number = catalog_number or existing.catalog_number
-                    existing.notes = notes or existing.notes
-                    updated += 1
-                else:
-                    comp = Compound(
-                        name=name,
-                        formula=formula,
-                        cas_number=cas_number,
-                        molecular_weight=molecular_weight,
-                        density=density,
-                        melting_point=melting_point,
-                        boiling_point=boiling_point,
-                        solubility=solubility,
-                        hazard_class=hazard_class,
-                        supplier=supplier,
-                        catalog_number=catalog_number,
-                        notes=notes,
-                    )
-                    db.add(comp)
-                    created += 1
-            except Exception as e:
-                errors.append(f"Row {idx+2}: {e}")  # +2 for header and 1-based index
-
+        created, updated, skipped, errors = ChemicalInventoryService.bulk_upsert_from_excel(db, uploaded_file.read())
         if errors:
-            # If errors exist, rollback to avoid partial writes and report
             db.rollback()
             st.error("Upload failed; no changes were applied.")
             for msg in errors[:50]:
@@ -402,7 +543,6 @@ def upload_chemical_inventory():
         else:
             db.commit()
             st.success(f"Compounds created: {created}, updated: {updated}, skipped: {skipped}")
-
     except Exception as e:
         db.rollback()
         st.error(f"Unexpected error during compound upload: {e}")
@@ -422,6 +562,15 @@ def experiments_additives():
       - method (optional text)
     """
     st.header("Bulk Upload Experiment Additives")
+    st.markdown(
+        """
+        Add or update chemical additives for experiments. The sheet requires:
+        - `experiment_id*`: existing experiment identifier
+        - `compound*`: compound name (must exist in Chemical Inventory)
+        - `amount*` and `unit*`: quantity and unit for the additive
+        Optional: `order` and `method`.
+        """
+    )
 
     # Build template
     unit_options = [u.value for u in AmountUnit]
@@ -447,7 +596,6 @@ def experiments_additives():
     )
 
     st.markdown("---")
-    replace_mode = st.checkbox("Replace existing additives for each experiment before applying", value=False)
     uploaded = st.file_uploader("Upload filled additives template (xlsx)", type=["xlsx"])
 
     if not uploaded:
@@ -459,130 +607,9 @@ def experiments_additives():
         st.error(f"Failed to read Excel: {e}")
         return
 
-    # Normalize columns
-    required_cols = {'experiment_id', 'compound', 'amount', 'unit'}
-    df.columns = [str(c).strip().lower() for c in df.columns]
-    if not required_cols.issubset(set(df.columns)):
-        missing = ', '.join(sorted(required_cols - set(df.columns)))
-        st.error(f"Missing required columns: {missing}")
-        return
-
-    # Start processing
     db = SessionLocal()
-    created, updated, deleted, errors, skipped = 0, 0, 0, [], 0
-
-    # Group by experiment for optional replace
     try:
-        # Build fast compound lookup (case-insensitive by name)
-        all_compounds = db.query(Compound).all()
-        name_to_compound = {c.name.lower(): c for c in all_compounds}
-
-        # Build fast experiment lookup by experiment_id string
-        # We'll fetch on demand to avoid loading everything
-
-        # Track which experiments we already cleared when replace_mode is on
-        cleared_conditions_ids = set()
-
-        for idx, row in df.iterrows():
-            try:
-                exp_id = str(row.get('experiment_id') or '').strip()
-                comp_name = str(row.get('compound') or '').strip()
-                unit_val = str(row.get('unit') or '').strip()
-                amount_val = row.get('amount')
-                order_val = row.get('order') if 'order' in df.columns else None
-                method_val = row.get('method') if 'method' in df.columns else None
-
-                if not exp_id or not comp_name or not unit_val:
-                    skipped += 1
-                    continue
-
-                try:
-                    amount_float = float(amount_val)
-                except Exception:
-                    errors.append(f"Row {idx+2}: invalid amount '{amount_val}'")
-                    continue
-                if amount_float <= 0:
-                    errors.append(f"Row {idx+2}: amount must be > 0")
-                    continue
-
-                # Validate unit
-                unit_enum = None
-                for u in AmountUnit:
-                    if u.value == unit_val:
-                        unit_enum = u
-                        break
-                if unit_enum is None:
-                    errors.append(f"Row {idx+2}: invalid unit '{unit_val}'")
-                    continue
-
-                # Resolve experiment
-                experiment = db.query(Experiment).filter(Experiment.experiment_id == exp_id).first()
-                if not experiment:
-                    errors.append(f"Row {idx+2}: experiment_id '{exp_id}' not found")
-                    continue
-
-                # Resolve or create ExperimentalConditions for this experiment
-                conditions = db.query(ExperimentalConditions).filter(ExperimentalConditions.experiment_fk == experiment.id).first()
-                if not conditions:
-                    conditions = ExperimentalConditions(
-                        experiment_id=experiment.experiment_id,
-                        experiment_fk=experiment.id,
-                    )
-                    db.add(conditions)
-                    db.flush()
-
-                # Replace existing additives once per conditions if requested
-                if replace_mode and conditions.id not in cleared_conditions_ids:
-                    existing = db.query(ChemicalAdditive).filter(ChemicalAdditive.experiment_id == conditions.id).all()
-                    for a in existing:
-                        db.delete(a)
-                        deleted += 1
-                    db.flush()
-                    cleared_conditions_ids.add(conditions.id)
-
-                # Resolve compound
-                comp = name_to_compound.get(comp_name.lower())
-                if not comp:
-                    errors.append(f"Row {idx+2}: compound '{comp_name}' not found; upload inventory first")
-                    continue
-
-                # Upsert additive
-                existing_add = db.query(ChemicalAdditive).filter(
-                    ChemicalAdditive.experiment_id == conditions.id,
-                    ChemicalAdditive.compound_id == comp.id,
-                ).first()
-
-                # Parse order int
-                try:
-                    order_int = int(order_val) if order_val is not None and str(order_val).strip() != '' else None
-                except Exception:
-                    order_int = None
-
-                method_text = str(method_val).strip() if method_val is not None and str(method_val).strip() != '' else None
-
-                if existing_add:
-                    existing_add.amount = amount_float
-                    existing_add.unit = unit_enum
-                    existing_add.addition_order = order_int
-                    existing_add.addition_method = method_text
-                    existing_add.calculate_derived_values()
-                    updated += 1
-                else:
-                    new_add = ChemicalAdditive(
-                        experiment_id=conditions.id,
-                        compound_id=comp.id,
-                        amount=amount_float,
-                        unit=unit_enum,
-                        addition_order=order_int,
-                        addition_method=method_text,
-                    )
-                    new_add.calculate_derived_values()
-                    db.add(new_add)
-                    created += 1
-
-            except Exception as e:
-                errors.append(f"Row {idx+2}: {e}")
-
+        created, updated, skipped, errors = ExperimentAdditivesService.bulk_upsert_from_excel(db, uploaded.read())
         if errors:
             db.rollback()
             st.error("Upload failed; no changes were applied.")
@@ -592,8 +619,7 @@ def experiments_additives():
                 st.info(f"...and {len(errors)-50} more errors")
         else:
             db.commit()
-            st.success(f"Additives created: {created}, updated: {updated}, deleted: {deleted}, skipped: {skipped}")
-
+            st.success(f"Additives created: {created}, updated: {updated}, skipped: {skipped}")
     except Exception as e:
         db.rollback()
         st.error(f"Unexpected error during additives upload: {e}")
@@ -659,70 +685,45 @@ def handle_solution_chemistry_upload():
     uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
 
     if uploaded_file:
+        db = SessionLocal()
         try:
-            df = pd.read_excel(uploaded_file)
-            _process_solution_chemistry_df(df)
+            created, updated, skipped, errors = ScalarResultsUploadService.bulk_upsert_from_excel(db, uploaded_file.read())
+            if errors:
+                db.rollback()
+                for error in errors:
+                    st.warning(error)
+                st.error("Upload failed due to errors. Please correct the file and try again.")
+            else:
+                db.commit()
+                st.success(f"Successfully uploaded {created} solution chemistry results.")
+        except IntegrityError as e:
+            db.rollback()
+            st.error(f"Database error: {e.orig}")
         except Exception as e:
-            st.error(f"An error occurred: {e}")
+            db.rollback()
+            st.error(f"An unexpected error occurred: {e}")
+        finally:
+            db.close()
 
 def _process_solution_chemistry_df(df):
-    """
-    Processes the DataFrame from the uploaded Excel file for solution chemistry results.
-    Uses ScalarResultsService for all backend logic.
-    """
-    # Clean column names by removing the asterisk
-    df.columns = df.columns.str.replace('*', '', regex=False)
-
-    if not EXPERIMENTAL_RESULTS_REQUIRED_COLS.issubset(df.columns):
-        st.error(f"File is missing required columns. Required: {', '.join(EXPERIMENTAL_RESULTS_REQUIRED_COLS)}")
-        return
-
-    # Convert DataFrame to list of dictionaries for service
-    results_data = df.to_dict('records')
-    
-    db = SessionLocal()
-    try:
-        # Use service for all business logic
-        results, errors = ScalarResultsService.bulk_create_scalar_results(db, results_data)
-        
-        # Handle UI feedback
-        if errors:
-            for error in errors:
-                st.warning(error)
-        
-        if results and not errors:
-            db.commit()
-            st.success(f"Successfully uploaded {len(results)} solution chemistry results.")
-        elif not results and not errors:
-            st.info("No new data to upload.")
-        else:
-            st.error("Upload failed due to errors. Please correct the file and try again.")
-            db.rollback()
-            
-    except IntegrityError as e:
-        db.rollback()
-        st.error(f"Database error: {e.orig}")
-    except Exception as e:
-        db.rollback()
-        st.error(f"An unexpected error occurred: {e}")
-    finally:
-        db.close()
+    # Deprecated: logic moved to backend/services/bulk_uploads/scalar_results.py
+    pass
 
 def handle_icp_upload():
     """
-    Handles the UI and logic for bulk uploading ICP elemental analysis results.
-    Processes CSV files directly from ICP instrument output.
+    Handles the UI and logic for bulk uploading ICP-OES elemental analysis results.
+    Processes CSV files directly from ICP-OES instrument output.
     """
-    st.header("Bulk Upload ICP Elemental Analysis")
+    st.header("Bulk Upload ICP-OES Elemental Analysis")
     st.markdown("""
-    Upload a CSV file containing ICP elemental analysis data. 
-    This should be the direct output from the ICP instrument containing:
+    Upload a CSV file containing ICP-OES elemental analysis data. 
+    This should be the direct output from the ICP-OES instrument containing:
     
     - **Experiment ID**, **Time Point**, and **Dilution** in 'Label' Column (e.g. 'Serum_MH_011_Day5_5x)
     - **Elemental concentrations** in ppm (Fe, Mg, Ni, Cu, Si, Co, Mo, Al, etc.)
     - Please ensure all referenced Experiment IDs exist in the database
     
-    **Note:** No template is provided as this processes direct instrument output files.
+    **Note:** No template is provided as this processes direct instrument output files. This is for ICP-OES data only.
     """)
 
     uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
@@ -740,12 +741,12 @@ def handle_icp_upload():
 
 def _process_icp_csv(file_content: bytes):
     """
-    Processes the ICP CSV file using ICPService for all backend logic.
+    Processes the ICP-OES CSV file using ICPService for all backend logic.
     """
     db = SessionLocal()
     try:
         # Step 1: Parse and process the ICP file
-        st.info("Processing ICP data file...")
+        st.info("Processing ICP-OES data file...")
         processed_data, processing_errors = ICPService.parse_and_process_icp_file(file_content)
         
         if processing_errors:
@@ -754,17 +755,17 @@ def _process_icp_csv(file_content: bytes):
                 st.warning(error)
         
         if not processed_data:
-            st.error("No valid ICP data found to upload.")
+            st.error("No valid ICP-OES data found to upload.")
             return
         
         # Step 2: Show preview of processed data
-        st.subheader("📊 Processed ICP Data Preview")
+        st.subheader("📊 Processed ICP-OES Data Preview")
         
         # Convert processed data to DataFrame for display
         preview_df = pd.DataFrame(processed_data)
         
         # Show summary info
-        st.info(f"Found {len(processed_data)} samples with ICP data")
+        st.info(f"Found {len(processed_data)} samples with ICP-OES data")
         
         # Show first few samples
         if len(preview_df) > 0:
@@ -780,13 +781,13 @@ def _process_icp_csv(file_content: bytes):
         
         # Step 3: Upload to database if no critical errors
         if not processing_errors or st.button("Upload Despite Warnings"):
-            st.info("Uploading ICP data to database...")
+            st.info("Uploading ICP-OES data to database...")
             
             results, upload_errors = ICPService.bulk_create_icp_results(db, processed_data)
             
             # Separate errors from overwrite notifications
-            actual_errors = [msg for msg in upload_errors if not msg.startswith("Sample") or "Updated existing ICP data" not in msg]
-            overwrite_notifications = [msg for msg in upload_errors if "Updated existing ICP data" in msg]
+            actual_errors = [msg for msg in upload_errors if not msg.startswith("Sample") or "Updated existing ICP-OES data" not in msg]
+            overwrite_notifications = [msg for msg in upload_errors if "Updated existing ICP-OES data" in msg]
             
             # Handle upload feedback
             if actual_errors:
@@ -801,7 +802,7 @@ def _process_icp_csv(file_content: bytes):
             
             if results and not actual_errors:
                 db.commit()
-                st.success(f"✅ Successfully processed {len(results)} ICP results.")
+                st.success(f"✅ Successfully processed {len(results)} ICP-OES results.")
                 
                 # Show success summary
                 experiments = list(set([data['experiment_id'] for data in processed_data if data['experiment_id']]))
@@ -815,10 +816,10 @@ def _process_icp_csv(file_content: bytes):
                     summary_parts.append(f"{update_count} updated")
                 
                 summary = " and ".join(summary_parts)
-                st.info(f"**Summary:** {summary} ICP results for {len(experiments)} experiments")
+                st.info(f"**Summary:** {summary} ICP-OES results for {len(experiments)} experiments")
                 
             elif not results and not actual_errors:
-                st.info("ℹ️ No new ICP data to upload.")
+                st.info("ℹ️ No new ICP-OES data to upload.")
             else:
                 st.error("❌ Upload failed due to errors. Please correct the issues and try again.")
                 db.rollback()
@@ -828,6 +829,6 @@ def _process_icp_csv(file_content: bytes):
         st.error(f"Database integrity error: {e.orig}")
     except Exception as e:
         db.rollback()
-        st.error(f"An unexpected error occurred during ICP processing: {e}")
+        st.error(f"An unexpected error occurred during ICP-OES processing: {e}")
     finally:
         db.close()

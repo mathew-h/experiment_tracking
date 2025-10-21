@@ -9,7 +9,7 @@ from .models import (
     # Samples
     SampleInfo, SamplePhotos,
     # Analysis
-    AnalysisFiles, ExternalAnalysis, XRDAnalysis, ElementalAnalysis, PXRFReading,
+    AnalysisFiles, ExternalAnalysis, XRDAnalysis, PXRFReading, Analyte, ElementalAnalysis,
     # Enums
     ExperimentStatus, ExperimentType, FeedstockType, ComponentType,
     AnalysisType, AmmoniumQuantMethod, TitrationType, CharacterizationStatus,
@@ -34,7 +34,7 @@ __all__ = [
     # Samples
     'SampleInfo', 'SamplePhotos',
     # Analysis
-    'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'ElementalAnalysis', 'PXRFReading',
+    'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'PXRFReading', 'Analyte', 'ElementalAnalysis',
     # Chemicals
     'Compound', 'ChemicalAdditive',
     # Enums

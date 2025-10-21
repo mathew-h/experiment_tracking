@@ -1,11 +1,12 @@
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session, attributes
-from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive
+from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive, ElementalAnalysis
+from .database import engine
 
 def update_sample_characterized_status(session: Session, sample_id: str):
     """
     Updates the 'characterized' status of a SampleInfo record based on
-    the existence of 'XRD' or 'Elemental' analyses. This should be called
+    the existence of XRD analyses or titration (elemental) data. This should be called
     within a 'before_flush' event.
     """
     if not sample_id:
@@ -29,10 +30,27 @@ def update_sample_characterized_status(session: Session, sample_id: str):
         instance for instance in all_instances if instance not in session.deleted
     ]
 
-    # Determine if any of the final instances are of the characterizing types
-    is_characterized = any(
-        instance.analysis_type in ['XRD', 'Elemental'] for instance in final_instances
+    # XRD via ExternalAnalysis entries
+    has_xrd = any(instance.analysis_type == 'XRD' for instance in final_instances)
+
+    # Titration/elemental data via ElementalAnalysis normalized table
+    # Start with DB state
+    titration_instances = (
+        session.query(ElementalAnalysis)
+        .filter(ElementalAnalysis.sample_id == sample_id)
+        .all()
     )
+    # Remove any that are being deleted this flush
+    titration_final = [ea for ea in titration_instances if ea not in session.deleted]
+    # Include any new ones not yet persisted
+    for obj in session.new:
+        if isinstance(obj, ElementalAnalysis) and obj.sample_id == sample_id:
+            if obj not in titration_final:
+                titration_final.append(obj)
+
+    has_titration = len(titration_final) > 0
+
+    is_characterized = has_xrd or has_titration
 
     sample_info = session.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
 
@@ -46,7 +64,7 @@ def before_flush_handler(session, flush_context, instances):
     """
     samples_to_update = set()
 
-    # Collect sample_ids from new, modified, and deleted ExternalAnalysis objects
+    # Collect sample_ids from new, modified, and deleted ExternalAnalysis and ElementalAnalysis objects
     for obj in session.new.union(session.dirty):
         if isinstance(obj, ExternalAnalysis):
             samples_to_update.add(obj.sample_id)
@@ -54,15 +72,42 @@ def before_flush_handler(session, flush_context, instances):
             history = attributes.get_history(obj, 'sample_id')
             if history.has_changes() and history.deleted:
                 samples_to_update.add(history.deleted[0])
+        if isinstance(obj, ElementalAnalysis):
+            samples_to_update.add(obj.sample_id)
+            history = attributes.get_history(obj, 'sample_id')
+            if history.has_changes() and history.deleted:
+                samples_to_update.add(history.deleted[0])
 
     for obj in session.deleted:
         if isinstance(obj, ExternalAnalysis):
+            samples_to_update.add(obj.sample_id)
+        if isinstance(obj, ElementalAnalysis):
             samples_to_update.add(obj.sample_id)
 
     # Process all collected sample_ids
     for sample_id in samples_to_update:
         if sample_id:
             update_sample_characterized_status(session, sample_id)
+
+# Ensure additives summary view exists (SQLite) at import time
+try:
+    with engine.connect() as conn:
+        conn.execute(text(
+            """
+            CREATE VIEW IF NOT EXISTS v_experiment_additives_summary AS
+            SELECT e.experiment_id AS experiment_id,
+                   GROUP_CONCAT(c.name || ' ' || CAST(a.amount AS TEXT) || ' ' || a.unit, '; ') AS additives_summary
+            FROM chemical_additives a
+            JOIN experimental_conditions ec ON ec.id = a.experiment_id
+            JOIN experiments e ON e.id = ec.experiment_fk
+            JOIN compounds c ON c.id = a.compound_id
+            GROUP BY e.experiment_id;
+            """
+        ))
+        conn.commit()
+except Exception:
+    # Safe to ignore at import; view creation isn't critical at this moment
+    pass
 
 @event.listens_for(ChemicalAdditive, 'before_insert')
 @event.listens_for(ChemicalAdditive, 'before_update')
