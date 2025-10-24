@@ -51,6 +51,9 @@ PRESSURE_UNITS = [e.value for e in PressureUnit]
 PXRF_ELEMENT_COLUMNS = ["Fe", "Mg", "Si", "Ni", "Cu", "Mo", "Co", "Al"]
 PXRF_REQUIRED_COLUMNS = set(PXRF_ELEMENT_COLUMNS) | {'Reading No'}
 
+# Backward-compatibility alias for tests expecting ELEMENT_COLUMNS
+ELEMENT_COLUMNS = PXRF_ELEMENT_COLUMNS
+
 # Configuration for rock sample form fields
 ROCK_SAMPLE_CONFIG = {
     'sample_id': {
@@ -517,6 +520,17 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'readonly': True,
         'help': "Calculated micrograms of H₂ in the sampled gas."
+    },
+    'h2_grams_per_ton_yield': {
+        'label': "H₂ Yield (g/ton rock)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.001,
+        'format': "%.3f",
+        'required': False,
+        'readonly': True,
+        'help': "Calculated hydrogen yield normalized to rock mass (g per metric ton)."
     },
     'final_nitrate_concentration': {
         'label': "Final Nitrate Concentration (mM)",

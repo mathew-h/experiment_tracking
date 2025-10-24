@@ -17,8 +17,7 @@ from backend.services.icp_service import ICPService
 from sqlalchemy.exc import IntegrityError
 
 EXPERIMENTAL_RESULTS_REQUIRED_COLS = {
-    "experiment_id", "time_post_reaction", "description",
-    "solution_ammonium_concentration"
+    "experiment_id", "time_post_reaction", "description"
 }
 
 def render_bulk_uploads_page():
@@ -91,6 +90,13 @@ def handle_xrd_upload():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         template_df.to_excel(writer, index=False, sheet_name='xrd')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'xrd')
+        except Exception:
+            pass
     buf.seek(0)
     st.download_button(
         label="Download XRD Template",
@@ -328,6 +334,13 @@ def handle_rock_samples_upload():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         template_df.to_excel(writer, index=False, sheet_name='samples')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'samples')
+        except Exception:
+            pass
     buf.seek(0)
     st.download_button(
         label="Download Rock Inventory Template",
@@ -385,24 +398,73 @@ def handle_actlabs_titration_upload():
     if not uploaded:
         return
 
-    db = SessionLocal()
-    try:
-        created, updated, skipped, errors = ActlabsRockTitrationService.import_excel(db, uploaded.read())
-        if errors:
-            db.rollback()
-            st.error("Upload encountered issues; no changes were applied.")
-            for msg in errors[:50]:
-                st.error(msg)
-            if len(errors) > 50:
-                st.info(f"...and {len(errors)-50} more errors")
+    # Read file once and reuse for diagnostics and import
+    file_bytes = uploaded.read()
+
+    # Diagnostics preview
+    with st.spinner("Analyzing file structure..."):
+        diags, warns = ActlabsRockTitrationService.diagnose(file_bytes)
+
+    if warns:
+        st.subheader("⚠️ Detected Issues / Warnings")
+        for w in warns:
+            st.warning(w)
+
+    if diags:
+        st.subheader("🧭 Detected Layout")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Read mode", str(diags.get("read_mode", "?")))
+        with col2:
+            shp = diags.get("shape") or (0, 0)
+            st.metric("Shape (rows, cols)", f"{shp[0]}, {shp[1]}")
+        with col3:
+            st.metric("Data start row (0-based)", str(diags.get("data_start_row", "?")))
+
+        st.caption(f"Sample ID column index: {diags.get('sample_id_col', '?')}")
+
+        analytes = diags.get("analytes", [])
+        if analytes:
+            st.write("Analytes detected (last header occurrence wins):")
+            st.dataframe(pd.DataFrame(analytes))
         else:
-            db.commit()
-            st.success(f"Imported ActLabs titration results — created: {created}, updated: {updated}, skipped rows: {skipped}")
-    except Exception as e:
-        db.rollback()
-        st.error(f"Unexpected error during ACTLABS upload: {e}")
-    finally:
-        db.close()
+            st.info("No analyte headers detected.")
+
+        sample_preview = diags.get("sample_id_preview", [])
+        if sample_preview:
+            st.write("Sample ID preview:")
+            st.dataframe(pd.DataFrame({"sample_id": sample_preview}))
+        else:
+            st.info("No sample IDs detected in data preview.")
+
+        value_quality = diags.get("analyte_value_quality", [])
+        if value_quality:
+            st.write("Value quality check (first rows):")
+            st.dataframe(pd.DataFrame(value_quality))
+
+    can_import = bool(diags) and bool(diags.get("analytes")) and bool(diags.get("sample_id_preview"))
+    if not can_import:
+        st.info("Import disabled until at least one analyte and one sample ID are detected.")
+
+    if st.button("Import Parsed Data", disabled=not can_import):
+        db = SessionLocal()
+        try:
+            created, updated, skipped, errors = ActlabsRockTitrationService.import_excel(db, file_bytes)
+            if errors:
+                db.rollback()
+                st.error("Upload encountered issues; no changes were applied.")
+                for msg in errors[:50]:
+                    st.error(msg)
+                if len(errors) > 50:
+                    st.info(f"...and {len(errors)-50} more errors")
+            else:
+                db.commit()
+                st.success(f"Imported ActLabs titration results — created: {created}, updated: {updated}, skipped rows: {skipped}")
+        except Exception as e:
+            db.rollback()
+            st.error(f"Unexpected error during ACTLABS upload: {e}")
+        finally:
+            db.close()
 
 ## analyte upload removed: analytes are created during ACTLABS titration upload
 
@@ -433,6 +495,13 @@ def handle_elemental_composition_upload():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         template_df.to_excel(writer, index=False, sheet_name='composition')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'composition')
+        except Exception:
+            pass
     buf.seek(0)
     st.download_button(
         label="Download Composition Template",
@@ -516,6 +585,13 @@ def upload_chemical_inventory():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         template_df.to_excel(writer, index=False, sheet_name='compounds')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'compounds')
+        except Exception:
+            pass
     buf.seek(0)
     st.download_button(
         label="Download Compound Template",
@@ -587,6 +663,13 @@ def experiments_additives():
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
         template_df.to_excel(writer, index=False, sheet_name='experiment_additives')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'experiment_additives')
+        except Exception:
+            pass
     buf.seek(0)
     st.download_button(
         label="Download Additives Template",
@@ -673,6 +756,13 @@ def handle_solution_chemistry_upload():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         template_df.to_excel(writer, index=False, sheet_name='Solution Chemistry')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'Solution Chemistry')
+        except Exception:
+            pass
     output.seek(0)
 
     st.download_button(
@@ -729,17 +819,48 @@ def handle_icp_upload():
     uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
     if uploaded_file:
-        try:
-            # Read file content as bytes for ICPService
-            file_content = uploaded_file.read()
-            uploaded_file.seek(0)  # Reset file pointer for potential re-reading
+        # Show CSV analysis and allow manual header row specification
+        file_content = uploaded_file.read()
+        uploaded_file.seek(0)  # Reset for potential re-reading
+        
+        # Quick analysis
+        diagnosis = ICPService.diagnose_csv_structure(file_content)
+        
+        if 'error' not in diagnosis:
+            st.subheader("📋 CSV File Analysis")
+            st.write(f"**Total lines:** {diagnosis['total_lines']}")
             
-            _process_icp_csv(file_content)
+            # Show header candidates
+            header_candidates = [line for line in diagnosis['line_analysis'] 
+                               if line['has_icp_keywords'] and 5 <= line['column_count'] <= 50]
+            
+            if header_candidates:
+                st.write("**Detected header candidates:**")
+                for candidate in header_candidates[:5]:  # Show top 5 candidates
+                    st.write(f"Line {candidate['line_number']}: {candidate['column_count']} columns")
+                    st.caption(f"Preview: {candidate['preview']}")
+            
+            # Manual override option
+            if len(header_candidates) > 1:
+                st.warning("Multiple header candidates detected. You can manually specify the header row if needed.")
+                manual_header = st.number_input(
+                    "Manual header row (0-based, leave 0 for auto-detection):", 
+                    min_value=0, 
+                    max_value=min(20, diagnosis['total_lines']-1), 
+                    value=0
+                )
+            else:
+                manual_header = 0
+        else:
+            manual_header = 0
+        
+        try:
+            _process_icp_csv(file_content, manual_header)
             
         except Exception as e:
             st.error(f"An error occurred processing the CSV file: {e}")
 
-def _process_icp_csv(file_content: bytes):
+def _process_icp_csv(file_content: bytes, manual_header_row: int = 0):
     """
     Processes the ICP-OES CSV file using ICPService for all backend logic.
     """
@@ -747,7 +868,7 @@ def _process_icp_csv(file_content: bytes):
     try:
         # Step 1: Parse and process the ICP file
         st.info("Processing ICP-OES data file...")
-        processed_data, processing_errors = ICPService.parse_and_process_icp_file(file_content)
+        processed_data, processing_errors = ICPService.parse_and_process_icp_file(file_content, manual_header_row)
         
         if processing_errors:
             st.subheader("⚠️ Processing Issues Found")

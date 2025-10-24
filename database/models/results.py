@@ -70,6 +70,8 @@ class ScalarResults(Base):
     # Hydrogen derived outputs (stored as microunits per requirements)
     h2_moles = Column(Float, nullable=True)  # micromoles (μmol)
     h2_mass_g = Column(Float, nullable=True)  # micrograms (μg)
+    # Hydrogen yield normalized by rock mass (g/ton rock)
+    h2_grams_per_ton_yield = Column(Float, nullable=True)
 
     # Relationship back to the main entry using result_id
     result_entry = relationship(
@@ -84,17 +86,24 @@ class ScalarResults(Base):
             self.grams_per_ton_yield = None
             # Still try hydrogen calc which uses only scalar inputs and user-provided pressure
             self.calculate_hydrogen()
+            # Without conditions, cannot compute normalized H2 yield
+            self.h2_grams_per_ton_yield = None
             return
 
         rock_mass = self.result_entry.experiment.conditions.rock_mass
-        water_volume_ml = self.result_entry.experiment.conditions.water_volume
+        # Prefer sampling volume if provided; otherwise use total water volume from conditions
+        liquid_volume_ml = None
+        if self.sampling_volume is not None and self.sampling_volume > 0:
+            liquid_volume_ml = self.sampling_volume
+        else:
+            liquid_volume_ml = self.result_entry.experiment.conditions.water_volume
         
         ammonia_mass_g = None
-        if self.solution_ammonium_concentration is not None and water_volume_ml is not None and water_volume_ml > 0:
+        if self.solution_ammonium_concentration is not None and liquid_volume_ml is not None and liquid_volume_ml > 0:
             # Molar mass of NH4+ is ~18.04 g/mol
             ammonia_mass_g = (
                 (self.solution_ammonium_concentration / 1000) *  # Convert mM to M (mol/L)
-                (water_volume_ml / 1000) *  # Convert mL to L
+                (liquid_volume_ml / 1000) *  # Convert mL to L
                 18.04  # Molar mass of NH4+ (g/mol)
             )
 
@@ -112,6 +121,18 @@ class ScalarResults(Base):
 
         # Hydrogen calculations (PV = nRT at 25°C, pressure required)
         self.calculate_hydrogen()
+
+        # Normalize hydrogen to g/ton yield if rock mass available and hydrogen mass calculated
+        try:
+            if rock_mass is not None and rock_mass > 0 and self.h2_mass_g is not None:
+                # h2_mass_g is stored as micrograms (μg); convert to grams
+                h2_mass_grams = self.h2_mass_g / 1_000_000.0
+                self.h2_grams_per_ton_yield = 1_000_000.0 * (h2_mass_grams / rock_mass)
+            else:
+                self.h2_grams_per_ton_yield = None
+        except Exception:
+            # Defensive: if any unexpected error, null out the derived value
+            self.h2_grams_per_ton_yield = None
 
         # TODO: Calculate ferrous_iron_yield when the calculation method is determined
         # Example: Check if specific inputs for Fe yield are present

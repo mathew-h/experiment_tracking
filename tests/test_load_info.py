@@ -10,7 +10,11 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
 
 from database import Base, SampleInfo, ExternalAnalysis, PXRFReading
-from frontend.config.variable_config import ELEMENT_COLUMNS # Need this for checks
+# Some older tests referenced ELEMENT_COLUMNS; new config uses PXRF_ELEMENT_COLUMNS
+try:
+    from frontend.config.variable_config import ELEMENT_COLUMNS  # legacy name
+except Exception:
+    from frontend.config.variable_config import PXRF_ELEMENT_COLUMNS as ELEMENT_COLUMNS
 # Import the function to test
 from frontend.components.load_info import get_external_analyses
 

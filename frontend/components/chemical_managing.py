@@ -146,7 +146,7 @@ def _serialize_additives_to_rows(db, conditions_id: int) -> List[Dict[str, Any]]
             'compound': id_to_name.get(a.compound_id, ""),
             'amount': float(a.amount) if a.amount is not None else 0.0,
             'unit': a.unit.value if a.unit else _get_amount_unit_options()[0],
-            'order': int(a.addition_order) if a.addition_order is not None else 0,
+            'order': int(a.addition_order) if a.addition_order is not None else None,
             'method': a.addition_method or "",
         }
         for a in additives
@@ -289,7 +289,8 @@ def render_compound_manager(
                     default_order = 0
                     if prefill_row:
                         try:
-                            default_order = int(prefill_row.get('order') or 0)
+                            order_val = prefill_row.get('order')
+                            default_order = int(order_val) if order_val is not None and str(order_val).strip() != '' else 0
                         except Exception:
                             default_order = 0
                     addition_order = st.number_input(
@@ -299,6 +300,7 @@ def render_compound_manager(
                         format="%d",
                         value=default_order,
                         key=f"{key_prefix}_order",
+                        help="Leave as 0 if no specific order is needed"
                     )
 
                 with cols[4]:
@@ -360,7 +362,7 @@ def render_compound_manager(
                         'compound': id_to_name.get(a.compound_id, ""),
                         'amount': float(a.amount) if a.amount is not None else 0.0,
                         'unit': a.unit.value if a.unit else _get_amount_unit_options()[0],
-                        'order': int(a.addition_order) if a.addition_order is not None else 0,
+                        'order': int(a.addition_order) if a.addition_order is not None else None,
                         'method': a.addition_method or "",
                     }
                     for a in existing_additives
@@ -400,10 +402,11 @@ def render_compound_manager(
                             required=True,
                         ),
                         'order': st.column_config.NumberColumn(
-                            "Order",
+                            "Order (optional)",
                             min_value=0,
                             step=1,
                             format="%d",
+                            required=False,
                         ),
                         'method': st.column_config.TextColumn(
                             "Method (optional)",
@@ -454,7 +457,7 @@ def render_compound_manager(
 
                             ord_val = row.get('order')
                             try:
-                                ord_int = int(ord_val) if ord_val is not None else None
+                                ord_int = int(ord_val) if ord_val is not None and str(ord_val).strip() != '' else None
                             except (TypeError, ValueError):
                                 ord_int = None
 
@@ -478,7 +481,7 @@ def render_compound_manager(
                                     'compound': (row.get('compound') or '').strip(),
                                     'amount': float(row.get('amount') or 0.0),
                                     'unit': (row.get('unit') or '').strip() or _get_amount_unit_options()[0],
-                                    'order': int(row.get('order') or 0),
+                                    'order': int(row.get('order')) if row.get('order') is not None and str(row.get('order')).strip() != '' else None,
                                     'method': (row.get('method') or '').strip(),
                                 }
                                 for row in rows

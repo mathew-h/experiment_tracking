@@ -6,10 +6,11 @@ Usage:
     python scripts/run_data_migration.py <migration_name>
 
 Available migrations:
-    - calculate_grams_per_ton_yield_004: Calculate grams_per_ton_yield for all existing ScalarResults
-    - recalculate_yields_002: Recalculate all yield values
-    - recalculate_derived_conditions_001: Recalculate derived experimental conditions
-    - update_catalyst_ppm_rounding_003: Update catalyst PPM rounding
+    - calculate_grams_per_ton_yield_004: Calculate grams_per_ton_yield for all existing ScalarResults (legacy)
+    - recalculate_yields_002: Recalculate all yield values (legacy)
+    - recalculate_derived_conditions_001: Recalculate derived experimental conditions (legacy)
+    - update_catalyst_ppm_rounding_003: Update catalyst PPM rounding (legacy)
+    - recompute_calculated_fields_005: Unified recalculation for conditions, additives, and scalar results
 """
 
 import sys
@@ -56,7 +57,8 @@ def main():
         'recalculate_yields_002', 
         'recalculate_derived_conditions_001',
         'update_catalyst_ppm_rounding_003',
-        'chemical_migration'
+        'chemical_migration',
+        'recompute_calculated_fields_005'
     ]
     
     if migration_name not in available_migrations:

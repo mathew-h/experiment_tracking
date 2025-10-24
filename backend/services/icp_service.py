@@ -11,22 +11,46 @@ class ICPService:
     """Service for handling ICP elemental analysis data operations."""
     
     @staticmethod
-    def parse_csv_file(file_content: bytes) -> pd.DataFrame:
+    def parse_csv_file(file_content: bytes, manual_header_row: int = None) -> pd.DataFrame:
         """
-        Parse CSV file starting from row 3 to skip header information.
+        Parse CSV file with flexible header detection.
+        Automatically detects the header row and data start row.
         
         Args:
             file_content: Raw bytes content of the CSV file
             
         Returns:
-            DataFrame with CSV data starting from row 3
+            DataFrame with CSV data starting from detected header row
         """
         try:
             # Convert bytes to string
             csv_string = file_content.decode('utf-8')
+            lines = csv_string.split('\n')
             
-            # Read CSV starting from row 3 (skip first 2 rows which are headers)
-            df = pd.read_csv(StringIO(csv_string), skiprows=2)
+            # Use manual header row if provided, otherwise auto-detect
+            if manual_header_row is not None and manual_header_row > 0:
+                header_row = manual_header_row
+            else:
+                # Find the header row by looking for common ICP column patterns
+                header_row = None
+                for i, line in enumerate(lines[:20]):  # Check first 20 lines
+                    if any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity']):
+                        # Check if this line has a reasonable number of columns (not too few, not too many)
+                        columns = line.split(',')
+                        if 5 <= len(columns) <= 50:  # Reasonable range for ICP data
+                            header_row = i
+                            break
+                
+                if header_row is None:
+                    # Fallback: try starting from row 3 as before
+                    header_row = 2
+            
+            # Read CSV with detected header row and flexible error handling
+            try:
+                df = pd.read_csv(StringIO(csv_string), skiprows=header_row, on_bad_lines='skip')
+            except TypeError:
+                # Fallback for older pandas versions that don't support on_bad_lines
+                df = pd.read_csv(StringIO(csv_string), skiprows=header_row, error_bad_lines=False, warn_bad_lines=False)
             
             # Clean up any unnamed columns or empty columns
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
@@ -35,7 +59,20 @@ class ICPService:
             return df
             
         except Exception as e:
-            raise ValueError(f"Error parsing CSV file: {str(e)}")
+            # Provide more detailed error information
+            error_msg = f"Error parsing CSV file: {str(e)}"
+            try:
+                # Try to provide context about the file structure
+                csv_string = file_content.decode('utf-8')
+                lines = csv_string.split('\n')
+                error_msg += f"\nFile has {len(lines)} lines."
+                if len(lines) > 0:
+                    error_msg += f" First line has {len(lines[0].split(','))} columns."
+                if len(lines) > 6:
+                    error_msg += f" Line 7 has {len(lines[6].split(','))} columns."
+            except:
+                pass  # Don't let error reporting cause additional errors
+            raise ValueError(error_msg)
     
     @staticmethod
     def extract_sample_info(label: str) -> Dict[str, Any]:
@@ -584,7 +621,51 @@ class ICPService:
         return errors
     
     @staticmethod
-    def parse_and_process_icp_file(file_content: bytes) -> Tuple[List[Dict[str, Any]], List[str]]:
+    def diagnose_csv_structure(file_content: bytes) -> Dict[str, Any]:
+        """
+        Diagnose CSV file structure to help with parsing issues.
+        
+        Args:
+            file_content: Raw bytes content of the CSV file
+            
+        Returns:
+            Dictionary with diagnostic information about the CSV structure
+        """
+        try:
+            csv_string = file_content.decode('utf-8')
+            lines = csv_string.split('\n')
+            
+            diagnosis = {
+                'total_lines': len(lines),
+                'line_analysis': [],
+                'suggested_header_row': None
+            }
+            
+            # Analyze first 20 lines
+            for i, line in enumerate(lines[:20]):
+                if line.strip():  # Skip empty lines
+                    columns = line.split(',')
+                    line_info = {
+                        'line_number': i + 1,
+                        'column_count': len(columns),
+                        'has_icp_keywords': any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity']),
+                        'preview': line[:100] + '...' if len(line) > 100 else line
+                    }
+                    diagnosis['line_analysis'].append(line_info)
+                    
+                    # Suggest header row
+                    if (line_info['has_icp_keywords'] and 
+                        5 <= line_info['column_count'] <= 50 and 
+                        diagnosis['suggested_header_row'] is None):
+                        diagnosis['suggested_header_row'] = i
+            
+            return diagnosis
+            
+        except Exception as e:
+            return {'error': f"Error diagnosing CSV structure: {str(e)}"}
+    
+    @staticmethod
+    def parse_and_process_icp_file(file_content: bytes, manual_header_row: int = 0) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Complete workflow to parse and process ICP CSV file.
         
@@ -605,7 +686,7 @@ class ICPService:
         """
         try:
             # Step 1: Parse CSV file (skip header rows)
-            df = ICPService.parse_csv_file(file_content)
+            df = ICPService.parse_csv_file(file_content, manual_header_row)
             
             if df.empty:
                 return [], ["Parsed CSV file is empty"]

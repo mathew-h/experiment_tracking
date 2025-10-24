@@ -132,6 +132,22 @@ class ActlabsRockTitrationService:
     """Parser and importer for ActLabs rock titration files (Excel or CSV)."""
 
     @staticmethod
+    def _read_table_with_mode(file_bytes: bytes) -> Tuple[pd.DataFrame, Optional[str], Optional[str]]:
+        """Read file and return (df, mode, error).
+        mode is one of {"excel", "csv"} when successful.
+        """
+        try:
+            df = pd.read_excel(io.BytesIO(file_bytes), header=None)
+            return df, "excel", None
+        except Exception:
+            pass
+        try:
+            df = pd.read_csv(io.BytesIO(file_bytes), header=None)
+            return df, "csv", None
+        except Exception as e:
+            return pd.DataFrame(), None, f"Failed to read file as Excel or CSV: {e}"
+
+    @staticmethod
     def _read_table(file_bytes: bytes) -> Tuple[pd.DataFrame, Optional[str]]:
         """Try reading as Excel first, then CSV; always return a headerless table (header=None)."""
         try:
@@ -223,6 +239,102 @@ class ActlabsRockTitrationService:
             return None, sx
 
     @classmethod
+    def diagnose(cls, file_bytes: bytes) -> Tuple[Dict[str, object], List[str]]:
+        """Analyze file structure without touching the database.
+        Returns (diagnostics, warnings).
+        diagnostics keys:
+          - read_mode: "excel"|"csv"
+          - shape: (rows, cols)
+          - sample_id_col: int
+          - data_start_row: int
+          - analytes: List[{symbol, unit, col_index}]
+          - sample_id_preview: List[str]
+          - analyte_value_quality: List[{symbol, numeric, blank, text, inspected_rows}]
+        """
+        diags: Dict[str, object] = {}
+        warnings: List[str] = []
+
+        df_raw, mode, err = cls._read_table_with_mode(file_bytes)
+        if err:
+            return {}, [err]
+        if df_raw.empty:
+            return {}, ["No data found."]
+
+        diags["read_mode"] = mode
+        diags["shape"] = (int(df_raw.shape[0]), int(df_raw.shape[1]))
+
+        try:
+            sample_id_col = cls._detect_sample_id_col(df_raw)
+        except Exception as e:
+            return {}, [f"Failed to detect sample_id column: {e}"]
+        diags["sample_id_col"] = int(sample_id_col)
+        if sample_id_col == 0:
+            warnings.append("Sample ID column auto-defaulted to column 0; header not clearly detected.")
+
+        try:
+            analyte_map = cls._extract_last_analyte_map(df_raw, sample_id_col)
+        except Exception as e:
+            return {}, [f"Failed to parse analyte headers: {e}"]
+        analytes_list = [
+            {"symbol": sym, "unit": unit, "col_index": int(col)}
+            for sym, (col, unit) in analyte_map.items()
+        ]
+        diags["analytes"] = sorted(analytes_list, key=lambda x: x["col_index"]) if analytes_list else []
+        if not analytes_list:
+            warnings.append("No analyte columns detected (rows 3-4). Confirm report layout.")
+
+        try:
+            data_start = cls._find_data_start_index(df_raw)
+        except Exception as e:
+            return {}, [f"Failed to determine data start row: {e}"]
+        diags["data_start_row"] = int(data_start)
+
+        data = df_raw.iloc[data_start:, :].reset_index(drop=True)
+
+        # Preview sample ids
+        sample_ids: List[str] = []
+        preview_rows = min(20, len(data))
+        for i in range(preview_rows):
+            try:
+                sid_raw = data.iat[i, sample_id_col]
+                sid = "" if pd.isna(sid_raw) else str(sid_raw).strip()
+                if sid:
+                    sample_ids.append(sid)
+            except Exception:
+                break
+        diags["sample_id_preview"] = sample_ids[:10]
+        if not diags["sample_id_preview"]:
+            warnings.append("No sample IDs found in the first rows after headers.")
+
+        # Inspect value quality for first N rows
+        quality_rows = min(50, len(data))
+        quality: List[Dict[str, object]] = []
+        for sym, (col_idx, _unit) in analyte_map.items():
+            numeric = blank = text = 0
+            for i in range(quality_rows):
+                if col_idx >= data.shape[1]:
+                    break
+                cell = data.iat[i, col_idx]
+                if pd.isna(cell) or str(cell).strip() == "":
+                    blank += 1
+                    continue
+                vnum, vtxt = cls._coerce_number(cell)
+                if vnum is not None:
+                    numeric += 1
+                else:
+                    text += 1
+            quality.append({
+                "symbol": sym,
+                "numeric": int(numeric),
+                "blank": int(blank),
+                "text": int(text),
+                "inspected_rows": int(quality_rows),
+            })
+        diags["analyte_value_quality"] = quality
+
+        return diags, warnings
+
+    @classmethod
     def import_excel(cls, db: Session, file_bytes: bytes) -> Tuple[int, int, int, List[str]]:
         """
         Import ActLabs Excel to normalized tables.
@@ -241,6 +353,10 @@ class ActlabsRockTitrationService:
 
         sample_id_col = cls._detect_sample_id_col(df_raw)
         symbol_to_col_unit = cls._extract_last_analyte_map(df_raw, sample_id_col)
+
+        # Note: a defaulted sample_id_col (0) is not a fatal error if data imports correctly
+        if not symbol_to_col_unit:
+            errors.append("No analyte columns detected; ensure rows 3-4 contain analyte and unit headers.")
 
         # Data rows typically start after the 'Analysis Method' row
         data_start = cls._find_data_start_index(df_raw)

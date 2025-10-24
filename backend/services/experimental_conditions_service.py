@@ -92,8 +92,24 @@ class ExperimentalConditionsService:
             if hasattr(conditions, key):
                 setattr(conditions, key, value)
 
-        # Recalculate derived fields
+        # Recalculate derived fields on conditions
         conditions.calculate_derived_conditions()
+
+        # Cascade recalculations to additives and scalar results for this experiment
+        try:
+            # Update additives derived values (elemental mass, catalyst %, ppm)
+            for additive in list(getattr(conditions, 'chemical_additives', []) or []):
+                additive.calculate_derived_values()
+
+            # Update scalar results (ammonia yield using sampling/volume; hydrogen yield)
+            experiment = getattr(conditions, 'experiment', None)
+            if experiment is not None:
+                for res in list(getattr(experiment, 'results', []) or []):
+                    if getattr(res, 'scalar_data', None) is not None:
+                        res.scalar_data.calculate_yields()
+        except Exception:
+            # Allow caller to manage transaction; we only ensure calculations attempted
+            pass
 
         db.add(conditions) # Add to session, commit will be handled by caller
         db.flush()

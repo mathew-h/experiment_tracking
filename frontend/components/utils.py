@@ -609,6 +609,23 @@ def backfill_calculated_fields(db: Session):
         db.rollback() # Rollback on error for this section
         # Decide if you want to stop or continue
     
+    # Backfill for ChemicalAdditives derived values (depends on conditions)
+    try:
+        all_conditions = conditions_to_update if 'conditions_to_update' in locals() else db.query(ExperimentalConditions).all()
+        updated_additives_count = 0
+        for conditions in all_conditions:
+            for additive in list(getattr(conditions, 'chemical_additives', []) or []):
+                # Snapshot if needed (not logged per-item to keep output concise)
+                additive.calculate_derived_values()
+                updated_additives_count += 1
+        if updated_additives_count > 0:
+            logger.info(f"Recalculated derived values for {updated_additives_count} chemical additives.")
+        else:
+            logger.info("No chemical additives found for derived value recalculation.")
+    except Exception as e:
+        logger.error(f"Error during ChemicalAdditives backfill: {e}", exc_info=True)
+        db.rollback()
+
     # Backfill for ScalarResults
     try:
         # Eagerly load experiment and conditions to avoid N+1 queries
