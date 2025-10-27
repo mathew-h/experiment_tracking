@@ -16,12 +16,58 @@ class Experiment(Base):
     status = Column(SQLEnum(ExperimentStatus))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Lineage tracking fields
+    base_experiment_id = Column(String, nullable=True, index=True)  # Base experiment ID (e.g., "HPHT_MH_001" for "HPHT_MH_001-2")
+    parent_experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="SET NULL"), nullable=True)  # FK to parent experiment
 
     conditions = relationship("ExperimentalConditions", back_populates="experiment", uselist=False, cascade="all, delete-orphan")
-    notes = relationship("ExperimentNotes", back_populates="experiment", cascade="all, delete-orphan")
+    notes = relationship("ExperimentNotes", back_populates="experiment", cascade="all, delete-orphan", order_by="ExperimentNotes.created_at")
     modifications = relationship("ModificationsLog", back_populates="experiment", cascade="all, delete-orphan")
     results = relationship("ExperimentalResults", back_populates="experiment", foreign_keys="[ExperimentalResults.experiment_fk]", cascade="all, delete-orphan")
     sample_info = relationship("SampleInfo", back_populates="experiments", foreign_keys=[sample_id])
+    
+    # Lineage relationships
+    parent = relationship("Experiment", remote_side=[id], foreign_keys=[parent_experiment_fk], backref="derived_experiments")
+    
+    @property
+    def description(self):
+        """
+        Get the experiment description from the first note.
+        
+        Returns:
+            str: The text of the first note (oldest created), or None if no notes exist.
+        """
+        if self.notes and len(self.notes) > 0:
+            return self.notes[0].note_text
+        return None
+    
+    @description.setter
+    def description(self, value):
+        """
+        Set the experiment description by creating or updating the first note.
+        
+        Args:
+            value (str): The description text to set.
+        """
+        if not value:
+            return
+        
+        if self.notes and len(self.notes) > 0:
+            # Update the first note
+            self.notes[0].note_text = value
+        else:
+            # Create a new note
+            from datetime import datetime
+            note = ExperimentNotes(
+                experiment_id=self.experiment_id,
+                experiment_fk=self.id,
+                note_text=value,
+                created_at=datetime.now()
+            )
+            if not self.notes:
+                self.notes = []
+            self.notes.append(note)
 
 class ExperimentNotes(Base):
     __tablename__ = "experiment_notes"

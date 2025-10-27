@@ -17,7 +17,7 @@ from backend.services.icp_service import ICPService
 from sqlalchemy.exc import IntegrityError
 
 EXPERIMENTAL_RESULTS_REQUIRED_COLS = {
-    "experiment_id", "time_post_reaction", "description"
+    "experiment_id", "description"  # time_post_reaction is now optional
 }
 
 def render_bulk_uploads_page():
@@ -310,6 +310,9 @@ def handle_rock_samples_upload():
         """
         Use the template to add or update rock samples. Columns include `sample_id` (required),
         classification and location fields. Optionally upload photos whose filenames match `sample_id`.
+        
+        **Overwrite Mode:** Set `overwrite` to `True` for a sample to completely replace all existing fields.
+        When `False` or blank, only provided fields are updated (existing fields remain unchanged).
         """
     )
 
@@ -325,10 +328,11 @@ def handle_rock_samples_upload():
             "longitude": -104.9903,
             "description": "Dark fine-grained rock",
             "pxrf_reading_no": "12345A",
+            "overwrite": False,
         }
     ], columns=[
         "sample_id", "rock_classification", "state", "country", "locality",
-        "latitude", "longitude", "description", "pxrf_reading_no"
+        "latitude", "longitude", "description", "pxrf_reading_no", "overwrite"
     ])
 
     buf = io.BytesIO()
@@ -724,7 +728,7 @@ def handle_solution_chemistry_upload():
     # --- Template Generation ---
     template_data = {
         "experiment_id": ["Serum_MH_025"],
-        "time_post_reaction": [1],
+        "time_post_reaction": [1],  # Optional field
         "description": ["Sampled after acid addition"],
         "ammonium_quant_method": ["NMR"],
         "solution_ammonium_concentration": [10.5],

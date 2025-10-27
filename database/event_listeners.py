@@ -1,7 +1,8 @@
 from sqlalchemy import event, text
 from sqlalchemy.orm import Session, attributes
-from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive, ElementalAnalysis
+from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive, ElementalAnalysis, Experiment
 from .database import engine
+from .lineage_utils import update_experiment_lineage, update_orphaned_derivations
 
 def update_sample_characterized_status(session: Session, sample_id: str):
     """
@@ -117,4 +118,36 @@ def calculate_additive_derived_values(mapper, connection, target):
     This includes mass conversions, molar calculations, concentrations, and catalyst-specific
     values (elemental_metal_mass, catalyst_percentage, catalyst_ppm).
     """
-    target.calculate_derived_values() 
+    target.calculate_derived_values()
+
+@event.listens_for(Session, 'before_flush')
+def update_experiment_lineage_on_flush(session, flush_context, instances):
+    """
+    Automatically update experiment lineage fields before flushing.
+    
+    This listener:
+    1. Parses experiment IDs for new experiments
+    2. Sets base_experiment_id and parent_experiment_fk
+    3. Updates orphaned derivations when a base experiment is created
+    """
+    from .models import Experiment
+    
+    # Track base experiments being inserted to update their derivations
+    new_base_experiments = []
+    
+    # Process new experiments
+    for obj in session.new:
+        if isinstance(obj, Experiment) and obj.experiment_id:
+            # Update lineage for this experiment
+            update_experiment_lineage(session, obj)
+            
+            # Track if this is a potential base experiment (no derivation number)
+            from .lineage_utils import parse_experiment_id
+            _, derivation_num = parse_experiment_id(obj.experiment_id)
+            if derivation_num is None:
+                new_base_experiments.append(obj.experiment_id)
+    
+    # After processing new experiments, update any orphaned derivations
+    # This handles the case where a derivation was created before its base
+    for base_exp_id in new_base_experiments:
+        update_orphaned_derivations(session, base_exp_id) 

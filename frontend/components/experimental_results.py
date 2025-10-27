@@ -153,8 +153,6 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
 
             # Create the main result entry
             result = ExperimentalResults(
-                experiment_id=parent_experiment.experiment_id, # String ID
-                experiment=parent_experiment, # Relationship
                 experiment_fk=parent_experiment.id, # Foreign Key
                 time_post_reaction=time_post_reaction,
                 description=result_description # Set the description

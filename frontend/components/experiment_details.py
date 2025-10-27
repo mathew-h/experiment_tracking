@@ -1,20 +1,23 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import json
+import os
 from sqlalchemy import orm
 from database import SessionLocal, SampleInfo, ExperimentNotes, Experiment, ExperimentStatus, ExperimentalConditions, ChemicalAdditive, Compound
 from frontend.config.variable_config import (
     FIELD_CONFIG,
     EXPERIMENT_TYPES,
     EXPERIMENT_STATUSES,
-    FEEDSTOCK_TYPES
+    FEEDSTOCK_TYPES,
+    PXRF_ELEMENT_COLUMNS
 )
 from frontend.components.utils import (
     split_conditions_for_display,
     get_condition_display_dict,
     format_value
 )
-from frontend.components.load_info import get_sample_info
+from frontend.components.load_info import get_sample_info, get_external_analyses
 
 from frontend.components.edit_experiment import (
     save_note,

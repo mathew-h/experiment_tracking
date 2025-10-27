@@ -90,10 +90,8 @@ def test_experiment(test_db: Session) -> Experiment:
 def test_experimental_result(test_db: Session, test_experiment: Experiment) -> ExperimentalResults:
     """Create a base ExperimentalResults entry linked to the test experiment."""
     result_entry = ExperimentalResults(
-        experiment_id=test_experiment.experiment_id,
         experiment_fk=test_experiment.id,
         time_post_reaction=1.0, # 1 hour
-        result_type=ResultType.NMR, # Assign a default type, can be overridden
         description="Test result entry"
     )
     test_db.add(result_entry)

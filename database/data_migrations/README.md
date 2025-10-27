@@ -4,6 +4,21 @@ This directory contains data migration scripts for updating existing data in the
 
 ## Available Migrations
 
+### establish_experiment_lineage_006.py
+**Purpose**: Establish lineage relationships for experiments with derivations (e.g., "HPHT_MH_001-2" derives from "HPHT_MH_001").
+
+**What it does**:
+- Parses all experiment IDs to identify derivations (experiments ending with "-N" where N is a number)
+- Sets the `base_experiment_id` field for all derivations
+- Establishes `parent_experiment_fk` relationships to link derivations to their base experiments
+- Handles orphaned derivations (where the base experiment doesn't exist yet)
+
+**When to run**: After adding the lineage tracking columns to the Experiment model. This establishes relationships for all existing experiments.
+
+**Example**: For experiment "HPHT_MH_001-2":
+- `base_experiment_id` will be set to "HPHT_MH_001"
+- `parent_experiment_fk` will link to the "HPHT_MH_001" experiment (if it exists)
+
 ### calculate_grams_per_ton_yield_004.py
 **Purpose**: Calculate `grams_per_ton_yield` for all existing ScalarResults entries.
 

@@ -8,11 +8,10 @@ class ExperimentalResults(Base):
     __tablename__ = "experimental_results"
 
     id = Column(Integer, primary_key=True, index=True)
-    experiment_id = Column(String, nullable=False, index=True)
     experiment_fk = Column(Integer,
                            ForeignKey("experiments.id", ondelete="CASCADE"),
-                           nullable=False)
-    time_post_reaction = Column(Float, nullable=False, index=True) # Time in days post-reaction start
+                           nullable=False, index=True)
+    time_post_reaction = Column(Float, nullable=True, index=True) # Time in days post-reaction start
     description = Column(Text, nullable=False) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -37,10 +36,7 @@ class ExperimentalResults(Base):
         cascade="all, delete-orphan"
     )
 
-    # Add a unique constraint on experiment_fk and time_post_reaction
-    __table_args__ = (
-        UniqueConstraint('experiment_fk', 'time_post_reaction', name='uix_experiment_time'),
-    )
+    # No unique constraints - allow multiple results per experiment/time combination
 
 class ScalarResults(Base):
     __tablename__ = "scalar_results"

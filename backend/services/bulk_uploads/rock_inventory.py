@@ -66,7 +66,11 @@ class RockInventoryService:
             "longitude": "longitude",
             "description": "description",
             "characterized": "characterized",
+            "overwrite": "overwrite",  # Special flag for full replacement mode
         }
+
+        # Track samples in this batch by normalized ID to prevent duplicates
+        seen_samples = {}
 
         for idx, row in df.iterrows():
             try:
@@ -75,29 +79,51 @@ class RockInventoryService:
                     skipped += 1
                     continue
 
-                # Find existing or create new
                 # Normalize sample_id for matching: ignore hyphens/underscores/spaces, case-insensitive
                 sid_norm = ''.join(ch for ch in sample_id.lower() if ch not in ['-', '_', ' '])
-                sample = db.query(SampleInfo).filter(
-                    func.lower(
-                        func.replace(
+                
+                # Check if we've already processed this sample in THIS batch
+                if sid_norm in seen_samples:
+                    sample = seen_samples[sid_norm]
+                    is_new = False
+                else:
+                    # Find existing in database or create new
+                    sample = db.query(SampleInfo).filter(
+                        func.lower(
                             func.replace(
-                                func.replace(SampleInfo.sample_id, '-', ''),
-                                '_', ''
-                            ),
-                            ' ', ''
-                        )
-                    ) == sid_norm
-                ).first()
-                is_new = False
-                if not sample:
-                    # Use original sample_id string for storage
-                    sample = SampleInfo(sample_id=sample_id)
-                    db.add(sample)
-                    is_new = True
+                                func.replace(
+                                    func.replace(SampleInfo.sample_id, '-', ''),
+                                    '_', ''
+                                ),
+                                ' ', ''
+                            )
+                        ) == sid_norm
+                    ).first()
+                    is_new = False
+                    if not sample:
+                        # Use original sample_id string for storage
+                        sample = SampleInfo(sample_id=sample_id)
+                        db.add(sample)
+                        is_new = True
+                    # Track this sample for the rest of the batch
+                    seen_samples[sid_norm] = sample
+
+                # Check overwrite mode
+                overwrite_mode = False
+                if 'overwrite' in df.columns:
+                    overwrite_val = RockInventoryService._parse_bool(row.get('overwrite'))
+                    overwrite_mode = overwrite_val is True
+
+                # If overwrite mode and existing sample, clear all optional fields first
+                if overwrite_mode and not is_new:
+                    for attr in ["rock_classification", "state", "country", "locality", 
+                                 "latitude", "longitude", "description", "characterized"]:
+                        setattr(sample, attr, None)
 
                 # Update fields if present
                 for col, attr in field_map.items():
+                    if col == "overwrite":
+                        continue  # Skip the overwrite flag itself
                     if col in df.columns:
                         val = row.get(col)
                         if attr in {"latitude", "longitude"}:

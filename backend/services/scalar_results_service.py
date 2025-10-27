@@ -106,10 +106,7 @@ class ScalarResultsService:
                     errors.append(f"Row {index + 2}: Missing experiment_id.")
                     continue
                 
-                # Validate required fields
-                if not row_data.get('time_post_reaction'):
-                    errors.append(f"Row {index + 2}: Missing time_post_reaction.")
-                    continue
+                # time_post_reaction is now optional - no validation needed
                     
                 if not row_data.get('description'):
                     errors.append(f"Row {index + 2}: Missing description.")
@@ -158,40 +155,38 @@ class ScalarResultsService:
     def _find_or_create_experimental_result(
         db: Session, 
         experiment: Experiment, 
-        time_post_reaction: float, 
+        time_post_reaction: float = None, 
         description: str = None
     ) -> ExperimentalResults:
         """
-        Find existing ExperimentalResults or create new one.
-        Core logic for unique result tracking improvements.
+        Create new ExperimentalResults entry.
+        With the removal of unique constraints, we always create new entries.
         
         Args:
             db: Database session
             experiment: Experiment object
-            time_post_reaction: Time point in days
+            time_post_reaction: Time point in days (optional)
             description: Optional description
             
         Returns:
-            ExperimentalResults object (existing or new)
+            ExperimentalResults object (new)
         """
-        existing_result = db.query(ExperimentalResults).filter_by(
-            experiment_fk=experiment.id,
-            time_post_reaction=time_post_reaction
-        ).first()
+        # Create new ExperimentalResults - no unique constraint means we can always create new
+        description_text = description
+        if not description_text:
+            if time_post_reaction is not None:
+                description_text = f"Analysis results for Day {time_post_reaction}"
+            else:
+                description_text = "Analysis results"
         
-        if existing_result:
-            return existing_result
-        else:
-            # Create new ExperimentalResults
-            new_result = ExperimentalResults(
-                experiment_id=experiment.experiment_id,
-                experiment_fk=experiment.id,
-                time_post_reaction=time_post_reaction,
-                description=description or f"Analysis results for Day {time_post_reaction}"
-            )
-            db.add(new_result)
-            db.flush()  # Get ID assigned
-            return new_result
+        new_result = ExperimentalResults(
+            experiment_fk=experiment.id,
+            time_post_reaction=time_post_reaction,
+            description=description_text
+        )
+        db.add(new_result)
+        db.flush()  # Get ID assigned
+        return new_result
     
     @staticmethod
     def get_scalar_results_for_experiment(db: Session, experiment_id: str) -> List[ScalarResults]:

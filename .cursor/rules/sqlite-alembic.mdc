@@ -1,0 +1,397 @@
+---
+alwaysApply: false
+description: SQLite-compatible Alembic migration guidelines
+---
+
+# SQLite-Compatible Alembic Migrations
+
+## Critical SQLite Limitations
+
+### 1. ALTER COLUMN Not Supported
+SQLite does NOT support:
+- `ALTER COLUMN` for type changes (including Enum conversions)
+- `ALTER COLUMN` to change nullability
+- `ALTER COLUMN` to change defaults
+
+**Solution:** Use batch mode to recreate the table, or skip type conversions for SQLite (Enums work as VARCHAR at the DB level).
+
+### 2. Foreign Key Constraints on Existing Tables
+SQLite does NOT support adding foreign key constraints to existing tables with `ALTER TABLE`.
+
+**Solutions:**
+- Use batch mode (recreates table)
+- **OR** Skip the FK constraint entirely (SQLAlchemy handles relationships at the application level)
+- For self-referential FKs, always skip the constraint (see issue #3)
+
+### 2.1. Constraint Operations (DROP/CREATE)
+SQLite does NOT support direct constraint operations (`drop_constraint`, `create_constraint`) outside of batch mode.
+
+**Error:** `NotImplementedError: No support for ALTER of constraints in SQLite dialect`
+
+**Solutions:**
+- **ALWAYS use batch mode** for any constraint operations:
+  ```python
+  # ❌ BAD - Will fail in SQLite
+  op.drop_constraint('constraint_name', 'table_name', type_='unique')
+  op.create_unique_constraint('constraint_name', 'table_name', ['col1', 'col2'])
+  
+  # ✅ GOOD - Use batch mode
+  with op.batch_alter_table('table_name', schema=None) as batch_op:
+      batch_op.drop_constraint('constraint_name', type_='unique')
+      batch_op.create_unique_constraint('constraint_name', ['col1', 'col2'])
+  ```
+- **Index operations** can be done outside batch mode:
+  ```python
+  # ✅ GOOD - Index operations work outside batch mode
+  op.drop_index('index_name', table_name='table_name')
+  op.create_index('index_name', 'table_name', ['column'], unique=False)
+  ```
+
+### 3. Failed Batch Mode Leaves Temporary Tables
+When a batch mode migration fails mid-execution, SQLite leaves behind a temporary table (e.g., `_alembic_tmp_tablename`). Re-running the migration without cleanup will fail.
+
+**Error:** `sqlite3.OperationalError: table _alembic_tmp_tablename already exists`
+
+**Solution:** **Clean up temp tables at the start of migrations**:
+```python
+def upgrade() -> None:
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    all_tables = inspector.get_table_names()
+    
+    # CRITICAL: Clean up leftover temp tables from failed migrations
+    temp_table = '_alembic_tmp_tablename'
+    if temp_table in all_tables:
+        op.drop_table(temp_table)
+    
+    # Now proceed with actual migration...
+    with op.batch_alter_table('tablename', schema=None) as batch_op:
+        # ... operations ...
+```
+
+**Why this happens:** Batch mode creates a temporary table, copies data, then swaps tables. If any step fails, the temp table remains.
+
+### 4. Batch Mode Tries to Recreate All Indexes
+When using batch mode, SQLite recreates the table and attempts to recreate ALL indexes from the original table. If you're dropping a column that has an index, the index recreation will fail.
+
+**Error:** `sqlite3.OperationalError: no such column: column_name` when creating index
+
+**Solution:** **Drop indexes on columns BEFORE entering batch mode**:
+```python
+# ❌ BAD - Index drop after batch mode fails
+with op.batch_alter_table('table_name', schema=None) as batch_op:
+    batch_op.drop_column('old_column')  # Has an index
+
+op.drop_index('ix_table_old_column', table_name='table_name')  # Too late!
+
+# ✅ GOOD - Drop index BEFORE batch mode
+op.drop_index('ix_table_old_column', table_name='table_name')  # Drop first!
+
+with op.batch_alter_table('table_name', schema=None) as batch_op:
+    batch_op.drop_column('old_column')
+```
+
+**Rule:** When dropping columns in batch mode:
+1. **First:** Drop any indexes on that column (outside batch mode)
+2. **Then:** Enter batch mode and drop the column
+3. **Last:** Create new indexes if needed (outside batch mode)
+
+### 4. Self-Referential Foreign Keys Cause Circular Dependencies
+When adding a self-referential FK (e.g., `parent_experiment_fk` references `experiments.id`) in batch mode, SQLAlchemy's topological sort fails with `CircularDependencyError`.
+
+**Solution:** **DO NOT** add self-referential FK constraints in migrations. Define the relationship in the model only.
+
+```python
+# ❌ BAD - Causes CircularDependencyError
+with op.batch_alter_table('experiments') as batch_op:
+    batch_op.add_column(sa.Column('parent_fk', sa.Integer()))
+    batch_op.create_foreign_key('fk_parent', 'experiments', ['parent_fk'], ['id'])
+
+# ✅ GOOD - Model defines relationship, no DB constraint needed
+op.add_column('experiments', sa.Column('parent_fk', sa.Integer(), nullable=True))
+# FK relationship handled by SQLAlchemy ORM via model definition
+```
+
+## Auto-Generated Migration Cleanup
+
+When you run `alembic revision --autogenerate`, Alembic often includes **unrelated changes**. Always clean up:
+
+### Common Issues in Auto-Generated Migrations:
+1. **Unrelated enum conversions** - Remove `alter_column()` calls for enum types
+2. **Unrelated table drops** - Remove `drop_table()` for temp tables
+3. **Unrelated nullable changes** - Remove if not part of your actual changes
+4. **Mixed changes** - Keep only changes related to your feature
+
+### Cleanup Process:
+```python
+# Auto-generated migration might include:
+def upgrade():
+    op.drop_table('some_temp_table')  # ❌ REMOVE - unrelated
+    op.alter_column('other_table', 'status', type_=Enum(...))  # ❌ REMOVE - unrelated
+    op.add_column('my_table', sa.Column('new_field', ...))  # ✅ KEEP - your change
+    
+# After cleanup:
+def upgrade():
+    op.add_column('my_table', sa.Column('new_field', ...))  # ✅ KEEP only your changes
+```
+
+## Making Migrations Idempotent
+
+**Always make migrations idempotent** (safe to run multiple times). Failed migrations can leave the DB in a partial state.
+
+### Pattern for Idempotent Migrations:
+
+```python
+def upgrade() -> None:
+    """Upgrade schema - SQLite compatible and idempotent."""
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('table_name')]
+    indexes = [idx['name'] for idx in inspector.get_indexes('table_name')]
+    
+    # Add column only if it doesn't exist
+    if 'new_column' not in columns:
+        op.add_column('table_name', sa.Column('new_column', sa.String(), nullable=True))
+    
+    # Create index only if it doesn't exist
+    if 'ix_table_new_column' not in indexes:
+        op.create_index('ix_table_new_column', 'table_name', ['new_column'], unique=False)
+
+def downgrade() -> None:
+    """Downgrade schema - SQLite compatible and idempotent."""
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('table_name')]
+    indexes = [idx['name'] for idx in inspector.get_indexes('table_name')]
+    
+    # Drop only if exists
+    if 'ix_table_new_column' in indexes:
+        op.drop_index('ix_table_new_column', table_name='table_name')
+    
+    if 'new_column' in columns:
+        op.drop_column('table_name', 'new_column')
+```
+
+## When to Use Batch Mode
+
+Use `op.batch_alter_table()` when you need to:
+- Drop columns (SQLite limitation)
+- Rename columns
+- Change column types
+- Modify multiple columns at once
+- **Drop or create constraints** (unique, foreign key, check constraints)
+- **Drop columns** (SQLite limitation)
+
+**DO NOT use batch mode for:**
+- Adding simple columns (direct `op.add_column()` is fine)
+- Creating indexes (direct `op.create_index()` is fine)
+- **Self-referential foreign keys** (causes circular dependency - skip FK entirely)
+
+### Batch Mode Example:
+
+```python
+# For complex table modifications with proper order
+from alembic import context
+from sqlalchemy import inspect
+
+conn = context.get_context().bind
+inspector = inspect(conn)
+all_tables = inspector.get_table_names()
+
+# 0. CRITICAL: Clean up temp tables from failed migrations (always do this first!)
+temp_table = '_alembic_tmp_table_name'
+if temp_table in all_tables:
+    op.drop_table(temp_table)
+
+# 1. Drop indexes BEFORE batch mode (if dropping columns with indexes)
+op.drop_index('ix_table_old_col', table_name='table_name')
+
+# 2. Use batch mode for constraints and column operations
+with op.batch_alter_table('table_name', schema=None) as batch_op:
+    batch_op.drop_constraint('some_constraint', type_='unique')
+    batch_op.add_column(sa.Column('new_col', sa.String()))
+    batch_op.drop_column('old_col')
+
+# 3. Create new indexes AFTER batch mode
+op.create_index('ix_table_new_col', 'table_name', ['new_col'], unique=False)
+```
+
+## Recommended Migration Pattern for New Columns
+
+```python
+def upgrade() -> None:
+    """Add lineage tracking columns - SQLite compatible and idempotent."""
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('experiments')]
+    indexes = [idx['name'] for idx in inspector.get_indexes('experiments')]
+    
+    # Add columns (skip FK constraints for self-referential relationships)
+    if 'base_experiment_id' not in columns:
+        op.add_column('experiments', sa.Column('base_experiment_id', sa.String(), nullable=True))
+    
+    if 'parent_experiment_fk' not in columns:
+        op.add_column('experiments', sa.Column('parent_experiment_fk', sa.Integer(), nullable=True))
+    
+    # Add index
+    if 'ix_experiments_base_experiment_id' not in indexes:
+        op.create_index('ix_experiments_base_experiment_id', 'experiments', ['base_experiment_id'], unique=False)
+    
+    # Note: Self-referential FK relationship is defined in the model, not as DB constraint
+```
+
+## Common Errors and Solutions
+
+### Error: "NotImplementedError: No support for ALTER of constraints in SQLite dialect"
+**Cause:** Trying to drop/create constraints outside batch mode.
+**Solution:** Use batch mode for all constraint operations:
+```python
+with op.batch_alter_table('table_name', schema=None) as batch_op:
+    batch_op.drop_constraint('constraint_name', type_='unique')
+    batch_op.create_unique_constraint('constraint_name', ['col1', 'col2'])
+```
+
+### Error: "sqlite3.OperationalError: table _alembic_tmp_tablename already exists"
+**Cause:** Previous batch mode migration failed mid-execution, leaving behind a temporary table.
+**Solution:** Clean up temp tables at the start of your migration:
+```python
+def upgrade() -> None:
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    all_tables = inspector.get_table_names()
+    
+    # Clean up leftover temp tables
+    temp_table = '_alembic_tmp_tablename'
+    if temp_table in all_tables:
+        op.drop_table(temp_table)
+```
+
+### Error: "sqlite3.OperationalError: no such column: column_name" (during index creation in batch mode)
+**Cause:** Batch mode tries to recreate indexes on columns you're dropping. The index references a column that no longer exists.
+**Solution:** Drop indexes on columns BEFORE entering batch mode:
+```python
+# Drop index first
+op.drop_index('ix_table_old_column', table_name='table_name')
+
+# Then use batch mode to drop column
+with op.batch_alter_table('table_name', schema=None) as batch_op:
+    batch_op.drop_column('old_column')
+```
+
+### Error: "duplicate column name: column_name"
+**Cause:** Migration ran partially before failing, column already exists.
+**Solution:** Make migration idempotent (check if column exists before adding).
+
+### Error: "No support for ALTER of constraints in SQLite"
+**Cause:** Trying to add FK constraint outside batch mode.
+**Solution:** Skip FK constraint for SQLite (especially self-referential ones).
+
+### Error: "CircularDependencyError: Circular dependency detected"
+**Cause:** Self-referential FK in batch mode.
+**Solution:** Remove FK constraint from migration, define relationship in model only.
+
+### Error: "No such table: table_name_new"
+**Cause:** Trying to drop a temp table that doesn't exist.
+**Solution:** Remove unrelated `drop_table()` calls from auto-generated migration.
+
+## Migration Checklist
+
+Before committing an Alembic migration:
+
+- [ ] Remove all unrelated changes from auto-generated migration
+- [ ] No `ALTER COLUMN` operations (not supported in SQLite)
+- [ ] **All constraint operations use batch mode** (`drop_constraint`, `create_constraint`)
+- [ ] **Drop indexes BEFORE batch mode** if dropping columns with indexes
+- [ ] **Clean up temp tables** at start of migration (`_alembic_tmp_*`)
+- [ ] No FK constraints for self-referential relationships
+- [ ] Migration is idempotent (checks for existence before adding/dropping)
+- [ ] Test: `alembic upgrade head` works
+- [ ] Test: `alembic downgrade -1` works
+- [ ] Test: Running upgrade twice doesn't error (idempotency)
+- [ ] Named all constraints explicitly (not `None`)
+- [ ] Comments explain any SQLite-specific workarounds
+
+## Example: Complete Clean Migration
+
+```python
+"""Add experiment lineage tracking
+
+Revision ID: 54e7b847aa92
+Revises: ad16ea5b7e36
+Create Date: 2025-10-27 11:07:17.496115
+"""
+from typing import Sequence, Union
+from alembic import op
+import sqlalchemy as sa
+
+revision: str = '54e7b847aa92'
+down_revision: Union[str, None] = 'ad16ea5b7e36'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    """Upgrade schema - SQLite compatible and idempotent."""
+    # Self-referential FK causes circular dependency in batch mode
+    # Skip FK constraint; relationship is defined in the model
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('experiments')]
+    indexes = [idx['name'] for idx in inspector.get_indexes('experiments')]
+    
+    if 'base_experiment_id' not in columns:
+        op.add_column('experiments', sa.Column('base_experiment_id', sa.String(), nullable=True))
+    
+    if 'parent_experiment_fk' not in columns:
+        op.add_column('experiments', sa.Column('parent_experiment_fk', sa.Integer(), nullable=True))
+    
+    if 'ix_experiments_base_experiment_id' not in indexes:
+        op.create_index('ix_experiments_base_experiment_id', 'experiments', ['base_experiment_id'], unique=False)
+
+
+def downgrade() -> None:
+    """Downgrade schema - SQLite compatible and idempotent."""
+    from alembic import context
+    from sqlalchemy import inspect
+    
+    conn = context.get_context().bind
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('experiments')]
+    indexes = [idx['name'] for idx in inspector.get_indexes('experiments')]
+    
+    if 'ix_experiments_base_experiment_id' in indexes:
+        op.drop_index('ix_experiments_base_experiment_id', table_name='experiments')
+    
+    if 'parent_experiment_fk' in columns:
+        op.drop_column('experiments', 'parent_experiment_fk')
+    
+    if 'base_experiment_id' in columns:
+        op.drop_column('experiments', 'base_experiment_id')
+```
+
+## Key Takeaway
+
+**For SQLite, keep migrations simple:**
+1. Add/drop columns directly (no batch mode needed)
+2. Skip FK constraints (SQLAlchemy ORM handles relationships)
+3. Always check for existence before adding/dropping (idempotency)
+4. Remove unrelated auto-generated changes
+5. Never try to alter column types or add self-referential FKs

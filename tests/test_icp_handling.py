@@ -326,16 +326,16 @@ class TestICPServiceEdgeCases:
         """Test ICP data with missing required fields."""
         incomplete_data = [
             {'time_post_reaction': 1.0, 'fe': 10.0},  # Missing experiment_id
-            {'experiment_id': 'Test_MH_001', 'fe': 10.0},  # Missing time_post_reaction
+            {'experiment_id': 'Test_MH_001', 'fe': 10.0},  # Missing time_post_reaction (now optional)
             {'experiment_id': 'Test_MH_001', 'time_post_reaction': 1.0}  # No elemental data
         ]
         
         results, errors = ICPService.bulk_create_icp_results(test_db, incomplete_data)
         
         assert len(results) == 0
-        assert len(errors) == 3  # All should fail
+        assert len(errors) == 2  # Only experiment_id missing and no elemental data should fail
         assert "Missing experiment_id" in errors[0]
-        assert "Missing time_post_reaction" in errors[1]
+        # time_post_reaction is now optional, so no error for missing time_post_reaction
     
     def test_empty_csv_file(self):
         """Test processing empty CSV file."""

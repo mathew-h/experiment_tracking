@@ -36,8 +36,8 @@ def render_results_section(experiment):
             orm.selectinload(ExperimentalResults.icp_data),
             orm.selectinload(ExperimentalResults.files)
         ).filter(
-            ExperimentalResults.experiment_id == experiment['experiment_id'] # Use experiment_id string
-        ).order_by(ExperimentalResults.time_post_reaction).all()
+            ExperimentalResults.experiment_fk == experiment['id']  # Use FK instead of experiment_id
+        ).order_by(ExperimentalResults.time_post_reaction.asc().nulls_last()).all()  # Handle nulls
 
     finally:
         db.close()
