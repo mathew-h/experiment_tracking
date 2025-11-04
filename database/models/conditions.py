@@ -11,16 +11,22 @@ class ExperimentalConditions(Base):
     experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False) # FK to Experiment PK
     particle_size = Column(Float)
     initial_ph = Column(Float)
-    
-    # DEPRECATED: Migrated to ChemicalAdditive - use chemical_additives relationship
-    catalyst = Column(String)
-    catalyst_mass = Column(Float)
-    
     rock_mass = Column(Float)
     water_volume = Column(Float)
     temperature = Column(Float)
-    
+    experiment_type = Column(String) 
+    feedstock = Column(String, nullable=True)
+    room_temp_pressure = Column(Float, nullable=True)  # in psi instead of bar
+    rxn_temp_pressure = Column(Float, nullable=True)
+    stir_speed = Column(Float, nullable=True)
+    initial_conductivity = Column(Float, nullable=True)
+    core_height = Column(Float, nullable=True)
+    core_width = Column(Float, nullable=True)
+    core_volume = Column(Float, nullable=True)
+
     # DEPRECATED: Migrated to ChemicalAdditive - use chemical_additives relationship
+    catalyst = Column(String)
+    catalyst_mass = Column(Float)
     buffer_system = Column(String, nullable=True)
     
     water_to_rock_ratio = Column(Float, nullable=True)
@@ -31,9 +37,7 @@ class ExperimentalConditions(Base):
     
     # DEPRECATED: Migrated to ChemicalAdditive - use chemical_additives relationship
     buffer_concentration = Column(Float, nullable=True)  # in mM
-    room_temp_pressure = Column(Float, nullable=True)  # in psi instead of bar
     flow_rate = Column(Float, nullable=True)
-    experiment_type = Column(String)  # Serum, Autoclave, HPHT, Core Flood
     initial_nitrate_concentration = Column(Float, nullable=True)  # in mM, optional
     initial_dissolved_oxygen = Column(Float, nullable=True)  # in ppm, optional
     
@@ -47,14 +51,9 @@ class ExperimentalConditions(Base):
     
     # DEPRECATED: Migrated to ChemicalAdditive - use chemical_additives relationship
     ammonium_chloride_concentration = Column(Float, nullable=True)  # optional
-    rxn_temp_pressure = Column(Float, nullable=True)
-    core_height = Column(Float, nullable=True)
-    core_width = Column(Float, nullable=True)
-    core_volume = Column(Float, nullable=True)
-    stir_speed = Column(Float, nullable=True)
-    initial_conductivity = Column(Float, nullable=True)
-    initial_alkalinity = Column(Float, nullable=True)
-    feedstock = Column(String, nullable=True)  # Valid values: "Nitrogen", "Nitrate", "Blank"
+    
+   
+    initial_alkalinity = Column(Float, nullable=True) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

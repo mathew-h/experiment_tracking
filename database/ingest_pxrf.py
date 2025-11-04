@@ -34,7 +34,10 @@ COLUMN_MAP = {
     'Si': 'si',
     'Co': 'co',
     'Mo': 'mo',
-    'Al': 'al'
+    'Al': 'al',
+    'Ca': 'ca',
+    'K': 'k',
+    'Au': 'au',
 }
 
 # Values to be treated as zero/null during numeric conversion
@@ -190,7 +193,10 @@ def run_pxrf_ingestion(file_source: str, update_existing: bool = False):
                 'si': row['Si'],
                 'co': row['Co'],
                 'mo': row['Mo'],
-                'al': row['Al']
+                'al': row['Al'],
+                'ca': row['Ca'],
+                'k': row['K'],
+                'au': row['Au'],
             }
             
             if reading_no in existing_reading_nos:

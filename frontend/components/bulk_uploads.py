@@ -190,6 +190,7 @@ def handle_new_experiments_upload():
         "buffer_system", "buffer_concentration",
         "surfactant_type", "surfactant_concentration",
         "catalyst_percentage", "catalyst_ppm",
+        "water_to_rock_ratio",  # Calculated field
     }
     conditions_cols = [
         c.name for c in _EC.__table__.columns

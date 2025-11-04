@@ -188,6 +188,8 @@ class NewExperimentsUploadService:
                     'buffer_system', 'buffer_concentration',
                     'surfactant_type', 'surfactant_concentration',
                     'catalyst_percentage', 'catalyst_ppm',
+                    'water_to_rock_ratio', 'nitrate_concentration', 'dissolved_oxygen',
+                    'ammonium_chloride_concentration'   # Calculated field
                 }
                 updatable_attrs = {
                     col.name for col in ExperimentalConditions.__table__.columns

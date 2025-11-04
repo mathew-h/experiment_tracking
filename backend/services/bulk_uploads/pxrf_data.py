@@ -65,7 +65,10 @@ class PXRFUploadService:
                     'si': row['Si'],
                     'co': row['Co'],
                     'mo': row['Mo'],
-                    'al': row['Al']
+                    'al': row['Al'],
+                    'ca': row['Ca'],
+                    'k': row['K'],
+                    'au': row['Au'],
                 }
 
                 if reading_no in existing_reading_nos:
