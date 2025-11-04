@@ -48,7 +48,7 @@ CONCENTRATION_UNITS = [e.value for e in ConcentrationUnit]
 PRESSURE_UNITS = [e.value for e in PressureUnit]
 
 # For pXRF data ingestion
-PXRF_ELEMENT_COLUMNS = ["Fe", "Mg", "Si", "Ni", "Cu", "Mo", "Co", "Al"]
+PXRF_ELEMENT_COLUMNS = ["Fe", "Mg", "Si", "Ni", "Cu", "Mo", "Co", "Al", "Ca", "K", "Au"]
 PXRF_REQUIRED_COLUMNS = set(PXRF_ELEMENT_COLUMNS) | {'Reading No'}
 
 # Backward-compatibility alias for tests expecting ELEMENT_COLUMNS
