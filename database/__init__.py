@@ -9,7 +9,7 @@ from .models import (
     # Samples
     SampleInfo, SamplePhotos,
     # Analysis
-    AnalysisFiles, ExternalAnalysis, XRDAnalysis, PXRFReading, Analyte, ElementalAnalysis,
+    AnalysisFiles, ExternalAnalysis, XRDAnalysis, XRDPhase, PXRFReading, Analyte, ElementalAnalysis,
     # Enums
     ExperimentStatus, ExperimentType, FeedstockType, ComponentType,
     AnalysisType, AmmoniumQuantMethod, TitrationType, CharacterizationStatus,
@@ -17,6 +17,16 @@ from .models import (
 )
 # Import chemicals after other models to avoid circular imports
 from .models import Compound, ChemicalAdditive
+
+# Configure all mappers after all models are imported
+# This resolves string references in relationships
+from sqlalchemy.orm import configure_mappers
+try:
+    configure_mappers()
+except Exception as e:
+    # If mapper configuration fails, log but don't crash
+    import logging
+    logging.warning(f"Mapper configuration warning: {e}")
 
 __all__ = [
     # Database utilities
@@ -34,7 +44,7 @@ __all__ = [
     # Samples
     'SampleInfo', 'SamplePhotos',
     # Analysis
-    'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'PXRFReading', 'Analyte', 'ElementalAnalysis',
+    'AnalysisFiles', 'ExternalAnalysis', 'XRDAnalysis', 'XRDPhase', 'PXRFReading', 'Analyte', 'ElementalAnalysis',
     # Chemicals
     'Compound', 'ChemicalAdditive',
     # Enums

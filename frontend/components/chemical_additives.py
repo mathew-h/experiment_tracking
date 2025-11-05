@@ -4,6 +4,7 @@ from database.models import Compound
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 import logging
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,60 @@ def render_chemical_management():
     db_session = SessionLocal()
     
     try:
+        # Load compounds for display
+        compounds = get_all_compounds(db_session)
+        
+        # Display compounds table
+        st.subheader("📋 Compound Library")
+        
+        if compounds:
+            # Create DataFrame with selected columns
+            df_data = []
+            for c in compounds:
+                df_data.append({
+                    'Name': c.name,
+                    'Formula': c.formula if c.formula else '',
+                    'Molecular Weight (g/mol)': c.molecular_weight if c.molecular_weight else None,
+                    'Density (g/cm³)': c.density if c.density else None,
+                })
+            
+            df = pd.DataFrame(df_data)
+            
+            # Quick search filter with dropdown
+            # Create search options combining name and formula
+            search_options = ["All Compounds"] + [
+                f"{row['Name']}{' (' + row['Formula'] + ')' if row['Formula'] else ''}"
+                for _, row in df.iterrows()
+            ]
+            
+            selected_compound = st.selectbox(
+                "🔍 Quick Search",
+                options=search_options,
+                help="Select a compound to view details",
+                key="compound_search"
+            )
+            
+            # Filter dataframe based on selection
+            if selected_compound and selected_compound != "All Compounds":
+                # Extract compound name from selection (before the parentheses if present)
+                compound_name = selected_compound.split(' (')[0] if ' (' in selected_compound else selected_compound
+                filtered_df = df[df['Name'] == compound_name]
+            else:
+                filtered_df = df
+            
+            # Display the dataframe with search functionality
+            st.dataframe(
+                filtered_df,
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
+            
+            st.markdown(f"**Showing {len(filtered_df)} of {len(df)} compounds**")
+        else:
+            st.info("No compounds in the library yet. Add your first compound below.")
+        
+        st.markdown("---")
            
         # Add New Compound Form
         st.subheader("➕ Add New Compound")
@@ -263,102 +318,6 @@ def render_chemical_management():
 
                 finally:
                     form_session.close()
-        
-        # Load compounds for listing and edit/delete
-        compounds = get_all_compounds(db_session)
-
-        # Edit/Delete Section (if compounds exist)
-        if compounds:
-            st.markdown("---")
-            st.subheader("✏️ Edit or Delete Compounds")
-            
-            # Compound selection for editing
-            compound_options = [f"{c.name} ({c.formula})" if c.formula else c.name for c in compounds]
-            selected_compound_idx = st.selectbox(
-                "Select compound to edit/delete:",
-                range(len(compounds)),
-                format_func=lambda x: compound_options[x],
-                help="Choose a compound to edit or delete"
-            )
-            
-            if selected_compound_idx is not None:
-                selected_compound = compounds[selected_compound_idx]
-                
-                # Display current compound details
-                with st.expander(f"View details for {selected_compound.name}", expanded=False):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**Name:** {selected_compound.name}")
-                        st.write(f"**Formula:** {selected_compound.formula or 'Not specified'}")
-                        st.write(f"**CAS Number:** {selected_compound.cas_number or 'Not specified'}")
-                        st.write(f"**Molecular Weight:** {selected_compound.molecular_weight or 'Not specified'} g/mol")
-                        st.write(f"**Density:** {selected_compound.density or 'Not specified'} g/cm³")
-                    
-                    with col2:
-                        st.write(f"**Melting Point:** {selected_compound.melting_point or 'Not specified'} °C")
-                        st.write(f"**Boiling Point:** {selected_compound.boiling_point or 'Not specified'} °C")
-                        st.write(f"**Supplier:** {selected_compound.supplier or 'Not specified'}")
-                        st.write(f"**Catalog Number:** {selected_compound.catalog_number or 'Not specified'}")
-                        if selected_compound.notes:
-                            st.write(f"**Notes:** {selected_compound.notes}")
-                
-                # Action buttons
-                col1, col2, col3 = st.columns([1, 1, 1])
-                
-                with col1:
-                    if st.button("🗑️ Delete Compound", type="secondary", use_container_width=True):
-                        if st.session_state.get('confirm_delete', False):
-                            # Create a new database session for deletion
-                            delete_session = SessionLocal()
-                            try:
-                                compound_to_delete = delete_session.query(Compound).filter(Compound.id == selected_compound.id).first()
-                                if compound_to_delete:
-                                    delete_session.delete(compound_to_delete)
-                                    delete_session.commit()
-                                    st.success(f"✅ Deleted compound: {selected_compound.name}")
-                                    st.session_state.confirm_delete = False
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Compound not found in database!")
-                            except Exception as e:
-                                delete_session.rollback()
-                                logger.error(f"Error deleting compound: {e}")
-                                
-                                # Provide specific error messages for deletion failures
-                                if "FOREIGN KEY constraint failed" in str(e):
-                                    st.error("❌ **Cannot Delete Compound**: This compound is being used in experiments. Please remove it from all experiments before deleting.")
-                                elif "database is locked" in str(e).lower():
-                                    st.error("❌ **Database Locked Error**: The database is currently in use. Please wait a moment and try again.")
-                                elif "permission denied" in str(e).lower():
-                                    st.error("❌ **Permission Error**: You don't have permission to delete this compound. Contact your administrator.")
-                                else:
-                                    st.error(f"❌ **Deletion Error**: Failed to delete compound. Error details: {str(e)}")
-                                
-                                # Show troubleshooting tips for deletion
-                                with st.expander("🔧 Troubleshooting Tips", expanded=False):
-                                    st.markdown("""
-                                    **If deletion fails:**
-                                    - Check if the compound is used in any experiments
-                                    - Ensure you have proper permissions
-                                    - Try refreshing the page and attempting again
-                                    - Contact support if the problem persists
-                                    """)
-                            finally:
-                                delete_session.close()
-                        else:
-                            st.session_state.confirm_delete = True
-                            st.warning("⚠️ Click again to confirm deletion")
-                
-                with col2:
-                    if st.button("✏️ Edit Compound", type="primary", use_container_width=True):
-                        st.session_state.edit_compound_id = selected_compound.id
-                        st.rerun()
-                
-                with col3:
-                    if st.button("📋 Copy Details", use_container_width=True):
-                        # Copy compound details to clipboard (simulated)
-                        st.info("💡 Compound details copied to clipboard (simulated)")
     
     except Exception as e:
         logger.error(f"Error in compound management: {e}")

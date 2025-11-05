@@ -75,7 +75,21 @@ def render_sidebar():
                 # Use raw SQL to count samples without relying on the model
                 result = db.execute(text("SELECT COUNT(*) FROM sample_info"))
                 total_samples = result.scalar()
-                st.metric("Samples", total_samples)
+                
+                # Check for duplicates
+                result_unique = db.execute(text("""
+                    SELECT COUNT(DISTINCT LOWER(REPLACE(REPLACE(REPLACE(sample_id, '-', ''), '_', ''), ' ', '')))
+                    FROM sample_info
+                """))
+                unique_samples = result_unique.scalar()
+                
+                duplicate_count = total_samples - unique_samples
+                
+                if duplicate_count > 0:
+                    st.metric("Samples", total_samples, delta=f"-{duplicate_count} dups", delta_color="inverse")
+                else:
+                    st.metric("Samples", total_samples)
+                    
             except Exception as e:
                 st.error(f"Error retrieving sample count: {str(e)}")
             finally:
@@ -95,6 +109,55 @@ def render_sidebar():
                 else:
                     st.error(f"Error retrieving compounds count: {str(e)}")
             finally:
+                db.close()
+        
+        # Show duplicate warning if exists
+        try:
+            db = SessionLocal()
+            result = db.execute(text("SELECT COUNT(*) FROM sample_info"))
+            total_samples = result.scalar()
+            result_unique = db.execute(text("""
+                SELECT COUNT(DISTINCT LOWER(REPLACE(REPLACE(REPLACE(sample_id, '-', ''), '_', ''), ' ', '')))
+                FROM sample_info
+            """))
+            unique_samples = result_unique.scalar()
+            duplicate_count = total_samples - unique_samples
+            
+            if duplicate_count > 0:
+                with st.expander(f"⚠️ {duplicate_count} duplicate sample(s) detected", expanded=False):
+                    st.warning(f"You have {duplicate_count} duplicate sample records. Click below to see details.")
+                    
+                    if st.button("Show Duplicate Details"):
+                        # Query duplicate groups
+                        result = db.execute(text("""
+                            SELECT 
+                                LOWER(REPLACE(REPLACE(REPLACE(sample_id, '-', ''), '_', ''), ' ', '')) as normalized_id,
+                                GROUP_CONCAT(sample_id, ', ') as variants,
+                                COUNT(*) as count
+                            FROM sample_info
+                            GROUP BY LOWER(REPLACE(REPLACE(REPLACE(sample_id, '-', ''), '_', ''), ' ', ''))
+                            HAVING COUNT(*) > 1
+                            ORDER BY count DESC
+                            LIMIT 10
+                        """))
+                        
+                        duplicates = result.fetchall()
+                        if duplicates:
+                            st.write("**Top duplicate groups:**")
+                            for norm_id, variants, count in duplicates:
+                                st.write(f"• {variants} ({count} copies)")
+                            
+                            if duplicate_count > 10:
+                                st.info(f"...and {duplicate_count - 10} more")
+                        
+                        st.markdown("---")
+                        st.markdown("**To fix:**")
+                        st.code("python database/data_migrations/merge_duplicate_samples_007.py --apply", language="bash")
+                        st.caption("This will merge duplicates and preserve all data. Run without --apply first to preview changes.")
+        except Exception as e:
+            pass  # Silently fail duplicate check to not disrupt sidebar
+        finally:
+            if 'db' in locals():
                 db.close()
 
         st.markdown("---") # Separator

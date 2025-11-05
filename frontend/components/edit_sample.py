@@ -6,6 +6,7 @@ import datetime
 from sqlalchemy.orm import selectinload
 import os
 from frontend.config.variable_config import ROCK_SAMPLE_CONFIG
+from utils.pxrf import split_normalized_pxrf_readings
 
 def delete_external_analysis(analysis_id):
     """
@@ -107,59 +108,88 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
             st.error(f"Sample with ID '{user_sample_id}' not found. Cannot add analysis.")
             return False
 
-        # --- Step 2: Create the ExternalAnalysis object ---
-        # If Magnetic Susceptibility, append value to description
-        description = analysis_data.get('description', '')
-        if analysis_data.get('analysis_type') == 'Magnetic Susceptibility':
-            mag_susc_val = analysis_data.get('magnetic_susceptibility', '').strip()
-            if mag_susc_val:
-                if description:
-                    description += f"\nMagnetic susceptibility: {mag_susc_val} (1x10^-3)"
-                else:
-                    description = f"Magnetic susceptibility: {mag_susc_val} (1x10^-3)"
-        new_analysis = ExternalAnalysis(
-            sample_id=user_sample_id,  # Use the user-defined string ID
-            analysis_type=analysis_data.get('analysis_type'),
-            pxrf_reading_no=analysis_data.get('pxrf_reading_no'),
-            description=description,
-            analysis_metadata=json.dumps(analysis_data.get('analysis_metadata')) if analysis_data.get('analysis_metadata') else None
-        )
-        db.add(new_analysis)
+        # --- Step 2: Determine how many analysis entries to create ---
+        analysis_type = analysis_data.get('analysis_type')
+        raw_pxrf_value = analysis_data.get('pxrf_reading_no')
 
-        # --- Flush to get new_analysis.id ---
-        try:
-            db.flush()
-            db.refresh(new_analysis)
-        except Exception as flush_err:
-             st.error(f"DB flush/refresh error after adding analysis details: {flush_err}")
-             db.rollback()
-             return False # Don't proceed if main record fails
-        
-        # --- Handle File Uploads (Loop through list) ---
-        analysis_file_entries_info = []
-        if uploaded_files:
-            for idx, uploaded_file in enumerate(uploaded_files):
-                if uploaded_file:
-                    # Use a structured folder path for each analysis
-                    storage_folder = f"analysis_reports/sample_{user_sample_id}/analysis_{new_analysis.id}"
-                    file_path = save_uploaded_file(
-                        file=uploaded_file, 
-                        storage_folder=storage_folder
+        if analysis_type == 'pXRF':
+            reading_numbers = split_normalized_pxrf_readings(raw_pxrf_value)
+            if not reading_numbers:
+                st.error("Please provide at least one pXRF reading number before saving.")
+                db.rollback()
+                return False
+            analysis_data['pxrf_reading_no'] = ','.join(reading_numbers)
+        else:
+            reading_numbers = [raw_pxrf_value] if raw_pxrf_value else [None]
+
+        base_description = analysis_data.get('description', '') or ''
+        if analysis_type == 'Magnetic Susceptibility':
+            mag_susc_val = (analysis_data.get('magnetic_susceptibility') or '').strip()
+            if mag_susc_val:
+                if base_description:
+                    base_description += f"\nMagnetic susceptibility: {mag_susc_val} (1x10^-3)"
+                else:
+                    base_description = f"Magnetic susceptibility: {mag_susc_val} (1x10^-3)"
+
+        created_analyses = []
+
+        for idx, reading_no in enumerate(reading_numbers):
+            if analysis_type == 'pXRF' and reading_no:
+                existing = (
+                    db.query(ExternalAnalysis)
+                    .filter(
+                        ExternalAnalysis.sample_id == user_sample_id,
+                        ExternalAnalysis.analysis_type == 'pXRF',
+                        ExternalAnalysis.pxrf_reading_no == reading_no,
                     )
-                    
-                    if not file_path:
-                        st.error(f"Failed to save uploaded analysis file: {uploaded_file.name}. Aborting analysis entry.")
-                        db.rollback() # Rollback the main analysis entry too
-                        # Clean up any files already saved in *this* batch before returning
-                        for saved_path in saved_file_paths:
-                            delete_file_if_exists(saved_path)
-                        return False
-                    else:
-                        saved_file_paths.append(file_path) # Track successfully saved paths
+                    .first()
+                )
+                if existing:
+                    continue
+
+            new_analysis = ExternalAnalysis(
+                sample_id=user_sample_id,
+                analysis_type=analysis_type,
+                pxrf_reading_no=reading_no if analysis_type == 'pXRF' else raw_pxrf_value,
+                description=base_description,
+                analysis_metadata=json.dumps(analysis_data.get('analysis_metadata')) if analysis_data.get('analysis_metadata') else None,
+                magnetic_susceptibility=analysis_data.get('magnetic_susceptibility'),
+                analysis_date=analysis_data.get('analysis_date'),
+                laboratory=analysis_data.get('laboratory'),
+                analyst=analysis_data.get('analyst'),
+            )
+            db.add(new_analysis)
+
+            try:
+                db.flush()
+                db.refresh(new_analysis)
+            except Exception as flush_err:
+                st.error(f"DB flush/refresh error after adding analysis details: {flush_err}")
+                db.rollback()
+                return False
+
+            created_analyses.append(new_analysis)
+
+            analysis_file_entries_info = []
+            if idx == 0 and uploaded_files:
+                for uploaded_file in uploaded_files:
+                    if uploaded_file:
+                        storage_folder = f"analysis_reports/sample_{user_sample_id}/analysis_{new_analysis.id}"
+                        file_path = save_uploaded_file(
+                            file=uploaded_file,
+                            storage_folder=storage_folder
+                        )
+
+                        if not file_path:
+                            st.error(f"Failed to save uploaded analysis file: {uploaded_file.name}. Aborting analysis entry.")
+                            db.rollback()
+                            for saved_path in saved_file_paths:
+                                delete_file_if_exists(saved_path)
+                            return False
+                        saved_file_paths.append(file_path)
                         file_name = uploaded_file.name
                         file_type = uploaded_file.type
-                        
-                        # Create AnalysisFiles entry for this file
+
                         analysis_file_entry = AnalysisFiles(
                             external_analysis_id=new_analysis.id,
                             file_path=file_path,
@@ -167,28 +197,35 @@ def add_external_analysis(user_sample_id, analysis_data, uploaded_files: list = 
                             file_type=file_type
                         )
                         db.add(analysis_file_entry)
-                        analysis_file_entries_info.append({'name': file_name, 'path': file_path}) # For logging
-                else:
-                     st.warning("Encountered an empty item in the uploaded files list.")
+                        analysis_file_entries_info.append({'name': file_name, 'path': file_path})
+                    else:
+                        st.warning("Encountered an empty item in the uploaded files list.")
 
-        # --- Log Modification --- 
-        log_values = analysis_data.copy()
-        log_values['sample_id'] = user_sample_id # User string id
-        # pxrf_reading_no should already be in analysis_data if provided
-        if analysis_file_entries_info:
-             log_values['analysis_files'] = analysis_file_entries_info
-        
-        log_modification(
-            db=db,
-            experiment_id=None, # Sample-level modification
-            modified_table="external_analyses",
-            modification_type="create",
-            new_values=log_values
-        )
+            log_values = analysis_data.copy()
+            log_values['sample_id'] = user_sample_id
+            if analysis_type == 'pXRF':
+                log_values['pxrf_reading_no'] = reading_no
+            if idx == 0 and analysis_file_entries_info:
+                log_values['analysis_files'] = analysis_file_entries_info
 
-        # --- Commit Transaction --- 
+            log_modification(
+                db=db,
+                experiment_id=None,
+                modified_table="external_analyses",
+                modification_type="create",
+                new_values=log_values
+            )
+
+        if not created_analyses:
+            st.info("No new external analysis entries were created (possible duplicates).")
+            db.rollback()
+            return False
+
         db.commit()
-        st.success(f"External analysis '{analysis_data.get('analysis_type')}' added for sample '{user_sample_id}'.")
+        if len(created_analyses) == 1:
+            st.success(f"External analysis '{analysis_type}' added for sample '{user_sample_id}'.")
+        else:
+            st.success(f"Added {len(created_analyses)} pXRF analysis entries for sample '{user_sample_id}'.")
         return True
 
     except Exception as e:

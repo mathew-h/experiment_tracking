@@ -33,8 +33,11 @@ class PXRFUploadService:
     def _clean_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         errors: List[str] = []
         try:
-            # Ensure Reading No is string and trimmed
-            df['Reading No'] = df['Reading No'].astype(str).str.strip()
+            # Normalize Reading No: convert to string and remove .0 suffix from floats
+            # Excel stores integers as floats (1 becomes 1.0), so "1.0" should become "1"
+            df['Reading No'] = df['Reading No'].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace('.', '', 1).replace('-', '', 1).isdigit() else str(x)
+            ).str.strip()
 
             # Drop empty Reading No rows
             df = df.dropna(subset=['Reading No'])

@@ -355,6 +355,14 @@ def handle_rock_samples_upload():
     )
 
     st.markdown("---")
+    
+    # Add overwrite checkbox
+    overwrite_all = st.checkbox(
+        "Overwrite all existing sample fields",
+        value=False,
+        help="When checked, replaces ALL fields for existing samples. Otherwise, only updates provided fields. Per-row 'overwrite' column takes precedence."
+    )
+    
     uploaded = st.file_uploader("Upload filled rock inventory template (xlsx)", type=["xlsx"])
     images = st.file_uploader("Optional: Upload sample photos (filenames must match sample_id)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
@@ -372,7 +380,9 @@ def handle_rock_samples_upload():
 
     db = SessionLocal()
     try:
-        created, updated, images_attached, skipped, errors = RockInventoryService.bulk_upsert_samples(db, uploaded.read(), image_tuples)
+        created, updated, images_attached, skipped, errors, warnings = RockInventoryService.bulk_upsert_samples(
+            db, uploaded.read(), image_tuples, overwrite_all=overwrite_all
+        )
         if errors:
             db.rollback()
             st.error("Upload encountered issues; no changes were applied.")
@@ -383,6 +393,14 @@ def handle_rock_samples_upload():
         else:
             db.commit()
             st.success(f"Rock inventory — created: {created}, updated: {updated}, images attached: {images_attached}, skipped rows: {skipped}")
+            
+            # Display warnings if any (non-blocking)
+            if warnings:
+                with st.expander(f"⚠️ {len(warnings)} warning(s) - click to view", expanded=False):
+                    for msg in warnings[:100]:
+                        st.warning(msg)
+                    if len(warnings) > 100:
+                        st.info(f"...and {len(warnings)-100} more warnings")
     except Exception as e:
         db.rollback()
         st.error(f"Unexpected error during rock inventory upload: {e}")

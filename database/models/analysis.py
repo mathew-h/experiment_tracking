@@ -26,8 +26,9 @@ class ExternalAnalysis(Base):
     analysis_date = Column(DateTime(timezone=True))
     laboratory = Column(String)
     analyst = Column(String)
-    # Link to PXRFReading table via this field, with SET NULL on delete
-    pxrf_reading_no = Column(String, ForeignKey("pxrf_readings.reading_no", ondelete="SET NULL"), nullable=True, index=True)
+    # Store comma-separated pXRF reading numbers (e.g., "2,3,4" for multiple readings)
+    # No FK constraint to allow multiple readings per sample
+    pxrf_reading_no = Column(String, nullable=True, index=True)
     description = Column(Text)
     analysis_metadata = Column(JSON)  # For storing additional analysis-specific data
     # Add magnetic susceptibility field
@@ -44,7 +45,6 @@ class ExternalAnalysis(Base):
     )
     analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan")
     # Add one-to-one relationships for specific analysis types
-    pxrf_reading = relationship("PXRFReading", back_populates="external_analyses")
     xrd_analysis = relationship("XRDAnalysis", back_populates="external_analysis", uselist=False, cascade="all, delete-orphan")
 
 
@@ -73,9 +73,6 @@ class PXRFReading(Base):
     # Timestamps for tracking ingestion
     ingested_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Add relationship back to ExternalAnalysis
-    external_analyses = relationship("ExternalAnalysis", back_populates="pxrf_reading")
 
     def __repr__(self):
         return f"<PXRFReading(reading_no='{self.reading_no}')>"
