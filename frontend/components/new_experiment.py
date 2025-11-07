@@ -8,6 +8,7 @@ from frontend.config.variable_config import FIELD_CONFIG, EXPERIMENT_STATUSES
 from backend.services.experimental_conditions_service import ExperimentalConditionsService
 import pytz
 from frontend.components.chemical_managing import render_compound_manager
+from backend.services.experiment_validation import parse_experiment_id, validate_experiment_id, format_validation_warning
 
 # Helper function to get default values from FIELD_CONFIG
 def get_default_conditions():
@@ -60,11 +61,69 @@ def render_new_experiment():
             
             with col1:
                 st.markdown("#### Basic Information")
+                
+                # ID builder helper and naming guide
+                with st.expander("💡 Experiment ID Naming Guide", expanded=False):
+                    st.markdown("""
+                    **Required Format:** `ExperimentType_ResearcherInitials_Index`
+                    
+                    **Examples:**
+                    - **Base experiment:** `Serum_MH_101`
+                    - **Sequential runs:** `Serum_MH_101-2` (2nd brine), `Serum_MH_101-3` (3rd brine)
+                    - **Treatment variants:** `Serum_MH_101_Desorption` (special treatment)
+                    - **Combined:** `Serum_MH_101-2_Desorption` (treatment on 2nd run's sample)
+                    
+                    **Delimiter Rules:**
+                    - Use **hyphen-NUMBER** (`-2`, `-3`) for sequential lineage tracking
+                    - Use **underscore_TEXT** (`_Desorption`, `_Annealing`) for special treatments
+                    - Underscores within names are fine (e.g., `Core_Flood` or `HPHT_MH_101`)
+                    
+                    **Experiment Types:** Serum, Autoclave, HPHT, CF (Core Flood), Other
+                    """)
+                    
+                    # Quick ID builder
+                    st.markdown("**Quick ID Builder:**")
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        exp_type_input = st.text_input("Type", placeholder="Serum", key="id_builder_type")
+                        researcher_init = st.text_input("Initials", placeholder="MH", key="id_builder_init")
+                    with col_b:
+                        exp_index = st.text_input("Index", placeholder="101", key="id_builder_index")
+                        seq_num = st.number_input("Sequential #", min_value=0, value=0, step=1, key="id_builder_seq",
+                                                   help="0 = base, 1+ = that run number")
+                    with col_c:
+                        treatment = st.text_input("Treatment", placeholder="Desorption", key="id_builder_treat")
+                    
+                    if exp_type_input and researcher_init and exp_index:
+                        built_id = f"{exp_type_input}_{researcher_init}_{exp_index}"
+                        if seq_num > 0:
+                            built_id += f"-{seq_num}"
+                        if treatment:
+                            built_id += f"_{treatment}"
+                        st.code(built_id)
+                        if st.button("Use this ID"):
+                            st.session_state.experiment_data['experiment_id'] = built_id
+                            st.rerun()
+                
                 experiment_id = st.text_input(
                     "Experiment ID", 
                     value=st.session_state.experiment_data.get('experiment_id', ''),
-                    help="Enter a unique identifier for this experiment"
+                    help="Enter a unique identifier following the format: ExperimentType_ResearcherInitials_Index"
                 )
+                
+                # Real-time validation display
+                if experiment_id:
+                    is_valid, warnings = validate_experiment_id(experiment_id)
+                    if warnings:
+                        st.warning(format_validation_warning(warnings))
+                    else:
+                        parsed = parse_experiment_id(experiment_id)
+                        if parsed.experiment_type:
+                            st.success(f"✓ Valid format: {parsed.experiment_type.value} experiment by {parsed.researcher_initials}")
+                        if parsed.sequential_number:
+                            st.info(f"Sequential run #{parsed.sequential_number}")
+                        if parsed.treatment_variant:
+                            st.info(f"Treatment variant: {parsed.treatment_variant}")
                 
                 created_at = st.date_input(
                     "Creation Date",
@@ -105,9 +164,17 @@ def render_new_experiment():
                     if sample_id not in sample_dict.values():
                         sample_id = ""  # Reset to empty if not valid
                 
+                # Auto-populate researcher from experiment_id, but allow override
+                default_researcher = st.session_state.experiment_data.get('researcher', '')
+                if experiment_id and not default_researcher:
+                    parsed = parse_experiment_id(experiment_id)
+                    if parsed.researcher_initials:
+                        default_researcher = parsed.researcher_initials
+                
                 researcher = st.text_input(
                     "Researcher Name", 
-                    value=st.session_state.experiment_data.get('researcher', '')
+                    value=default_researcher,
+                    help="Auto-populated from Experiment ID, but you can override it"
                 )
                 status = st.selectbox(
                     "Experiment Status",
@@ -239,12 +306,23 @@ def save_experiment():
         # Create a database session
         db = SessionLocal()
         
+        # Get data from session state
+        exp_data = st.session_state.experiment_data
+        
+        # Validate experiment ID and display warnings (but allow creation)
+        experiment_id_str = exp_data['experiment_id']
+        is_valid, warnings = validate_experiment_id(experiment_id_str)
+        if warnings:
+            for warning in warnings:
+                st.warning(f"Experiment ID validation: {warning}")
+        
+        # Parse experiment_id to extract type and researcher
+        parsed = parse_experiment_id(experiment_id_str)
+        experiment_type_enum = parsed.experiment_type  # ExperimentType enum or None
+        
         # Get the next experiment number, with a lock to prevent race conditions
         last_experiment = db.query(Experiment).order_by(Experiment.experiment_number.desc()).with_for_update().first()
         next_experiment_number = 1 if last_experiment is None else last_experiment.experiment_number + 1
-        
-        # Get data from session state
-        exp_data = st.session_state.experiment_data
         
         # For experiments without rock samples, set sample_id to None
         sample_id = exp_data['sample_id'] if exp_data['sample_id'] else None
@@ -270,6 +348,10 @@ def save_experiment():
         for key, value in conditions_data.items():
             if key in FIELD_CONFIG and FIELD_CONFIG[key]['type'] == 'number' and value == '':
                 conditions_data[key] = None
+        
+        # Add experiment_type from parsed ID if available
+        if experiment_type_enum:
+            conditions_data['experiment_type'] = experiment_type_enum.value
         
         # The service expects the string experiment_id
         conditions = ExperimentalConditionsService.create_experimental_conditions(

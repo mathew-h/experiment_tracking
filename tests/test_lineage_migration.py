@@ -119,27 +119,35 @@ class TestExperimentLineageMigration:
         assert exp.notes[0].note_text == "Updated description"
     
     def test_parse_experiment_id(self):
-        """Test parsing of experiment IDs to identify derivations."""
-        # Test base experiments
-        assert parse_experiment_id("HPHT_MH_001") == ("HPHT_MH_001", None)
-        assert parse_experiment_id("LEACH_TEST") == ("LEACH_TEST", None)
+        """Test parsing of experiment IDs to identify derivations and treatments."""
+        # Test base experiments (returns 3-tuple: base_id, derivation_num, treatment_variant)
+        assert parse_experiment_id("HPHT_MH_001") == ("HPHT_MH_001", None, None)
+        assert parse_experiment_id("LEACH_TEST") == ("LEACH_TEST", None, None)
         
-        # Test derivations
-        assert parse_experiment_id("HPHT_MH_001-2") == ("HPHT_MH_001", 2)
-        assert parse_experiment_id("HPHT_MH_001-10") == ("HPHT_MH_001", 10)
-        assert parse_experiment_id("COMPLEX-ID-TEST-3") == ("COMPLEX-ID-TEST", 3)
+        # Test derivations (sequential runs)
+        assert parse_experiment_id("HPHT_MH_001-2") == ("HPHT_MH_001", 2, None)
+        assert parse_experiment_id("HPHT_MH_001-10") == ("HPHT_MH_001", 10, None)
+        assert parse_experiment_id("COMPLEX-ID-TEST-3") == ("COMPLEX-ID-TEST", 3, None)
         
         # Test IDs that end with numbers (these ARE derivations by design)
-        assert parse_experiment_id("TEST-SAMPLE-001") == ("TEST-SAMPLE", 1)
+        assert parse_experiment_id("TEST-SAMPLE-001") == ("TEST-SAMPLE", 1, None)
         
         # Test non-derivations with hyphens (last part is NOT numeric)
-        assert parse_experiment_id("TEST-SAMPLE-ABC") == ("TEST-SAMPLE-ABC", None)
-        assert parse_experiment_id("HPHT-HIGH-TEMP") == ("HPHT-HIGH-TEMP", None)
+        assert parse_experiment_id("TEST-SAMPLE-ABC") == ("TEST-SAMPLE-ABC", None, None)
+        assert parse_experiment_id("HPHT-HIGH-TEMP") == ("HPHT-HIGH-TEMP", None, None)
+        
+        # Test treatment variants (underscore-TEXT suffix)
+        assert parse_experiment_id("HPHT_MH_001_Desorption") == ("HPHT_MH_001", None, "Desorption")
+        assert parse_experiment_id("Serum_MH_101_Annealing") == ("Serum_MH_101", None, "Annealing")
+        
+        # Test combined sequential + treatment
+        assert parse_experiment_id("HPHT_MH_001-2_Desorption") == ("HPHT_MH_001", 2, "Desorption")
+        assert parse_experiment_id("Serum_MH_101-3_Annealing") == ("Serum_MH_101", 3, "Annealing")
         
         # Test edge cases
-        assert parse_experiment_id("") == (None, None)
-        assert parse_experiment_id(None) == (None, None)
-        assert parse_experiment_id("   ") == (None, None)
+        assert parse_experiment_id("") == (None, None, None)
+        assert parse_experiment_id(None) == (None, None, None)
+        assert parse_experiment_id("   ") == (None, None, None)
     
     def test_get_or_find_parent_experiment(self, test_db_session, sample_experiments):
         """Test finding parent experiments for derivations."""

@@ -13,7 +13,7 @@ class ExperimentType(enum.Enum):
     SERUM = "Serum"
     AUTOCLAVE = "Autoclave"
     HPHT = "HPHT"
-    CORE_FLOOD = "Core Flood"
+    CF = "Core Flood"
     OTHER = "Other"
 
 class FeedstockType(enum.Enum):

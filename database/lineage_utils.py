@@ -3,54 +3,89 @@ Utility functions for managing experiment lineage.
 
 This module provides functions to parse experiment IDs, identify derivations,
 and establish parent-child relationships between experiments.
+
+Supports hybrid delimiter system:
+- Hyphen-NUMBER for sequential lineage (e.g., -2, -3)
+- Underscore-TEXT for treatment variants (e.g., _Desorption)
 """
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 
-def parse_experiment_id(experiment_id: str) -> Tuple[Optional[str], Optional[int]]:
+def parse_experiment_id(experiment_id: str) -> Tuple[Optional[str], Optional[int], Optional[str]]:
     """
-    Parse an experiment ID to extract the base ID and derivation number.
+    Parse an experiment ID to extract the base ID, derivation number, and treatment variant.
+    
+    Uses hybrid delimiter system:
+    - Hyphen-NUMBER for sequential lineage (e.g., -2, -3)
+    - Underscore-TEXT for treatment variants (e.g., _Desorption)
     
     Args:
-        experiment_id: The experiment ID to parse (e.g., "HPHT_MH_001-2")
+        experiment_id: The experiment ID to parse (e.g., "HPHT_MH_001-2_Desorption")
         
     Returns:
-        A tuple of (base_experiment_id, derivation_number)
-        - For "HPHT_MH_001-2": returns ("HPHT_MH_001", 2)
-        - For "HPHT_MH_001": returns ("HPHT_MH_001", None)
-        - For "HPHT-MH-001": returns ("HPHT-MH-001", None)
+        A tuple of (base_experiment_id, derivation_number, treatment_variant)
+        - For "HPHT_MH_001-2": returns ("HPHT_MH_001", 2, None)
+        - For "HPHT_MH_001": returns ("HPHT_MH_001", None, None)
+        - For "HPHT_MH_001_Desorption": returns ("HPHT_MH_001", None, "Desorption")
+        - For "HPHT_MH_001-2_Desorption": returns ("HPHT_MH_001", 2, "Desorption")
         
     Examples:
         >>> parse_experiment_id("HPHT_MH_001-2")
-        ("HPHT_MH_001", 2)
+        ("HPHT_MH_001", 2, None)
         >>> parse_experiment_id("HPHT_MH_001")
-        ("HPHT_MH_001", None)
-        >>> parse_experiment_id("HPHT-MH-001")
-        ("HPHT-MH-001", None)
+        ("HPHT_MH_001", None, None)
+        >>> parse_experiment_id("HPHT_MH_001_Desorption")
+        ("HPHT_MH_001", None, "Desorption")
+        >>> parse_experiment_id("HPHT_MH_001-2_Desorption")
+        ("HPHT_MH_001", 2, "Desorption")
     """
     if not experiment_id or not isinstance(experiment_id, str):
-        return None, None
+        return None, None, None
     
     experiment_id = experiment_id.strip()
     if not experiment_id:
-        return None, None
+        return None, None, None
     
-    parts = experiment_id.split('-')
-    if len(parts) < 2:
-        # No hyphen, so it's a base experiment
-        return experiment_id, None
+    treatment_variant = None
+    derivation_num = None
+    base_id = experiment_id
     
-    # Check if last part is numeric
-    try:
-        derivation_num = int(parts[-1])
-        base_id = '-'.join(parts[:-1])
-        return base_id, derivation_num
-    except ValueError:
-        # Last part is not numeric, so this is not a derivation
-        # (e.g., "HPHT-MH-001" where "001" is not meant to be a derivation)
-        return experiment_id, None
+    # First, extract treatment suffix (last underscore followed by non-numeric text)
+    # We need to be careful not to treat underscore in base name as treatment delimiter
+    # Strategy: Look for last underscore followed by text that's NOT part of standard format
+    parts = experiment_id.split('_')
+    if len(parts) > 3:  # More than TYPE_INITIALS_INDEX format
+        # Check if last part looks like a treatment (not all numeric, not part of base format)
+        potential_treatment = parts[-1]
+        # If it contains a hyphen with number, split and check
+        if '-' in potential_treatment:
+            treatment_parts = potential_treatment.rsplit('-', 1)
+            # Check if last part after hyphen is numeric (sequential)
+            if treatment_parts[-1].isdigit():
+                # Pattern: Treatment-Number, unusual but handle it
+                # Treat the whole thing as treatment for now
+                treatment_variant = potential_treatment
+                base_id = '_'.join(parts[:-1])
+            else:
+                # Last part is not numeric, might be treatment without sequential
+                treatment_variant = potential_treatment
+                base_id = '_'.join(parts[:-1])
+        elif not potential_treatment.isdigit():
+            # Last part is not numeric and has no hyphen, likely a treatment
+            treatment_variant = potential_treatment
+            base_id = '_'.join(parts[:-1])
+    
+    # Now extract sequential number from base_id (or remaining ID)
+    # Look for last hyphen followed by digits
+    if '-' in base_id:
+        hyphen_parts = base_id.rsplit('-', 1)
+        if len(hyphen_parts) == 2 and hyphen_parts[-1].isdigit():
+            derivation_num = int(hyphen_parts[-1])
+            base_id = hyphen_parts[0]
+    
+    return base_id, derivation_num, treatment_variant
 
 
 def get_or_find_parent_experiment(db: Session, experiment_id: str):
@@ -69,7 +104,7 @@ def get_or_find_parent_experiment(db: Session, experiment_id: str):
     """
     from .models import Experiment
     
-    base_id, derivation_num = parse_experiment_id(experiment_id)
+    base_id, derivation_num, treatment_variant = parse_experiment_id(experiment_id)
     
     # If this is not a derivation, there's no parent
     if derivation_num is None:
@@ -106,11 +141,12 @@ def update_experiment_lineage(db: Session, experiment):
         
     Note:
         This function modifies the experiment object but does not commit the session.
+        Treatment variants are tracked in the experiment_id but do not affect parent relationships.
     """
     if not experiment or not experiment.experiment_id:
         return False
     
-    base_id, derivation_num = parse_experiment_id(experiment.experiment_id)
+    base_id, derivation_num, treatment_variant = parse_experiment_id(experiment.experiment_id)
     
     # If this is not a derivation, clear any lineage fields
     if derivation_num is None:

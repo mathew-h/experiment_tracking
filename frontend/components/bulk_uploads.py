@@ -147,15 +147,23 @@ def handle_new_experiments_upload():
         """
         Use this multi-sheet Excel template to create or update experiments.
         Columns with an asterisk (*) are required.
+        
+        **Experiment ID Format:** `ExperimentType_ResearcherInitials_Index`
+        - **Base:** `Serum_MH_101`
+        - **Sequential:** `Serum_MH_101-2` (use hyphen-NUMBER for consecutive runs)
+        - **Treatment:** `Serum_MH_101_Desorption` (use underscore_TEXT for treatments)
+        - **Combined:** `Serum_MH_101-2_Desorption`
+        
+        **Experiment Types:** Serum, Autoclave, HPHT, CF (Core Flood), Other
 
-        Sheets and required fields:
-        - experiments: experiment_id* (unique), sample_id, researcher, date, status, initial_note, overwrite
-          - overwrite: when true for an existing experiment, metadata/conditions are updated and all additives are replaced by the additives sheet
+        **Sheets and fields:**
+        - **experiments**: experiment_id* (unique), sample_id, date, status, initial_note, overwrite
+          - overwrite: when true for an existing experiment, metadata/conditions are updated and all additives are replaced
           - status: use ExperimentStatus name or value (e.g., ONGOING, COMPLETED)
           - date: Excel date or ISO (YYYY-MM-DD)
-        - conditions: experiment_id* plus valid condition columns inferred from the model (deprecated catalyst/buffer/surfactant fields are excluded)
-        - additives: experiment_id*, compound*, amount*, unit* with optional order, method
-          - unit must be one of the allowed units shown in the template (e.g., g, mg, mL, ppm, mM, M)
+        - **conditions**: experiment_id* plus valid condition columns
+        - **additives**: experiment_id*, compound*, amount*, unit* with optional order, method
+          - unit must be one of the allowed units (e.g., g, mg, mL, ppm, mM, M, % of Rock)
         """
     )
 
@@ -164,22 +172,47 @@ def handle_new_experiments_upload():
     experiments_cols = [
         "experiment_id",  # required
         "sample_id",
-        "researcher",
         "date",           # any Excel/ISO date
         "status",         # ExperimentStatus name or value
         "initial_note",   # first ExperimentNotes entry
         "overwrite",      # True/False
     ]
 
-    example_exp = {
-        "experiment_id": "Serum_MH_101",
-        "sample_id": "Rock_1",
-        "researcher": "Mathew",
-        "date": pd.Timestamp.today().date(),
-        "status": "ONGOING",
-        "initial_note": "Baseline run",
-        "overwrite": False,
-    }
+    # Multiple example rows showing different naming patterns
+    example_experiments = [
+        {
+            "experiment_id": "Serum_MH_101",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "Base experiment (main branch)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "Serum_MH_101-2",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "2nd consecutive run (sequential)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "Serum_MH_101_Desorption",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "Treatment variant (desorption)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "Serum_MH_101-2_Annealing",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "Combined: 2nd run + annealing treatment",
+            "overwrite": False,
+        },
+    ]
 
     # Derive conditions headers from model columns to avoid hardcoding
     # We exclude PK/FKs/metadata
@@ -199,7 +232,7 @@ def handle_new_experiments_upload():
 
     additives_cols = ["experiment_id", "compound", "amount", "unit", "order", "method"]
     example_add = {
-        "experiment_id": example_exp["experiment_id"],
+        "experiment_id": example_experiments[0]["experiment_id"],
         "compound": "Sodium Chloride",
         "amount": 100.0,
         "unit": unit_options[0] if unit_options else "mg",
@@ -209,17 +242,74 @@ def handle_new_experiments_upload():
 
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-        df_exp = pd.DataFrame([example_exp], columns=experiments_cols)
-        # Display: mark required fields with asterisks
-        display_experiments_cols = ["experiment_id*", "sample_id", "researcher", "date", "status", "initial_note", "overwrite"]
+        # INSTRUCTIONS sheet
+        instructions_data = {
+            "Naming Convention": [
+                "Base Experiment",
+                "Sequential Run",
+                "Treatment Variant",
+                "Combined",
+                "",
+                "IMPORTANT NOTES",
+                "",
+                "Auto-Population",
+            ],
+            "Pattern": [
+                "TYPE_INITIALS_INDEX",
+                "TYPE_INITIALS_INDEX-NUMBER",
+                "TYPE_INITIALS_INDEX_TREATMENT",
+                "TYPE_INITIALS_INDEX-NUMBER_TREATMENT",
+                "",
+                "",
+                "",
+                "",
+            ],
+            "Example": [
+                "Serum_MH_101",
+                "Serum_MH_101-2",
+                "Serum_MH_101_Desorption",
+                "Serum_MH_101-2_Desorption",
+                "",
+                "",
+                "",
+                "",
+            ],
+            "Description": [
+                "Initial/base experiment",
+                "2nd, 3rd... consecutive brine/run (use hyphen-NUMBER)",
+                "Special treatment on sample (use underscore_TEXT)",
+                "Treatment on specific run's sample",
+                "",
+                "Hyphens track numeric lineage. Underscores indicate treatments.",
+                "Underscores within base names are fine (e.g., Core_Flood_MH_001)",
+                "Researcher & experiment_type are extracted from experiment_id",
+            ],
+        }
+        df_instructions = pd.DataFrame(instructions_data)
+        df_instructions.to_excel(writer, index=False, sheet_name='INSTRUCTIONS_READ_FIRST')
+        
+        # experiments sheet with multiple examples
+        df_exp = pd.DataFrame(example_experiments, columns=experiments_cols)
+        # Display: mark required fields with asterisks and add format hint
+        display_experiments_cols = [
+            "experiment_id* (TYPE_INITIALS_INDEX)", 
+            "sample_id", 
+            "date", 
+            "status", 
+            "initial_note", 
+            "overwrite"
+        ]
         df_exp.columns = display_experiments_cols
         df_exp.to_excel(writer, index=False, sheet_name='experiments')
+        
         # conditions: one example row with blanks
-        df_cond = pd.DataFrame([{c: None for c in ["experiment_id"] + conditions_cols}]).assign(experiment_id=example_exp["experiment_id"]) 
+        df_cond = pd.DataFrame([{c: None for c in ["experiment_id"] + conditions_cols}]).assign(experiment_id=example_experiments[0]["experiment_id"]) 
         # Display: mark required experiment_id with asterisk
         display_conditions_cols = ["experiment_id*"] + conditions_cols
         df_cond.columns = display_conditions_cols
         df_cond.to_excel(writer, index=False, sheet_name='conditions')
+        
+        # additives sheet
         df_add = pd.DataFrame([example_add], columns=additives_cols)
         # Display: mark required columns with asterisks
         display_additives_cols = ["experiment_id*", "compound*", "amount*", "unit*", "order", "method"]
@@ -229,6 +319,7 @@ def handle_new_experiments_upload():
         # Autosize columns for readability
         try:
             from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'INSTRUCTIONS_READ_FIRST')
             autosize_excel_columns(writer, 'experiments')
             autosize_excel_columns(writer, 'conditions')
             autosize_excel_columns(writer, 'additives')
@@ -251,7 +342,7 @@ def handle_new_experiments_upload():
 
     db = SessionLocal()
     try:
-        created, updated, skipped, errors = NewExperimentsUploadService.bulk_upsert_from_excel(db, uploaded.read())
+        created, updated, skipped, errors, warnings = NewExperimentsUploadService.bulk_upsert_from_excel(db, uploaded.read())
         if errors:
             db.rollback()
             st.error("Upload encountered issues; no changes were applied.")
@@ -262,6 +353,14 @@ def handle_new_experiments_upload():
         else:
             db.commit()
             st.success(f"Experiments created: {created}, updated: {updated}, skipped rows: {skipped}")
+            
+            # Display warnings (non-blocking)
+            if warnings:
+                with st.expander(f"⚠️ {len(warnings)} validation warning(s) - click to view", expanded=False):
+                    for msg in warnings[:100]:
+                        st.warning(msg)
+                    if len(warnings) > 100:
+                        st.info(f"...and {len(warnings)-100} more warnings")
     except Exception as e:
         db.rollback()
         st.error(f"Unexpected error during New Experiments upload: {e}")

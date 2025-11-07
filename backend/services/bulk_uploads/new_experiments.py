@@ -17,35 +17,42 @@ from database import (
     AmountUnit,
 )
 from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
+from backend.services.experiment_validation import parse_experiment_id, validate_experiment_id
 
 
 class NewExperimentsUploadService:
     @staticmethod
-    def bulk_upsert_from_excel(db: Session, file_bytes: bytes) -> Tuple[int, int, int, List[str]]:
+    def bulk_upsert_from_excel(db: Session, file_bytes: bytes) -> Tuple[int, int, int, List[str], List[str]]:
         """
         Create or update Experiments, ExperimentalConditions, and ChemicalAdditives from a
-        multi-sheet Excel workbook. Supports optional Compounds sheet to upsert inventory first.
+        multi-sheet Excel workbook.
 
         Sheets (case-insensitive names):
-          - experiments: experiment_id*, sample_id, researcher, date, status, initial_note, overwrite
+          - experiments: experiment_id*, sample_id, date, status, initial_note, overwrite
+            (researcher is optional and auto-populated from experiment_id if not provided)
           - conditions: experiment_id*, columns matching ExperimentalConditions fields
+            (experiment_type is auto-populated from experiment_id)
           - additives: experiment_id*, compound*, amount*, unit*, order, method
           
+        Experiment ID format: ExperimentType_ResearcherInitials_Index (e.g., Serum_MH_101)
+        - Sequential: add -NUMBER (e.g., Serum_MH_101-2)
+        - Treatment: add _TEXT (e.g., Serum_MH_101_Desorption)
 
         Overwrite behavior per experiment row:
           - overwrite=False and experiment exists: skip with error
           - overwrite=True and experiment exists: update provided fields; if additives sheet has
             rows for that experiment, REPLACE all existing additives with the provided set.
 
-        Returns (created_experiments, updated_experiments, skipped_rows, errors)
+        Returns (created_experiments, updated_experiments, skipped_rows, errors, warnings)
         """
         created_exp = updated_exp = skipped = 0
         errors: List[str] = []
+        warnings: List[str] = []
 
         try:
             sheets: Dict[str, pd.DataFrame] = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
         except Exception as e:
-            return 0, 0, 0, [f"Failed to read Excel: {e}"]
+            return 0, 0, 0, [f"Failed to read Excel: {e}"], []
 
         # Normalize sheet keys
         normalized: Dict[str, pd.DataFrame] = {str(k).strip().lower(): v for k, v in (sheets or {}).items()}
@@ -91,6 +98,15 @@ class NewExperimentsUploadService:
                         skipped += 1
                         continue
 
+                    # Validate experiment ID and collect warnings
+                    is_valid, id_warnings = validate_experiment_id(exp_id)
+                    if id_warnings:
+                        for warning in id_warnings:
+                            warnings.append(f"[experiments] Row {idx+2} ({exp_id}): {warning}")
+                    
+                    # Parse experiment_id to extract components
+                    parsed = parse_experiment_id(exp_id)
+
                     overwrite_flag = parse_bool(row.get('overwrite'))
                     overwrite_by_exp_id[exp_id] = overwrite_flag
 
@@ -110,7 +126,10 @@ class NewExperimentsUploadService:
 
                     # Parse fields
                     sample_id = str(row.get('sample_id').strip()) if isinstance(row.get('sample_id'), str) and row.get('sample_id').strip() != '' else None
+                    # Auto-populate researcher from experiment_id if not provided
                     researcher = str(row.get('researcher').strip()) if isinstance(row.get('researcher'), str) and row.get('researcher').strip() != '' else None
+                    if not researcher and parsed.researcher_initials:
+                        researcher = parsed.researcher_initials
                     status_val = parse_status(row.get('status'))
                     # date can be Excel serial, ISO, or empty
                     date_val: Optional[pd.Timestamp]
@@ -242,6 +261,13 @@ class NewExperimentsUploadService:
                                     except Exception:
                                         # Ignore unknown/invalid assignments silently
                                         pass
+                        
+                        # Auto-populate experiment_type from experiment_id if not already set
+                        if not conditions.experiment_type or conditions.experiment_type == '':
+                            parsed = parse_experiment_id(exp_id)
+                            if parsed.experiment_type:
+                                conditions.experiment_type = parsed.experiment_type.value
+                        
                         # Recalculate derived fields
                         conditions.calculate_derived_conditions()
                     except Exception as e:
@@ -387,6 +413,6 @@ class NewExperimentsUploadService:
                         except Exception as e:
                             errors.append(f"[additives] Row {int(ridx)+2}: {e}")
 
-        return created_exp, updated_exp, skipped, errors
+        return created_exp, updated_exp, skipped, errors, warnings
 
 
