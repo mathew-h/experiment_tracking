@@ -83,6 +83,7 @@ def render_new_experiment():
                     
                     # Quick ID builder
                     st.markdown("**Quick ID Builder:**")
+                    st.caption("Build a compliant ID and copy it manually to the Experiment ID field above.")
                     col_a, col_b, col_c = st.columns(3)
                     with col_a:
                         exp_type_input = st.text_input("Type", placeholder="Serum", key="id_builder_type")
@@ -101,9 +102,7 @@ def render_new_experiment():
                         if treatment:
                             built_id += f"_{treatment}"
                         st.code(built_id)
-                        if st.button("Use this ID"):
-                            st.session_state.experiment_data['experiment_id'] = built_id
-                            st.rerun()
+                        st.caption("↑ Copy this ID and paste into the Experiment ID field above")
                 
                 experiment_id = st.text_input(
                     "Experiment ID", 
@@ -111,19 +110,23 @@ def render_new_experiment():
                     help="Enter a unique identifier following the format: ExperimentType_ResearcherInitials_Index"
                 )
                 
-                # Real-time validation display
+                # Real-time validation display (wrapped in try-except for safety)
                 if experiment_id:
-                    is_valid, warnings = validate_experiment_id(experiment_id)
-                    if warnings:
-                        st.warning(format_validation_warning(warnings))
-                    else:
-                        parsed = parse_experiment_id(experiment_id)
-                        if parsed.experiment_type:
-                            st.success(f"✓ Valid format: {parsed.experiment_type.value} experiment by {parsed.researcher_initials}")
-                        if parsed.sequential_number:
-                            st.info(f"Sequential run #{parsed.sequential_number}")
-                        if parsed.treatment_variant:
-                            st.info(f"Treatment variant: {parsed.treatment_variant}")
+                    try:
+                        is_valid, warnings = validate_experiment_id(experiment_id)
+                        if warnings:
+                            st.warning(format_validation_warning(warnings))
+                        else:
+                            parsed = parse_experiment_id(experiment_id)
+                            if parsed.experiment_type:
+                                st.success(f"✓ Valid format: {parsed.experiment_type.value} experiment by {parsed.researcher_initials}")
+                            if parsed.sequential_number:
+                                st.info(f"Sequential run #{parsed.sequential_number}")
+                            if parsed.treatment_variant:
+                                st.info(f"Treatment variant: {parsed.treatment_variant}")
+                    except Exception:
+                        # Silently skip validation display if Streamlit context not ready
+                        pass
                 
                 created_at = st.date_input(
                     "Creation Date",
@@ -167,9 +170,12 @@ def render_new_experiment():
                 # Auto-populate researcher from experiment_id, but allow override
                 default_researcher = st.session_state.experiment_data.get('researcher', '')
                 if experiment_id and not default_researcher:
-                    parsed = parse_experiment_id(experiment_id)
-                    if parsed.researcher_initials:
-                        default_researcher = parsed.researcher_initials
+                    try:
+                        parsed = parse_experiment_id(experiment_id)
+                        if parsed.researcher_initials:
+                            default_researcher = parsed.researcher_initials
+                    except Exception:
+                        pass  # Skip auto-population if parsing fails
                 
                 researcher = st.text_input(
                     "Researcher Name", 
@@ -311,14 +317,19 @@ def save_experiment():
         
         # Validate experiment ID and display warnings (but allow creation)
         experiment_id_str = exp_data['experiment_id']
-        is_valid, warnings = validate_experiment_id(experiment_id_str)
-        if warnings:
-            for warning in warnings:
-                st.warning(f"Experiment ID validation: {warning}")
+        experiment_type_enum = None
         
-        # Parse experiment_id to extract type and researcher
-        parsed = parse_experiment_id(experiment_id_str)
-        experiment_type_enum = parsed.experiment_type  # ExperimentType enum or None
+        try:
+            is_valid, warnings = validate_experiment_id(experiment_id_str)
+            if warnings:
+                for warning in warnings:
+                    st.warning(f"Experiment ID validation: {warning}")
+            
+            # Parse experiment_id to extract type and researcher
+            parsed = parse_experiment_id(experiment_id_str)
+            experiment_type_enum = parsed.experiment_type  # ExperimentType enum or None
+        except Exception as e:
+            st.warning(f"Could not validate experiment ID format: {e}")
         
         # Get the next experiment number, with a lock to prevent race conditions
         last_experiment = db.query(Experiment).order_by(Experiment.experiment_number.desc()).with_for_update().first()

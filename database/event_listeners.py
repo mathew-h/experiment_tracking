@@ -143,7 +143,7 @@ def update_experiment_lineage_on_flush(session, flush_context, instances):
             
             # Track if this is a potential base experiment (no derivation number)
             from .lineage_utils import parse_experiment_id
-            _, derivation_num = parse_experiment_id(obj.experiment_id)
+            _, derivation_num, _ = parse_experiment_id(obj.experiment_id)
             if derivation_num is None:
                 new_base_experiments.append(obj.experiment_id)
     

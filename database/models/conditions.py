@@ -9,7 +9,7 @@ class ExperimentalConditions(Base):
     id = Column(Integer, primary_key=True, index=True)
     experiment_id = Column(String, nullable=False, index=True) # Human-readable ID
     experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False) # FK to Experiment PK
-    particle_size = Column(Float)
+    particle_size = Column(String, nullable=True)  # Accept strings like '<75', '>100', '75-100', or numeric values
     initial_ph = Column(Float)
     rock_mass = Column(Float)
     water_volume = Column(Float)

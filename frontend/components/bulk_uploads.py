@@ -156,13 +156,23 @@ def handle_new_experiments_upload():
         
         **Experiment Types:** Serum, Autoclave, HPHT, CF (Core Flood), Other
 
+        **🔄 Auto-Copy from Parent (Conditions Only):**
+        Sequential/treatment experiments automatically copy CONDITIONS from their parent when `overwrite=False`:
+        - Leave conditions sheet empty to copy all conditions from parent
+        - Provide partial condition values to override specific fields (other fields copied from parent)
+        - **Chemical additives are NEVER auto-copied - must be explicitly provided each time**
+        
         **Sheets and fields:**
         - **experiments**: experiment_id* (unique), sample_id, date, status, initial_note, overwrite
-          - overwrite: when true for an existing experiment, metadata/conditions are updated and all additives are replaced
+          - researcher & sample_id AUTO-POPULATED from experiment_id/parent
+          - overwrite: when true, metadata/conditions updated and all additives replaced
           - status: use ExperimentStatus name or value (e.g., ONGOING, COMPLETED)
-          - date: Excel date or ISO (YYYY-MM-DD)
+          - date: Always use provided value (never copied from parent)
         - **conditions**: experiment_id* plus valid condition columns
+          - experiment_type AUTO-POPULATED from experiment_id
+          - Sequential experiments: parent conditions copied, then overridden by your values
         - **additives**: experiment_id*, compound*, amount*, unit* with optional order, method
+          - **Must be explicitly provided for EVERY experiment (never auto-copied from parent)**
           - unit must be one of the allowed units (e.g., g, mg, mL, ppm, mM, M, % of Rock)
         """
     )
@@ -252,13 +262,17 @@ def handle_new_experiments_upload():
                 "",
                 "IMPORTANT NOTES",
                 "",
-                "Auto-Population",
+                "AUTO-COPY FEATURE",
+                "",
+                "Override Behavior",
             ],
             "Pattern": [
                 "TYPE_INITIALS_INDEX",
                 "TYPE_INITIALS_INDEX-NUMBER",
                 "TYPE_INITIALS_INDEX_TREATMENT",
                 "TYPE_INITIALS_INDEX-NUMBER_TREATMENT",
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -273,6 +287,8 @@ def handle_new_experiments_upload():
                 "",
                 "",
                 "",
+                "",
+                "",
             ],
             "Description": [
                 "Initial/base experiment",
@@ -282,7 +298,9 @@ def handle_new_experiments_upload():
                 "",
                 "Hyphens track numeric lineage. Underscores indicate treatments.",
                 "Underscores within base names are fine (e.g., Core_Flood_MH_001)",
-                "Researcher & experiment_type are extracted from experiment_id",
+                "Sequential/treatment: CONDITIONS auto-copy from parent (overwrite=False)",
+                "Additives NEVER auto-copy - must be explicitly provided each time",
+                "Researcher, sample_id, experiment_type extracted from experiment_id",
             ],
         }
         df_instructions = pd.DataFrame(instructions_data)
@@ -342,7 +360,7 @@ def handle_new_experiments_upload():
 
     db = SessionLocal()
     try:
-        created, updated, skipped, errors, warnings = NewExperimentsUploadService.bulk_upsert_from_excel(db, uploaded.read())
+        created, updated, skipped, errors, warnings, info_messages = NewExperimentsUploadService.bulk_upsert_from_excel(db, uploaded.read())
         if errors:
             db.rollback()
             st.error("Upload encountered issues; no changes were applied.")
@@ -353,6 +371,16 @@ def handle_new_experiments_upload():
         else:
             db.commit()
             st.success(f"Experiments created: {created}, updated: {updated}, skipped rows: {skipped}")
+            
+            # Display info messages about auto-copied experiments (requirement 5b)
+            if info_messages:
+                # Count how many experiments had auto-copy
+                copy_count = len([msg for msg in info_messages if 'Will copy from parent' in msg or 'Copied' in msg])
+                with st.expander(f"ℹ️ {copy_count} experiment(s) auto-copied from parents - click to view details", expanded=True):
+                    for msg in info_messages[:100]:
+                        st.info(msg)
+                    if len(info_messages) > 100:
+                        st.info(f"...and {len(info_messages)-100} more messages")
             
             # Display warnings (non-blocking)
             if warnings:

@@ -219,13 +219,10 @@ FIELD_CONFIG = {
     # --- Optional Fields ---
     'particle_size': {
         'label': "Particle Size (μm)",
-        'default': 0.0,
-        'type': 'number',
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
+        'default': '',
+        'type': 'text',
         'required': False,
-        'help': "Enter the particle size in micrometers. Leave blank for control experiments with no rock added."
+        'help': "Enter particle size (e.g., '75', '<75', '>100', '75-150'). Accepts numeric values or text with comparators."
     },
     'water_to_rock_ratio': {
         'label': "Water to Rock Ratio",
@@ -242,7 +239,7 @@ FIELD_CONFIG = {
         'label': "Feedstock Type",
         'type': 'select',
         'options': FEEDSTOCK_TYPES,
-        'default': FeedstockType.NITRATE.value,
+        'default': FeedstockType.BLANK.value,
         'required': True,
         'help': "Feedstock type. Valid values: Nitrogen, Nitrate, or Blank."
     },
