@@ -2,226 +2,158 @@
 
 This directory contains data migration scripts for updating existing data in the database.
 
-## Available Migrations
+## Quick Reference
 
-### normalize_pxrf_reading_numbers_008.py
-**Purpose**: Fix float formatting issue where reading numbers are stored as "1.0", "2.0", "34.0" instead of "1", "2", "34".
+| Migration | Purpose | When to Run |
+|-----------|---------|-------------|
+| `normalize_pxrf_reading_numbers_008` | Fix "1.0" → "1" formatting in pXRF readings | When readings don't match in Power BI |
+| `backfill_pxrf_readings_009` | Ensure pXRF analyses reference valid readings | After importing historical pXRF data |
+| `split_pxrf_external_analyses_010` | Split multi-reading analyses into separate rows | After backfill, for proper 1:1 mapping |
+| `merge_duplicate_samples_007` | Merge duplicate sample IDs (case/formatting) | After identifying duplicates |
+| `identify_duplicate_samples.py` | Diagnostic: find duplicate samples | Before merge, to preview changes |
+| `establish_experiment_lineage_006` | Link experiment derivations and treatments | After lineage columns added |
+| `recompute_calculated_fields_005` | Recalculate all derived fields | After formula changes |
+| `calculate_grams_per_ton_yield_004` | Calculate g/ton yield for existing data | After adding yield calculation |
 
-**What it does**:
-- Normalizes all `reading_no` values in `pxrf_readings` table (removes `.0` suffix)
-- Normalizes all `pxrf_reading_no` values in `external_analyses` table
-- Handles comma-separated values (e.g., "2.0,3.0,4.0" → "2,3,4")
-- Makes matching work correctly in Power BI and other tools
+---
 
-**When to run**: After discovering that pXRF data and sample analyses aren't matching due to float formatting (e.g., "34" vs "34.0").
+## Active Migrations
 
-**Usage**:
+### normalize_pxrf_reading_numbers_008
+**Fix float formatting in pXRF reading numbers**
+
+Converts "1.0", "2.0" → "1", "2" in both `pxrf_readings.reading_no` and `external_analyses.pxrf_reading_no`.
+
+**Why needed:** Excel imports store integers as floats (1 → 1.0), breaking matches in Power BI.
+
 ```bash
-# Preview changes (dry run)
-python database/data_migrations/normalize_pxrf_reading_numbers_008.py
-
-# Apply normalization
-python database/data_migrations/normalize_pxrf_reading_numbers_008.py --apply
+python database/data_migrations/normalize_pxrf_reading_numbers_008.py         # Preview
+python database/data_migrations/normalize_pxrf_reading_numbers_008.py --apply # Apply
 ```
 
-**Why this happens**: Excel stores all numbers as floats internally. When pandas reads integer columns, it converts them to float (1 → 1.0), then string conversion produces "1.0" instead of "1".
+### backfill_pxrf_readings_009
+**Ensure pXRF analyses reference valid readings**
 
-**Example**: 
-- Before: `reading_no = "1.0"`, `pxrf_reading_no = "34.0"` → No match ❌
-- After: `reading_no = "1"`, `pxrf_reading_no = "34"` → Match! ✅
+- Removes legacy pXRF analyses with blank/NULL `pxrf_reading_no`
+- Creates missing reading entries or renames when safe
+- Normalizes comma-separated lists
 
-### backfill_pxrf_readings_009.py
-**Purpose**: Ensure every ExternalAnalysis pXRF entry references a valid row in the `pxrf_readings` table.
-
-**What it does**:
-- Scans all `ExternalAnalysis` rows of type `pXRF`
-- Removes legacy pXRF analysis rows whose `pxrf_reading_no` is blank/NULL
-- Normalizes comma-separated reading numbers and ensures they exist in `pxrf_readings`
-- Renames existing readings when safe or creates placeholder rows when missing
-- Writes the normalized reading list back to `pxrf_reading_no`
-
-**When to run**: After importing historical pXRF analyses or discovering analyses referencing readings that do not exist in the `pxrf_readings` table.
-
-**Usage**:
 ```bash
-# Preview changes (dry run)
-python database/data_migrations/backfill_pxrf_readings_009.py
-
-# Apply changes
-python database/data_migrations/backfill_pxrf_readings_009.py --apply
+python database/data_migrations/backfill_pxrf_readings_009.py         # Preview
+python database/data_migrations/backfill_pxrf_readings_009.py --apply # Apply
 ```
 
-### split_pxrf_external_analyses_010.py
-**Purpose**: Convert pXRF ExternalAnalysis rows that contain multiple reading numbers into one row per reading.
+### split_pxrf_external_analyses_010
+**Split multi-reading analyses into separate rows**
 
-**What it does**:
-- Normalizes `pxrf_reading_no` values
-- Removes legacy pXRF analysis rows with empty/NULL readings
-- Splits comma-separated lists into distinct ExternalAnalysis rows (one per reading)
-- Copies metadata (date, laboratory, analyst, description, metadata) to each new row
-- Skips creation when a per-reading entry already exists to avoid duplicates
+Converts comma-separated readings (e.g., "1,2,3") into individual ExternalAnalysis rows (one per reading). Preserves all metadata and avoids duplicates.
 
-**When to run**: After running `backfill_pxrf_readings_009.py`, or whenever comma-separated pXRF readings appear in ExternalAnalysis records.
+**Run after:** `backfill_pxrf_readings_009`
 
-**Usage**:
 ```bash
-# Preview changes (dry run)
-python database/data_migrations/split_pxrf_external_analyses_010.py
-
-# Apply changes
-python database/data_migrations/split_pxrf_external_analyses_010.py --apply
+python database/data_migrations/split_pxrf_external_analyses_010.py         # Preview
+python database/data_migrations/split_pxrf_external_analyses_010.py --apply # Apply
 ```
 
-### merge_duplicate_samples_007.py
-**Purpose**: Identify and merge duplicate sample IDs that differ only in formatting (e.g., "rock-001", "ROCK-001", "rock 001").
+### merge_duplicate_samples_007
+**Merge duplicate sample IDs differing only in formatting**
 
-**What it does**:
-- Finds groups of samples with IDs that normalize to the same value (ignoring case, hyphens, underscores, spaces)
-- Chooses the best sample to keep as primary (prefers canonical format: UPPERCASE, no spaces/underscores)
-- Merges metadata from duplicate samples (keeps non-null values)
-- Migrates all foreign key references (experiments, external analyses, photos, elemental results)
-- Removes duplicate entries intelligently (avoids constraint violations)
-- Deletes duplicate sample records
+Finds samples like "rock-001", "ROCK-001", "rock 001" and merges into canonical form (UPPERCASE, hyphens). Migrates all foreign key references (experiments, analyses, photos) and merges metadata intelligently.
 
-**When to run**: After deploying the fixed `rock_inventory.py` that prevents future duplicates. Run in dry-run mode first to preview changes.
-
-**Usage**:
+**Workflow:**
 ```bash
-# Step 1: Identify duplicates (no changes)
+# 1. Identify (diagnostic only)
 python database/data_migrations/identify_duplicate_samples.py
 
-# Step 2: Preview merge (dry run, no changes)
+# 2. Preview merge
 python database/data_migrations/merge_duplicate_samples_007.py
 
-# Step 3: Apply merge (makes changes)
+# 3. Apply
 python database/data_migrations/merge_duplicate_samples_007.py --apply
 ```
 
-**Example**: Samples "rock-001", "ROCK-001", "rock 001" will be merged into a single "ROCK-001" sample.
+### identify_duplicate_samples
+**Diagnostic: find all duplicate samples**
 
-### identify_duplicate_samples.py
-**Purpose**: Diagnostic script to identify ALL duplicate sample IDs and provide detailed analysis.
+Reports total samples vs. unique count, lists all duplicate groups with formatting differences and FK reference counts. Shows which sample will become primary.
 
-**What it shows**:
-- Total samples in database vs. expected unique count
-- Each duplicate group with all variants
-- Character differences (case, separators, spacing)
-- Foreign key reference counts for each duplicate
-- Which sample will be chosen as primary in merge
-- How many duplicates would be removed
-
-**When to run**: Before running the merge script to understand what duplicates exist.
-
-**Usage**:
 ```bash
 python database/data_migrations/identify_duplicate_samples.py
 ```
 
-**Example output**:
+**Example output:** "594 total, 547 unique → 47 duplicates to merge"
+
+### establish_experiment_lineage_006
+**Link experiment derivations and treatment variants**
+
+Parses experiment IDs to establish parent-child relationships:
+- **Sequential derivations:** `HPHT_MH_001-2` → links to `HPHT_MH_001`
+- **Treatment variants:** `HPHT_MH_001_Desorption` → tracked but no parent
+- **Combined:** `HPHT_MH_001-2_Desorption` → links to base, tracks treatment
+
+Sets `base_experiment_id` and `parent_experiment_fk` fields. Handles orphaned derivations gracefully.
+
+```bash
+python database/data_migrations/establish_experiment_lineage_006.py         # Preview
+python database/data_migrations/establish_experiment_lineage_006.py --apply # Apply
 ```
-Total samples: 594
-Unique samples (normalized): 547
-Duplicate groups: 47
-Extra duplicate records: 47
 
-Duplicate group: '20250710-2d'
-  • '20250710-2D' (has-hyphen, mixed/lowercase) [refs=5exp,2ana,1pho]
-  • '20250710_2D' (has_underscore, has uppercase) [refs=2exp]
-```
+---
 
-### Alternative Detection Methods
+## Historical/Utility Migrations
 
-If Python scripts won't run, you have several options:
+These migrations were run during development and may not be needed for current databases.
 
-#### 1. Streamlit App Sidebar (Easiest)
-The app sidebar now shows:
-- Sample count with duplicate indicator (e.g., "594 -47 dups")
-- Expandable section showing duplicate details
-- Command to run merge script
+| Migration | Purpose |
+|-----------|---------|
+| `recompute_calculated_fields_005` | Recalculate all derived fields after formula changes |
+| `calculate_grams_per_ton_yield_004` | Backfill g/ton yield for existing ScalarResults |
+| `update_catalyst_ppm_rounding_003` | Update catalyst PPM rounding consistency |
+| `recalculate_yields_002` | Recalculate yields with updated logic |
+| `recalculate_derived_conditions_001` | Recalculate water-to-rock ratio, etc. |
+| `chemical_migration.py` | Migrate deprecated catalyst/buffer fields to ChemicalAdditive |
+| `data_migration_update_statuses_001` | Update experiment statuses to enum format |
 
-#### 2. SQL Query (check_duplicates.sql)
-Open `experiments.db` in SQLite Browser and run `check_duplicates.sql` to see duplicate analysis.
+---
 
-#### 3. PowerBI Verification
-After running merge:
-- Sample count should match "unique samples" count
-- Duplicate entries in visualizations should disappear
-
-See `ALTERNATIVE_DETECTION_METHODS.md` for complete details.
+## Diagnostic Tools
 
 ### check_duplicates.sql
-**Purpose**: Quick script to identify and report duplicate samples without making any changes.
+SQL query to identify duplicate samples directly in SQLite Browser. Returns normalized IDs and duplicate counts.
 
-**What it does**:
-- Scans all samples and groups by normalized ID
-- Reports duplicate groups with details (references count, metadata completeness)
-- Provides a summary of how many duplicates exist
+### ALTERNATIVE_DETECTION_METHODS.md
+Detailed guide for detecting duplicates when Python scripts won't run:
+- Streamlit app sidebar indicators
+- SQL queries in SQLite Browser
+- Power BI verification methods
 
-**When to run**: Before running the merge script to understand the scope of the problem.
+### RUN_DUPLICATE_ANALYSIS.md
+Complete workflow guide for identifying and merging duplicate samples.
 
-**Usage**:
-```bash
-python database/data_migrations/identify_duplicate_samples.py
-```
-
-### establish_experiment_lineage_006.py
-**Purpose**: Establish lineage relationships for experiments with derivations (e.g., "HPHT_MH_001-2" derives from "HPHT_MH_001").
-
-**What it does**:
-- Parses all experiment IDs to identify derivations (experiments ending with "-N" where N is a number)
-- Sets the `base_experiment_id` field for all derivations
-- Establishes `parent_experiment_fk` relationships to link derivations to their base experiments
-- Handles orphaned derivations (where the base experiment doesn't exist yet)
-
-**When to run**: After adding the lineage tracking columns to the Experiment model. This establishes relationships for all existing experiments.
-
-**Example**: For experiment "HPHT_MH_001-2":
-- `base_experiment_id` will be set to "HPHT_MH_001"
-- `parent_experiment_fk` will link to the "HPHT_MH_001" experiment (if it exists)
-
-### calculate_grams_per_ton_yield_004.py
-**Purpose**: Calculate `grams_per_ton_yield` for all existing ScalarResults entries.
-
-**What it does**:
-- Iterates through all ScalarResults entries
-- Loads parent relationships (ExperimentalResults, Experiment, ExperimentalConditions)
-- Calls the `calculate_yields()` method to calculate `grams_per_ton_yield`
-- Uses the formula: `grams_per_ton_yield = 1,000,000 * (ammonia_mass_g / rock_mass)`
-- Where `ammonia_mass_g = (solution_ammonium_concentration / 1000) * (water_volume / 1000) * 18.04`
-
-**When to run**: After adding the automatic calculation logic to ensure all existing data has calculated yields.
-
-### recalculate_yields_002.py
-**Purpose**: Recalculate all yield values using the latest calculation logic.
-
-### recalculate_derived_conditions_001.py
-**Purpose**: Recalculate derived experimental conditions.
-
-### update_catalyst_ppm_rounding_003.py
-**Purpose**: Update catalyst PPM rounding for consistency.
+---
 
 ## Running Migrations
 
-### Option 1: Using the runner script (Recommended)
+**Standard pattern:**
 ```bash
-python scripts/run_data_migration.py calculate_grams_per_ton_yield_004
+python database/data_migrations/<migration_name>.py         # Dry run (preview)
+python database/data_migrations/<migration_name>.py --apply # Apply changes
 ```
 
-### Option 2: Running directly
+**Using runner script (alternative):**
 ```bash
-python database/data_migrations/calculate_grams_per_ton_yield_004.py
+python scripts/run_data_migration.py <migration_name>
 ```
 
-## Migration Safety
+## Safety Guidelines
 
-- All migrations include error handling and rollback functionality
-- Migrations log their progress and provide detailed output
-- Always backup your database before running migrations
-- Test migrations on a copy of your data first
+⚠️ **Always:**
+- Run dry-run mode first to preview changes
+- Backup your database before applying migrations
+- Test on a copy of production data when possible
+- Review output logs for errors or warnings
 
-## Automatic Calculation
-
-After running the migration, new experimental results will automatically calculate `grams_per_ton_yield` when:
-- `solution_ammonium_concentration` is provided
-- The parent experiment has valid `rock_mass` and `water_volume` values
-- The calculation is performed in the `_save_or_update_scalar` function in `experimental_results.py` 
+✅ **Built-in protections:**
+- All migrations include error handling and rollback
+- Detailed logging of all operations
+- Dry-run mode for safe preview 

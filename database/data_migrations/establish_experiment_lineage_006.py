@@ -6,12 +6,19 @@ This migration:
 2. Sets the base_experiment_id field for all derivations
 3. Establishes parent_experiment_fk relationships where base experiments exist
 4. Handles orphaned derivations (where base doesn't exist yet)
+5. Tracks treatment variants (e.g., "HPHT_MH_001_Desorption")
 
 Run with:
-    python scripts/run_data_migration.py establish_experiment_lineage_006
-or:
     python database/data_migrations/establish_experiment_lineage_006.py
+or:
+    python database/data_migrations/establish_experiment_lineage_006.py --dry-run
 """
+import sys
+import os
+
+# Add parent directory to path to allow imports when run directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from database import SessionLocal
 from database.models import Experiment
 from database.lineage_utils import parse_experiment_id, get_or_find_parent_experiment
@@ -49,17 +56,22 @@ def establish_experiment_lineage(dry_run: bool = False) -> dict:
                 if not exp.experiment_id:
                     continue
                 
-                base_id, derivation_num = parse_experiment_id(exp.experiment_id)
+                base_id, derivation_num, treatment_variant = parse_experiment_id(exp.experiment_id)
                 
                 if derivation_num is not None:
-                    # This is a derivation
+                    # This is a derivation (sequential run)
                     summary["derivations_found"] += 1
                     exp.base_experiment_id = base_id
-                    print(f"  Found derivation: {exp.experiment_id} -> base: {base_id}")
+                    if treatment_variant:
+                        print(f"  Found derivation with treatment: {exp.experiment_id} -> base: {base_id}, treatment: {treatment_variant}")
+                    else:
+                        print(f"  Found derivation: {exp.experiment_id} -> base: {base_id}")
                 else:
-                    # This is a base experiment, ensure lineage fields are clear
+                    # This is a base experiment (or treatment-only variant), ensure lineage fields are clear
                     exp.base_experiment_id = None
                     exp.parent_experiment_fk = None
+                    if treatment_variant:
+                        print(f"  Found treatment variant (no parent): {exp.experiment_id} -> treatment: {treatment_variant}")
             
             except Exception as e:
                 summary["errors"] += 1
