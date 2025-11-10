@@ -67,8 +67,8 @@ def establish_experiment_lineage(dry_run: bool = False) -> dict:
                     else:
                         print(f"  Found derivation: {exp.experiment_id} -> base: {base_id}")
                 else:
-                    # This is a base experiment (or treatment-only variant), ensure lineage fields are clear
-                    exp.base_experiment_id = None
+                    # This is a base experiment (or treatment-only variant), ensure self-referential lineage
+                    exp.base_experiment_id = base_id or exp.experiment_id
                     exp.parent_experiment_fk = None
                     if treatment_variant:
                         print(f"  Found treatment variant (no parent): {exp.experiment_id} -> treatment: {treatment_variant}")

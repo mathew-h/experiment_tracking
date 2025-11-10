@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from database import SessionLocal, Experiment, ExperimentalResults, ScalarResults, SampleInfo, PXRFReading, ExperimentalConditions, Compound, ChemicalAdditive, AmountUnit
+from database.models.enums import ExperimentStatus
 from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
 from backend.services.bulk_uploads.experiment_additives import ExperimentAdditivesService
 from backend.services.bulk_uploads.actlabs_xrd_report import XRDUploadService
@@ -12,6 +13,7 @@ from backend.services.bulk_uploads.actlabs_titration_data import (
 )
 from backend.services.bulk_uploads.pxrf_data import PXRFUploadService
 from backend.services.bulk_uploads.rock_inventory import RockInventoryService
+from backend.services.bulk_uploads.experiment_status import ExperimentStatusService
 from backend.services.scalar_results_service import ScalarResultsService
 from backend.services.icp_service import ICPService
 from sqlalchemy.exc import IntegrityError
@@ -40,7 +42,8 @@ def render_bulk_uploads_page():
             "Rock Inventory",
             "pXRF Readings",
             "Chemical Inventory (Compounds)",
-            "Experiment Additives (Compounds per Experiment)"
+            "Experiment Additives (Compounds per Experiment)",
+            "Update Experiment Status (ONGOING/COMPLETED)"
         )
     )
 
@@ -64,6 +67,8 @@ def render_bulk_uploads_page():
         upload_chemical_inventory()
     elif upload_option == "Experiment Additives (Compounds per Experiment)":
         experiments_additives()
+    elif upload_option == "Update Experiment Status (ONGOING/COMPLETED)":
+        handle_experiment_status_update()
 
 
 def handle_xrd_upload():
@@ -869,6 +874,20 @@ def handle_solution_chemistry_upload():
     The file should have the following columns found in the template below.
 
     **Columns marked with an asterisk (*) are required.**
+    
+    ### 🔄 Update Behavior & Overwrite Mode
+    
+    When uploading results for experiments that already have data:
+    
+    **Two ways to control overwrite:**
+    1. **Per-row control**: Use the `overwrite` column in the template (`True` or `False`)
+    2. **Global control**: Use the checkbox below to apply to all rows
+    
+    **Overwrite Modes:**
+    - **Partial Update (`False`, default)**: Only fields you provide are updated. Empty cells leave existing values unchanged.
+    - **Complete Replacement (`True`)**: All fields are replaced with your values. Empty cells will set fields to blank/null.
+    
+    💡 **Tip**: Per-row `overwrite` column takes precedence over the global checkbox setting.
     """)
 
     # --- Template Generation ---
@@ -891,6 +910,7 @@ def handle_solution_chemistry_upload():
         "co2_partial_pressure": [0],
         "final_conductivity": [1500.0],
         "final_alkalinity": [120.0],
+        "overwrite": [False],
 
     }
 
@@ -905,11 +925,68 @@ def handle_solution_chemistry_upload():
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # INSTRUCTIONS sheet
+        instructions_data = {
+            "Topic": [
+                "Required Fields",
+                "",
+                "Overwrite Behavior",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Examples",
+                "",
+                "",
+                "",
+                "Important Notes",
+                "",
+            ],
+            "Description": [
+                "Columns marked with asterisk (*) in the data sheet are required",
+                "",
+                "Controls how existing data is updated when you upload results for experiments that already have data",
+                "",
+                "PARTIAL UPDATE (overwrite = False, default):",
+                "  • Only columns you provide are updated",
+                "  • Empty cells leave existing database values unchanged",
+                "  • Best for adding new measurements or correcting specific values",
+                "",
+                "COMPLETE REPLACEMENT (overwrite = True):",
+                "  • ALL fields are replaced with your uploaded values",
+                "  • Empty cells will set database fields to blank/null",
+                "  • Use when you want to completely replace an entire result entry",
+                "",
+                "Per-row 'overwrite' column takes precedence over global checkbox in UI",
+            ],
+            "Example/Value": [
+                "experiment_id, description",
+                "",
+                "Use 'overwrite' column or checkbox",
+                "",
+                "False (or leave blank)",
+                "",
+                "",
+                "",
+                "",
+                "True",
+                "",
+                "",
+                "",
+                "You can mix modes in one upload",
+            ],
+        }
+        df_instructions = pd.DataFrame(instructions_data)
+        df_instructions.to_excel(writer, index=False, sheet_name='INSTRUCTIONS_READ_FIRST')
+        
+        # Data sheet
         template_df.to_excel(writer, index=False, sheet_name='Solution Chemistry')
         
         # Autosize columns for readability
         try:
             from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'INSTRUCTIONS_READ_FIRST')
             autosize_excel_columns(writer, 'Solution Chemistry')
         except Exception:
             pass
@@ -922,12 +999,21 @@ def handle_solution_chemistry_upload():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+    st.markdown("---")
+    
+    # Add overwrite checkbox
+    overwrite_all = st.checkbox(
+        "Overwrite all existing result fields",
+        value=False,
+        help="When checked, replaces ALL fields for existing results. Otherwise, only updates provided fields. Per-row 'overwrite' column takes precedence."
+    )
+    
     uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
 
     if uploaded_file:
         db = SessionLocal()
         try:
-            created, updated, skipped, errors = ScalarResultsUploadService.bulk_upsert_from_excel(db, uploaded_file.read())
+            created, updated, skipped, errors = ScalarResultsUploadService.bulk_upsert_from_excel(db, uploaded_file.read(), overwrite_all=overwrite_all)
             if errors:
                 db.rollback()
                 for error in errors:
@@ -1101,5 +1187,148 @@ def _process_icp_csv(file_content: bytes, manual_header_row: int = 0):
     except Exception as e:
         db.rollback()
         st.error(f"An unexpected error occurred during ICP-OES processing: {e}")
+    finally:
+        db.close()
+
+def handle_experiment_status_update():
+    """
+    Bulk update experiment status: mark listed experiments as ONGOING,
+    mark all other ONGOING experiments as COMPLETED.
+    Shows preview before applying changes with confirmation required.
+    """
+    st.header("Bulk Update Experiment Status")
+    st.markdown("""
+    Upload an Excel file with experiment IDs to mark as **ONGOING**. 
+    All other experiments currently marked as **ONGOING** will be changed to **COMPLETED**.
+    
+    **Important Notes:**
+    - Experiments with status CANCELLED will not be changed
+    - You will see a preview before any changes are applied
+    - Confirmation is required before applying changes
+    """)
+
+    # Generate template
+    template_df = pd.DataFrame([
+        {"experiment_id": "Serum_MH_001"},
+        {"experiment_id": "Serum_MH_002"},
+        {"experiment_id": "Autoclave_JD_015"},
+    ], columns=["experiment_id"])
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        template_df.to_excel(writer, index=False, sheet_name='experiment_status')
+        
+        # Autosize columns for readability
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'experiment_status')
+        except Exception:
+            pass
+    buf.seek(0)
+
+    st.download_button(
+        label="Download Experiment Status Template",
+        data=buf,
+        file_name="experiment_status_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.markdown("---")
+    
+    # File uploader
+    uploaded_file = st.file_uploader("Upload filled template (xlsx)", type=["xlsx"], key="status_upload")
+
+    if not uploaded_file:
+        return
+
+    # Get preview of changes
+    db = SessionLocal()
+    try:
+        preview = ExperimentStatusService.preview_status_changes_from_excel(db, uploaded_file.read())
+        
+        # Show errors if any
+        if preview.errors:
+            st.error("Validation errors found:")
+            for error in preview.errors:
+                st.error(error)
+            return
+        
+        # Show missing IDs warning
+        if preview.missing_ids:
+            st.warning(f"⚠️ {len(preview.missing_ids)} experiment ID(s) not found in database:")
+            missing_df = pd.DataFrame({"Missing Experiment IDs": preview.missing_ids})
+            st.dataframe(missing_df, use_container_width=True)
+            st.info("These IDs will be skipped. Only experiments found in the database will be processed.")
+        
+        # Show preview of changes
+        st.subheader("📋 Preview of Changes")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Experiments → ONGOING", len(preview.to_ongoing))
+            if preview.to_ongoing:
+                st.write("**Will be marked as ONGOING:**")
+                ongoing_df = pd.DataFrame(preview.to_ongoing)
+                st.dataframe(ongoing_df, use_container_width=True)
+        
+        with col2:
+            st.metric("Experiments → COMPLETED", len(preview.to_completed))
+            if preview.to_completed:
+                st.write("**Will be marked as COMPLETED:**")
+                completed_df = pd.DataFrame(preview.to_completed)
+                st.dataframe(completed_df, use_container_width=True)
+        
+        # No changes to apply
+        if not preview.to_ongoing and not preview.to_completed:
+            st.info("ℹ️ No status changes needed based on this file.")
+            return
+        
+        # Confirmation section
+        st.markdown("---")
+        st.subheader("⚠️ Confirm Changes")
+        
+        total_changes = len(preview.to_ongoing) + len(preview.to_completed)
+        st.warning(f"This will update the status of **{total_changes} experiment(s)**. This action cannot be undone through the UI.")
+        
+        # Confirmation text input
+        confirmation_text = st.text_input(
+            'Type "CONFIRM" to proceed with status updates:',
+            key="status_confirm"
+        )
+        
+        # Apply button (disabled unless confirmation entered)
+        apply_disabled = confirmation_text.upper() != "CONFIRM"
+        
+        if st.button("Apply Status Changes", disabled=apply_disabled, type="primary"):
+            # Extract experiment IDs to mark as ONGOING
+            exp_ids_to_ongoing = [exp["experiment_id"] for exp in preview.to_ongoing]
+            
+            # Apply changes
+            marked_ongoing, marked_completed, errors = ExperimentStatusService.apply_status_changes(
+                db, exp_ids_to_ongoing
+            )
+            
+            if errors:
+                db.rollback()
+                st.error("Failed to apply status changes:")
+                for error in errors:
+                    st.error(error)
+            else:
+                db.commit()
+                st.success(f"✅ Status changes applied successfully!")
+                st.info(f"**{marked_ongoing}** experiment(s) marked as ONGOING")
+                st.info(f"**{marked_completed}** experiment(s) marked as COMPLETED")
+                
+                # Clear the confirmation text
+                if 'status_confirm' in st.session_state:
+                    del st.session_state['status_confirm']
+        
+        if apply_disabled and confirmation_text:
+            st.info('Please type "CONFIRM" exactly (case-insensitive) to enable the Apply button.')
+            
+    except Exception as e:
+        db.rollback()
+        st.error(f"An unexpected error occurred: {e}")
     finally:
         db.close()

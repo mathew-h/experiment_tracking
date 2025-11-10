@@ -18,6 +18,9 @@ class ScalarResultsService:
             db: Database session
             experiment_id: String experiment ID
             result_data: Dictionary containing result data fields
+                        Special key '_overwrite' (bool) determines update behavior:
+                        - False (default): only update provided fields, keep existing values
+                        - True: replace all fields with provided values, set missing fields to None
             
         Returns:
             ExperimentalResults object (existing or new) with scalar data attached
@@ -25,33 +28,51 @@ class ScalarResultsService:
         Raises:
             ValueError: If experiment not found or scalar data already exists for this time point
         """
+        # Extract overwrite flag (default False)
+        overwrite = result_data.pop('_overwrite', False)
+        
         # Find experiment with normalization
         experiment = ScalarResultsService._find_experiment(db, experiment_id)
         if not experiment:
-            raise ValueError(f"Experiment with ID '{experiment_id}' not found.")
+            # Try to auto-create if this is a treatment variant with existing parent
+            from database.lineage_utils import auto_create_treatment_experiment
+            experiment = auto_create_treatment_experiment(
+                db=db,
+                experiment_id=experiment_id,
+                initial_note=result_data.get('description', 'Auto-created from scalar results upload')
+            )
+            if not experiment:
+                raise ValueError(f"Experiment with ID '{experiment_id}' not found and could not be auto-created.")
         
         # Find or create ExperimentalResults using unique result tracking improvements
         experimental_result = ScalarResultsService._find_or_create_experimental_result(
             db=db,
             experiment=experiment,
-            time_post_reaction=result_data['time_post_reaction'],
+            time_post_reaction=result_data.get('time_post_reaction'),
             description=result_data.get('description')
         )
         
         # Upsert ScalarResults: update if exists; otherwise create new
         if experimental_result.scalar_data:
             scalar_data = experimental_result.scalar_data
-            # Update only provided fields (leave others untouched)
+            # Define all updatable fields
             updatable_fields = [
                 'ferrous_iron_yield', 'solution_ammonium_concentration', 'ammonium_quant_method',
                 'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure',
                 'final_ph', 'final_nitrate_concentration', 'final_dissolved_oxygen', 'co2_partial_pressure',
                 'final_conductivity', 'final_alkalinity', 'sampling_volume'
             ]
-            for field in updatable_fields:
-                if field in result_data:
+            
+            if overwrite:
+                # Overwrite mode: set all fields from result_data, missing fields become None
+                for field in updatable_fields:
                     setattr(scalar_data, field, result_data.get(field))
-                # If a field is omitted in the upload row, we leave existing DB value unchanged (no deletion)
+            else:
+                # Partial update mode: only update provided fields (leave others untouched)
+                for field in updatable_fields:
+                    if field in result_data:
+                        setattr(scalar_data, field, result_data.get(field))
+                    # If a field is omitted in the upload row, we leave existing DB value unchanged
         else:
             # Create scalar data with chemistry measurements
             scalar_data = ScalarResults(

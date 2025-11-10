@@ -204,21 +204,24 @@ def get_experiment_lineage_info(db_session: Session) -> Dict[str, Any]:
     linked = []
     
     for exp in all_experiments:
-        if exp.base_experiment_id:
-            # This is a derivation
+        is_self_referential = exp.base_experiment_id == exp.experiment_id
+        has_base_reference = bool(exp.base_experiment_id)
+
+        if has_base_reference and not is_self_referential:
+            # This is a derivation or treatment variant tied to a base experiment
             derivations.append({
                 'experiment_id': exp.experiment_id,
                 'base_experiment_id': exp.base_experiment_id,
                 'parent_experiment_fk': exp.parent_experiment_fk,
                 'has_parent': exp.parent_experiment_fk is not None
             })
-            
+
             if exp.parent_experiment_fk:
                 linked.append(exp.experiment_id)
             else:
                 orphaned.append(exp.experiment_id)
         else:
-            # This is a base experiment
+            # This is a base experiment (self-referential lineage or no base reference)
             base_experiments.append(exp.experiment_id)
     
     return {

@@ -259,7 +259,7 @@ class TestExperimentLineageMigration:
             
             # Check non-derivation with hyphens (last part not numeric)
             non_deriv = test_db_session.query(Experiment).filter_by(experiment_id="TEST-SAMPLE-ABC").first()
-            assert non_deriv.base_experiment_id is None
+            assert non_deriv.base_experiment_id == "TEST-SAMPLE-ABC"
             assert non_deriv.parent_experiment_fk is None
             
             print("\n✓ All migration tests passed!")
@@ -303,6 +303,303 @@ class TestExperimentLineageMigration:
             
         finally:
             migration_module.SessionLocal = original_session
+    
+    def test_sequential_lineage_with_skipped_numbers(self, test_db_session):
+        """Test that sequential experiments can have skipped numbers (EXP-001 -> EXP-001-2 -> EXP-001-4)."""
+        from database.models.enums import ExperimentStatus
+        from database.lineage_utils import update_experiment_lineage
+        
+        # Create base experiment
+        base_exp = Experiment(
+            experiment_id="TEST_SK_001",
+            experiment_number=1001,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(base_exp)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, base_exp)
+        test_db_session.commit()
+        
+        # Create sequential experiment -2 (skipping -1)
+        seq2_exp = Experiment(
+            experiment_id="TEST_SK_001-2",
+            experiment_number=1002,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(seq2_exp)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, seq2_exp)
+        test_db_session.commit()
+        
+        # Verify that TEST_SK_001-2 has TEST_SK_001 as parent
+        assert seq2_exp.base_experiment_id == "TEST_SK_001"
+        assert seq2_exp.parent_experiment_fk == base_exp.id
+        
+        # Create sequential experiment -4 (skipping -3)
+        seq4_exp = Experiment(
+            experiment_id="TEST_SK_001-4",
+            experiment_number=1003,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(seq4_exp)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, seq4_exp)
+        test_db_session.commit()
+        
+        # Verify that TEST_SK_001-4 has TEST_SK_001-2 as parent (highest sequential < 4)
+        assert seq4_exp.base_experiment_id == "TEST_SK_001"
+        assert seq4_exp.parent_experiment_fk == seq2_exp.id
+        
+        print("\n✓ Sequential lineage with skipped numbers works correctly!")
+        print(f"  Base: {base_exp.experiment_id}")
+        print(f"  -2 parent: {base_exp.experiment_id}")
+        print(f"  -4 parent: {seq2_exp.experiment_id} (skipped -3)")
+    
+    def test_sequential_parent_finding_logic(self, test_db_session):
+        """Test the enhanced parent finding logic for sequential experiments."""
+        from database.models.enums import ExperimentStatus
+        from database.lineage_utils import get_or_find_parent_experiment, update_experiment_lineage
+        
+        # Create base experiment
+        base = Experiment(
+            experiment_id="SEQ_TEST_001",
+            experiment_number=2001,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(base)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, base)
+        
+        # Create SEQ_TEST_001-2
+        seq2 = Experiment(
+            experiment_id="SEQ_TEST_001-2",
+            experiment_number=2002,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(seq2)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, seq2)
+        
+        # Create SEQ_TEST_001-5 (with gaps)
+        seq5 = Experiment(
+            experiment_id="SEQ_TEST_001-5",
+            experiment_number=2003,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(seq5)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, seq5)
+        
+        test_db_session.commit()
+        
+        # Test parent finding for SEQ_TEST_001-3 (should find SEQ_TEST_001-2)
+        parent_for_3 = get_or_find_parent_experiment(test_db_session, "SEQ_TEST_001-3")
+        assert parent_for_3 is not None
+        assert parent_for_3.experiment_id == "SEQ_TEST_001-2"
+        
+        # Test parent finding for SEQ_TEST_001-6 (should find SEQ_TEST_001-5)
+        parent_for_6 = get_or_find_parent_experiment(test_db_session, "SEQ_TEST_001-6")
+        assert parent_for_6 is not None
+        assert parent_for_6.experiment_id == "SEQ_TEST_001-5"
+        
+        # Test parent finding for SEQ_TEST_001-10 (should still find SEQ_TEST_001-5)
+        parent_for_10 = get_or_find_parent_experiment(test_db_session, "SEQ_TEST_001-10")
+        assert parent_for_10 is not None
+        assert parent_for_10.experiment_id == "SEQ_TEST_001-5"
+        
+        print("\n✓ Sequential parent finding logic works correctly!")
+    
+    def test_auto_create_treatment_experiment(self, test_db_session):
+        """Test auto-creation of treatment experiments during scalar results upload."""
+        from database.models.enums import ExperimentStatus
+        from database.lineage_utils import auto_create_treatment_experiment, update_experiment_lineage
+        
+        # Create parent experiment with conditions
+        parent = Experiment(
+            experiment_id="AUTO_CREATE_001",
+            experiment_number=3001,
+            sample_id="ROCK_1",
+            researcher="MH",
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(parent)
+        test_db_session.flush()
+        
+        # Add conditions to parent
+        parent_conditions = ExperimentalConditions(
+            experiment_id=parent.experiment_id,
+            experiment_fk=parent.id,
+            temperature=90.0,
+            initial_ph=7.0,
+            rock_mass=100.0,
+            water_volume=500.0,
+        )
+        test_db_session.add(parent_conditions)
+        test_db_session.flush()
+        
+        update_experiment_lineage(test_db_session, parent)
+        test_db_session.commit()
+        
+        # Auto-create treatment experiment
+        treatment_exp = auto_create_treatment_experiment(
+            db=test_db_session,
+            experiment_id="AUTO_CREATE_001_Desorption",
+            initial_note="Auto-created from scalar results upload"
+        )
+        
+        # Verify experiment was created
+        assert treatment_exp is not None
+        assert treatment_exp.experiment_id == "AUTO_CREATE_001_Desorption"
+        assert treatment_exp.sample_id == parent.sample_id
+        assert treatment_exp.researcher == parent.researcher
+        assert treatment_exp.status == ExperimentStatus.COMPLETED
+        
+        # Verify lineage
+        assert treatment_exp.base_experiment_id == "AUTO_CREATE_001"
+        assert treatment_exp.parent_experiment_fk == parent.id
+        
+        # Verify conditions were copied
+        assert treatment_exp.conditions is not None
+        assert treatment_exp.conditions.temperature == parent_conditions.temperature
+        assert treatment_exp.conditions.initial_ph == parent_conditions.initial_ph
+        assert treatment_exp.conditions.rock_mass == parent_conditions.rock_mass
+        assert treatment_exp.conditions.water_volume == parent_conditions.water_volume
+        
+        # Verify note was created
+        assert len(treatment_exp.notes) > 0
+        assert treatment_exp.notes[0].note_text == "Auto-created from scalar results upload"
+        
+        print("\n✓ Auto-creation of treatment experiments works correctly!")
+    
+    def test_auto_create_only_treatment_variants(self, test_db_session):
+        """Test that auto-creation only works for treatment variants, not sequential experiments."""
+        from database.models.enums import ExperimentStatus
+        from database.lineage_utils import auto_create_treatment_experiment, update_experiment_lineage
+        
+        # Create parent experiment
+        parent = Experiment(
+            experiment_id="ONLY_TREAT_001",
+            experiment_number=4001,
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(parent)
+        test_db_session.flush()
+        update_experiment_lineage(test_db_session, parent)
+        test_db_session.commit()
+        
+        # Try to auto-create a sequential experiment (should return None)
+        sequential_exp = auto_create_treatment_experiment(
+            db=test_db_session,
+            experiment_id="ONLY_TREAT_001-2",
+            initial_note="Should not be created"
+        )
+        
+        assert sequential_exp is None, "Sequential experiments should not be auto-created"
+        
+        # Verify treatment variants can be created
+        treatment_exp = auto_create_treatment_experiment(
+            db=test_db_session,
+            experiment_id="ONLY_TREAT_001_PostAnalysis",
+            initial_note="Should be created"
+        )
+        
+        assert treatment_exp is not None, "Treatment variants should be auto-created"
+        
+        print("\n✓ Auto-creation is restricted to treatment variants only!")
+    
+    def test_auto_create_requires_parent(self, test_db_session):
+        """Test that auto-creation fails if parent doesn't exist."""
+        from database.lineage_utils import auto_create_treatment_experiment
+        
+        # Try to auto-create without parent
+        treatment_exp = auto_create_treatment_experiment(
+            db=test_db_session,
+            experiment_id="NONEXISTENT_PARENT_001_Treatment",
+            initial_note="Should not be created"
+        )
+        
+        assert treatment_exp is None, "Auto-creation should fail without parent"
+        
+        print("\n✓ Auto-creation requires parent experiment!")
+    
+    def test_scalar_results_auto_create_integration(self, test_db_session):
+        """Test full integration: scalar results upload auto-creates treatment experiment."""
+        from database.models.enums import ExperimentStatus
+        from database.lineage_utils import update_experiment_lineage
+        from backend.services.scalar_results_service import ScalarResultsService
+        
+        # Create parent experiment with conditions
+        parent = Experiment(
+            experiment_id="SCALAR_INT_001",
+            experiment_number=5001,
+            sample_id="ROCK_2",
+            researcher="TH",
+            status=ExperimentStatus.COMPLETED,
+            date=date.today()
+        )
+        test_db_session.add(parent)
+        test_db_session.flush()
+        
+        # Add conditions to parent
+        parent_conditions = ExperimentalConditions(
+            experiment_id=parent.experiment_id,
+            experiment_fk=parent.id,
+            temperature=120.0,
+            initial_ph=6.5,
+            rock_mass=200.0,
+            water_volume=1000.0,
+        )
+        test_db_session.add(parent_conditions)
+        test_db_session.flush()
+        
+        update_experiment_lineage(test_db_session, parent)
+        test_db_session.commit()
+        
+        # Upload scalar results for non-existent treatment experiment
+        result_data = {
+            'time_post_reaction': 5.0,
+            'description': 'Post-desorption analysis',
+            'solution_ammonium_concentration': 25.5,
+            'final_ph': 7.2,
+        }
+        
+        # This should auto-create the experiment
+        experimental_result = ScalarResultsService.create_scalar_result(
+            db=test_db_session,
+            experiment_id="SCALAR_INT_001_Desorption",
+            result_data=result_data
+        )
+        
+        # Verify the experiment was auto-created
+        from database.models import Experiment as ExpModel
+        created_exp = test_db_session.query(ExpModel).filter(
+            ExpModel.experiment_id == "SCALAR_INT_001_Desorption"
+        ).first()
+        
+        assert created_exp is not None, "Experiment should be auto-created"
+        assert created_exp.status == ExperimentStatus.COMPLETED
+        assert created_exp.sample_id == parent.sample_id
+        assert created_exp.researcher == parent.researcher
+        assert created_exp.base_experiment_id == "SCALAR_INT_001"
+        assert created_exp.parent_experiment_fk == parent.id
+        
+        # Verify conditions were copied
+        assert created_exp.conditions is not None
+        assert created_exp.conditions.temperature == parent_conditions.temperature
+        
+        # Verify scalar results were created
+        assert experimental_result is not None
+        assert experimental_result.experiment_fk == created_exp.id
+        
+        print("\n✓ Scalar results upload auto-creates treatment experiments correctly!")
 
 
 def test_snapshot_functionality():

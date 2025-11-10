@@ -12,9 +12,16 @@ from backend.services.scalar_results_service import ScalarResultsService
 
 class ScalarResultsUploadService:
     @staticmethod
-    def bulk_upsert_from_excel(db: Session, file_bytes: bytes) -> Tuple[int, int, int, List[str]]:
+    def bulk_upsert_from_excel(db: Session, file_bytes: bytes, overwrite_all: bool = False) -> Tuple[int, int, int, List[str]]:
         """
         Parse the Solution Chemistry Excel and delegate creation/upsert to ScalarResultsService.
+        
+        Args:
+            db: Database session
+            file_bytes: Excel file bytes
+            overwrite_all: If True, replace all fields for existing records. 
+                          Per-row 'overwrite' column takes precedence.
+        
         Returns (created, updated, skipped, errors). Updated count is best-effort (service may overwrite in place).
         """
         errors: List[str] = []
@@ -42,6 +49,18 @@ class ScalarResultsUploadService:
                 if isinstance(v, str) and v.strip() == '':
                     continue
                 clean[k] = v
+            
+            # Handle per-row overwrite flag: per-row takes precedence over global
+            row_overwrite = clean.pop('overwrite', None)
+            if row_overwrite is not None:
+                # Convert to boolean if needed
+                if isinstance(row_overwrite, str):
+                    clean['_overwrite'] = row_overwrite.lower() in ('true', '1', 'yes')
+                else:
+                    clean['_overwrite'] = bool(row_overwrite)
+            else:
+                clean['_overwrite'] = overwrite_all
+            
             cleaned_records.append(clean)
 
         # Delegate to service
