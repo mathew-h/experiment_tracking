@@ -65,18 +65,21 @@ def render_new_experiment():
                 # ID builder helper and naming guide
                 with st.expander("💡 Experiment ID Naming Guide", expanded=False):
                     st.markdown("""
-                    **Required Format:** `ExperimentType_ResearcherInitials_Index`
+                    **Supported Formats:**
+                    - `ExperimentType_ResearcherInitials_Index` (3-part, e.g., `Serum_MH_101`)
+                    - `ExperimentType_Index` (2-part, e.g., `HPHT_001`)
                     
                     **Examples:**
-                    - **Base experiment:** `Serum_MH_101`
-                    - **Sequential runs:** `Serum_MH_101-2` (2nd brine), `Serum_MH_101-3` (3rd brine)
-                    - **Treatment variants:** `Serum_MH_101_Desorption` (special treatment)
-                    - **Combined:** `Serum_MH_101-2_Desorption` (treatment on 2nd run's sample)
+                    - **Base experiment (3-part):** `Serum_MH_101`
+                    - **Base experiment (2-part):** `HPHT_001`
+                    - **Sequential runs:** `Serum_MH_101-2` or `HPHT_001-2` (2nd brine)
+                    - **Treatment variants:** `Serum_MH_101_Desorption` or `HPHT_001_Desorption`
+                    - **Combined:** `Serum_MH_101-2_Desorption` or `HPHT_001-2_Desorption`
                     
                     **Delimiter Rules:**
                     - Use **hyphen-NUMBER** (`-2`, `-3`) for sequential lineage tracking
                     - Use **underscore_TEXT** (`_Desorption`, `_Annealing`) for special treatments
-                    - Underscores within names are fine (e.g., `Core_Flood` or `HPHT_MH_101`)
+                    - Underscores within names are fine (e.g., `Core_Flood`)
                     
                     **Experiment Types:** Serum, Autoclave, HPHT, CF (Core Flood), Other
                     """)
@@ -84,10 +87,14 @@ def render_new_experiment():
                     # Quick ID builder
                     st.markdown("**Quick ID Builder:**")
                     st.caption("Build a compliant ID and copy it manually to the Experiment ID field above.")
+                    use_3_part = st.checkbox("Use 3-part format (with initials)", value=True, key="id_builder_format")
                     col_a, col_b, col_c = st.columns(3)
                     with col_a:
                         exp_type_input = st.text_input("Type", placeholder="Serum", key="id_builder_type")
-                        researcher_init = st.text_input("Initials", placeholder="MH", key="id_builder_init")
+                        if use_3_part:
+                            researcher_init = st.text_input("Initials", placeholder="MH", key="id_builder_init")
+                        else:
+                            researcher_init = None
                     with col_b:
                         exp_index = st.text_input("Index", placeholder="101", key="id_builder_index")
                         seq_num = st.number_input("Sequential #", min_value=0, value=0, step=1, key="id_builder_seq",
@@ -95,8 +102,11 @@ def render_new_experiment():
                     with col_c:
                         treatment = st.text_input("Treatment", placeholder="Desorption", key="id_builder_treat")
                     
-                    if exp_type_input and researcher_init and exp_index:
-                        built_id = f"{exp_type_input}_{researcher_init}_{exp_index}"
+                    if exp_type_input and exp_index:
+                        if use_3_part and researcher_init:
+                            built_id = f"{exp_type_input}_{researcher_init}_{exp_index}"
+                        else:
+                            built_id = f"{exp_type_input}_{exp_index}"
                         if seq_num > 0:
                             built_id += f"-{seq_num}"
                         if treatment:
@@ -107,7 +117,7 @@ def render_new_experiment():
                 experiment_id = st.text_input(
                     "Experiment ID", 
                     value=st.session_state.experiment_data.get('experiment_id', ''),
-                    help="Enter a unique identifier following the format: ExperimentType_ResearcherInitials_Index"
+                    help="Enter a unique identifier: ExperimentType_Index or ExperimentType_ResearcherInitials_Index"
                 )
                 
                 # Real-time validation display (wrapped in try-except for safety)
@@ -119,7 +129,10 @@ def render_new_experiment():
                         else:
                             parsed = parse_experiment_id(experiment_id)
                             if parsed.experiment_type:
-                                st.success(f"✓ Valid format: {parsed.experiment_type.value} experiment by {parsed.researcher_initials}")
+                                if parsed.researcher_initials:
+                                    st.success(f"✓ Valid format: {parsed.experiment_type.value} experiment by {parsed.researcher_initials}")
+                                else:
+                                    st.success(f"✓ Valid format: {parsed.experiment_type.value} experiment")
                             if parsed.sequential_number:
                                 st.info(f"Sequential run #{parsed.sequential_number}")
                             if parsed.treatment_variant:

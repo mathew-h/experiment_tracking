@@ -153,13 +153,24 @@ def handle_new_experiments_upload():
         Use this multi-sheet Excel template to create or update experiments.
         Columns with an asterisk (*) are required.
         
-        **Experiment ID Format:** `ExperimentType_ResearcherInitials_Index`
-        - **Base:** `Serum_MH_101`
-        - **Sequential:** `Serum_MH_101-2` (use hyphen-NUMBER for consecutive runs)
-        - **Treatment:** `Serum_MH_101_Desorption` (use underscore_TEXT for treatments)
-        - **Combined:** `Serum_MH_101-2_Desorption`
+        **Experiment ID Format:** Supports two formats:
+        - `ExperimentType_ResearcherInitials_Index` (3-part, e.g., `Serum_MH_101`)
+        - `ExperimentType_Index` (2-part, e.g., `HPHT_001`)
+        
+        Both formats support optional suffixes:
+        - **Sequential:** Add `-NUMBER` for consecutive runs (e.g., `Serum_MH_101-2` or `HPHT_001-2`)
+        - **Treatment:** Add `_TEXT` for treatment variants (e.g., `Serum_MH_101_Desorption` or `HPHT_001_Desorption`)
+        - **Combined:** Both suffixes together (e.g., `Serum_MH_101-2_Desorption` or `HPHT_001-2_Desorption`)
         
         **Experiment Types:** Serum, Autoclave, HPHT, CF (Core Flood), Other
+
+        **🔄 Renaming Experiments:**
+        - Add `old_experiment_id` column to specify current database experiment_id to rename
+        - When `old_experiment_id` is provided with `overwrite=True`, the experiment will be renamed
+        - All results, conditions, and additives remain linked (uses database ID, not experiment_id)
+        - Example: `experiment_id=HPHT_MH_036_Desorption`, `old_experiment_id=HPHT_MH_036-2`, `overwrite=True`
+        - ⚠️ **IMPORTANT:** For chain renames (new ID = another's old ID), order matters! Process rows so experiments rename away from conflicting names first.
+        - See docs/EXPERIMENT_RENAME_GUIDE.md for detailed examples and ordering rules
 
         **🔄 Auto-Copy from Parent (Conditions Only):**
         Sequential/treatment experiments automatically copy CONDITIONS from their parent when `overwrite=False`:
@@ -168,7 +179,7 @@ def handle_new_experiments_upload():
         - **Chemical additives are NEVER auto-copied - must be explicitly provided each time**
         
         **Sheets and fields:**
-        - **experiments**: experiment_id* (unique), sample_id, date, status, initial_note, overwrite
+        - **experiments**: experiment_id* (unique), old_experiment_id (optional, for renames), sample_id, date, status, initial_note, overwrite
           - researcher & sample_id AUTO-POPULATED from experiment_id/parent
           - overwrite: when true, metadata/conditions updated and all additives replaced
           - status: use ExperimentStatus name or value (e.g., ONGOING, COMPLETED)
@@ -186,6 +197,7 @@ def handle_new_experiments_upload():
     unit_options = [u.value for u in AmountUnit]
     experiments_cols = [
         "experiment_id",  # required
+        "old_experiment_id",  # optional: use when renaming experiments
         "sample_id",
         "date",           # any Excel/ISO date
         "status",         # ExperimentStatus name or value
@@ -193,14 +205,22 @@ def handle_new_experiments_upload():
         "overwrite",      # True/False
     ]
 
-    # Multiple example rows showing different naming patterns
+    # Multiple example rows showing different naming patterns (both 2-part and 3-part formats)
     example_experiments = [
         {
             "experiment_id": "Serum_MH_101",
             "sample_id": "Rock_1",
             "date": pd.Timestamp.today().date(),
             "status": "ONGOING",
-            "initial_note": "Base experiment (main branch)",
+            "initial_note": "Base experiment (3-part format)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "HPHT_001",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "Base experiment (2-part format)",
             "overwrite": False,
         },
         {
@@ -208,7 +228,15 @@ def handle_new_experiments_upload():
             "sample_id": "Rock_1",
             "date": pd.Timestamp.today().date(),
             "status": "ONGOING",
-            "initial_note": "2nd consecutive run (sequential)",
+            "initial_note": "2nd consecutive run (sequential, 3-part)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "HPHT_001-2",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "2nd consecutive run (sequential, 2-part)",
             "overwrite": False,
         },
         {
@@ -216,7 +244,15 @@ def handle_new_experiments_upload():
             "sample_id": "Rock_1",
             "date": pd.Timestamp.today().date(),
             "status": "ONGOING",
-            "initial_note": "Treatment variant (desorption)",
+            "initial_note": "Treatment variant (3-part)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "HPHT_001_Desorption",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "Treatment variant (2-part)",
             "overwrite": False,
         },
         {
@@ -224,7 +260,15 @@ def handle_new_experiments_upload():
             "sample_id": "Rock_1",
             "date": pd.Timestamp.today().date(),
             "status": "ONGOING",
-            "initial_note": "Combined: 2nd run + annealing treatment",
+            "initial_note": "Combined: 2nd run + treatment (3-part)",
+            "overwrite": False,
+        },
+        {
+            "experiment_id": "HPHT_001-2_Annealing",
+            "sample_id": "Rock_1",
+            "date": pd.Timestamp.today().date(),
+            "status": "ONGOING",
+            "initial_note": "Combined: 2nd run + treatment (2-part)",
             "overwrite": False,
         },
     ]
@@ -260,10 +304,14 @@ def handle_new_experiments_upload():
         # INSTRUCTIONS sheet
         instructions_data = {
             "Naming Convention": [
-                "Base Experiment",
-                "Sequential Run",
-                "Treatment Variant",
-                "Combined",
+                "Base Experiment (3-part)",
+                "Base Experiment (2-part)",
+                "Sequential Run (3-part)",
+                "Sequential Run (2-part)",
+                "Treatment Variant (3-part)",
+                "Treatment Variant (2-part)",
+                "Combined (3-part)",
+                "Combined (2-part)",
                 "",
                 "IMPORTANT NOTES",
                 "",
@@ -273,9 +321,13 @@ def handle_new_experiments_upload():
             ],
             "Pattern": [
                 "TYPE_INITIALS_INDEX",
+                "TYPE_INDEX",
                 "TYPE_INITIALS_INDEX-NUMBER",
+                "TYPE_INDEX-NUMBER",
                 "TYPE_INITIALS_INDEX_TREATMENT",
+                "TYPE_INDEX_TREATMENT",
                 "TYPE_INITIALS_INDEX-NUMBER_TREATMENT",
+                "TYPE_INDEX-NUMBER_TREATMENT",
                 "",
                 "",
                 "",
@@ -285,9 +337,13 @@ def handle_new_experiments_upload():
             ],
             "Example": [
                 "Serum_MH_101",
+                "HPHT_001",
                 "Serum_MH_101-2",
+                "HPHT_001-2",
                 "Serum_MH_101_Desorption",
+                "HPHT_001_Desorption",
                 "Serum_MH_101-2_Desorption",
+                "HPHT_001-2_Desorption",
                 "",
                 "",
                 "",
@@ -296,16 +352,20 @@ def handle_new_experiments_upload():
                 "",
             ],
             "Description": [
-                "Initial/base experiment",
-                "2nd, 3rd... consecutive brine/run (use hyphen-NUMBER)",
+                "Initial/base experiment (3-part format)",
+                "Initial/base experiment (2-part format)",
+                "2nd, 3rd... consecutive run (use hyphen-NUMBER)",
+                "2nd, 3rd... consecutive run (use hyphen-NUMBER)",
                 "Special treatment on sample (use underscore_TEXT)",
+                "Special treatment on sample (use underscore_TEXT)",
+                "Treatment on specific run's sample",
                 "Treatment on specific run's sample",
                 "",
                 "Hyphens track numeric lineage. Underscores indicate treatments.",
-                "Underscores within base names are fine (e.g., Core_Flood_MH_001)",
+                "Both 2-part (TYPE_INDEX) and 3-part (TYPE_INITIALS_INDEX) formats supported.",
                 "Sequential/treatment: CONDITIONS auto-copy from parent (overwrite=False)",
                 "Additives NEVER auto-copy - must be explicitly provided each time",
-                "Researcher, sample_id, experiment_type extracted from experiment_id",
+                "Researcher (3-part only), sample_id, experiment_type extracted from experiment_id",
             ],
         }
         df_instructions = pd.DataFrame(instructions_data)
@@ -315,7 +375,8 @@ def handle_new_experiments_upload():
         df_exp = pd.DataFrame(example_experiments, columns=experiments_cols)
         # Display: mark required fields with asterisks and add format hint
         display_experiments_cols = [
-            "experiment_id* (TYPE_INITIALS_INDEX)", 
+            "experiment_id* (TYPE_INDEX or TYPE_INITIALS_INDEX)", 
+            "old_experiment_id (optional, for renames)",
             "sample_id", 
             "date", 
             "status", 
@@ -377,15 +438,29 @@ def handle_new_experiments_upload():
             db.commit()
             st.success(f"Experiments created: {created}, updated: {updated}, skipped rows: {skipped}")
             
-            # Display info messages about auto-copied experiments (requirement 5b)
+            # Display info messages (including DEBUG messages, renames, and auto-copy info)
             if info_messages:
-                # Count how many experiments had auto-copy
+                # Count different message types
+                debug_count = len([msg for msg in info_messages if 'DEBUG' in msg])
+                rename_count = len([msg for msg in info_messages if 'Renamed experiment' in msg or 'Will rename' in msg])
                 copy_count = len([msg for msg in info_messages if 'Will copy from parent' in msg or 'Copied' in msg])
-                with st.expander(f"ℹ️ {copy_count} experiment(s) auto-copied from parents - click to view details", expanded=True):
-                    for msg in info_messages[:100]:
+                
+                # Build expander title
+                title_parts = []
+                if debug_count > 0:
+                    title_parts.append(f"{debug_count} DEBUG messages")
+                if rename_count > 0:
+                    title_parts.append(f"{rename_count} renames")
+                if copy_count > 0:
+                    title_parts.append(f"{copy_count} auto-copies")
+                
+                title = f"ℹ️ {' | '.join(title_parts) if title_parts else f'{len(info_messages)} info messages'} - click to view details"
+                
+                with st.expander(title, expanded=True):
+                    for msg in info_messages[:200]:
                         st.info(msg)
-                    if len(info_messages) > 100:
-                        st.info(f"...and {len(info_messages)-100} more messages")
+                    if len(info_messages) > 200:
+                        st.info(f"...and {len(info_messages)-200} more messages")
             
             # Display warnings (non-blocking)
             if warnings:

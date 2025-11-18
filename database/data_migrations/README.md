@@ -95,7 +95,7 @@ Sets `base_experiment_id` and `parent_experiment_fk` fields. Handles orphaned de
 
 ```bash
 python database/data_migrations/establish_experiment_lineage_006.py         # Preview
-python database/data_migrations/establish_experiment_lineage_006.py --apply # Apply
+py database/data_migrations/establish_experiment_lineage_006.py --apply # Apply
 ```
 
 ---

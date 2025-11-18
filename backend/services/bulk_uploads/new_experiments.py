@@ -10,6 +10,7 @@ from sqlalchemy import func
 from database import (
     Experiment,
     ExperimentNotes,
+    ModificationsLog,
     ExperimentalConditions,
     ChemicalAdditive,
     Compound,
@@ -18,6 +19,7 @@ from database import (
 )
 from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
 from backend.services.experiment_validation import parse_experiment_id as parse_exp_id_validation, validate_experiment_id, extract_lineage_info
+from database.lineage_utils import update_experiment_lineage
 
 
 def find_parent_for_copy(db: Session, experiment_id: str) -> Optional[Experiment]:
@@ -83,15 +85,19 @@ class NewExperimentsUploadService:
         multi-sheet Excel workbook.
 
         Sheets (case-insensitive names):
-          - experiments: experiment_id*, sample_id, date, status, initial_note, overwrite
+          - experiments: experiment_id*, old_experiment_id (optional, for renames), sample_id, date, status, initial_note, overwrite
             (researcher is optional and auto-populated from experiment_id if not provided)
+            (old_experiment_id: when provided with overwrite=True, finds experiment by old ID and renames to new experiment_id)
           - conditions: experiment_id*, columns matching ExperimentalConditions fields
             (experiment_type is auto-populated from experiment_id)
           - additives: experiment_id*, compound*, amount*, unit*, order, method
           
-        Experiment ID format: ExperimentType_ResearcherInitials_Index (e.g., Serum_MH_101)
-        - Sequential: add -NUMBER (e.g., Serum_MH_101-2)
-        - Treatment: add _TEXT (e.g., Serum_MH_101_Desorption)
+        Experiment ID format: Supports two formats:
+        - ExperimentType_ResearcherInitials_Index (3-part, e.g., Serum_MH_101)
+        - ExperimentType_Index (2-part, e.g., HPHT_001)
+        Both formats support:
+        - Sequential: add -NUMBER (e.g., Serum_MH_101-2 or HPHT_001-2)
+        - Treatment: add _TEXT (e.g., Serum_MH_101_Desorption or HPHT_001_Desorption)
 
         Auto-copy behavior (overwrite=False):
           - Sequential/treatment experiments automatically copy CONDITIONS from parent
@@ -153,12 +159,21 @@ class NewExperimentsUploadService:
         # Track which experiments were successfully processed in experiments sheet
         processed_experiment_ids: set = set()
         failed_experiment_ids: set = set()
+        renamed_experiment_ids: set = set()
 
         # === Process experiments sheet ===
         if 'experiments' in normalized:
             df_exp = normalized['experiments'].copy()
-            # Strip any display asterisks from headers and normalize to lowercase
-            df_exp.columns = [str(c).replace('*', '').strip().lower() for c in df_exp.columns]
+            # Strip any display asterisks and parenthetical hints from headers and normalize to lowercase
+            # Example: "experiment_id* (TYPE_INITIALS_INDEX)" -> "experiment_id"
+            def normalize_column(col_name: str) -> str:
+                col_str = str(col_name).replace('*', '').strip()
+                # Remove parenthetical hints (e.g., "(TYPE_INITIALS_INDEX)" or "(optional, for renames)")
+                if '(' in col_str:
+                    col_str = col_str.split('(')[0].strip()
+                return col_str.lower()
+            
+            df_exp.columns = [normalize_column(c) for c in df_exp.columns]
 
             for idx, row in df_exp.iterrows():
                 try:
@@ -166,8 +181,11 @@ class NewExperimentsUploadService:
                     current_step = "extracting experiment_id"
                     exp_id = str(row.get('experiment_id') or '').strip()
                     if not exp_id:
+                        info_messages.append(f"[experiments] Row {idx+2}: DEBUG - SKIPPED - experiment_id is empty")
                         skipped += 1
                         continue
+                    
+                    info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Processing experiment_id='{exp_id}'")
 
                     # Validate experiment ID and collect warnings
                     try:
@@ -193,29 +211,97 @@ class NewExperimentsUploadService:
                     overwrite_flag = parse_bool(row.get('overwrite'))
                     overwrite_by_exp_id[exp_id] = overwrite_flag
 
-                    # Resolve existing experiment (ignore hyphens/underscores/spaces, case-insensitive)
+                    # Check for old_experiment_id column (for renaming experiments)
+                    old_experiment_id = None
+                    if 'old_experiment_id' in df_exp.columns:
+                        old_id_raw = row.get('old_experiment_id')
+                        # Check for NaN first, then check if non-empty string
+                        if not pd.isna(old_id_raw) and str(old_id_raw).strip() != '':
+                            old_experiment_id = str(old_id_raw).strip()
+                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Parsed old_experiment_id='{old_experiment_id}', overwrite={overwrite_flag}")
+                        else:
+                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - old_experiment_id column exists but value is blank/NaN for this row")
+
+                    # Resolve existing experiment
                     current_step = "normalizing experiment_id and querying database"
-                    exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
-                    experiment = db.query(Experiment).filter(
-                        func.lower(
-                            func.replace(
+                    experiment = None
+                    
+                    if old_experiment_id and overwrite_flag:
+                        # Use old_experiment_id for matching when provided (for renames)
+                        old_exp_id_norm = ''.join(ch for ch in old_experiment_id.lower() if ch not in ['-', '_', ' '])
+                        info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Normalized old_experiment_id='{old_exp_id_norm}', searching...")
+                        
+                        experiment = db.query(Experiment).filter(
+                            func.lower(
                                 func.replace(
-                                    func.replace(Experiment.experiment_id, '-', ''),
-                                    '_', ''
-                                ),
-                                ' ', ''
-                            )
-                        ) == exp_id_norm
-                    ).first()
+                                    func.replace(
+                                        func.replace(Experiment.experiment_id, '-', ''),
+                                        '_', ''
+                                    ),
+                                    ' ', ''
+                                )
+                            ) == old_exp_id_norm
+                        ).first()
+                        
+                        if experiment:
+                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Found experiment id={experiment.id}, experiment_id='{experiment.experiment_id}'")
+                            
+                            # Check if target experiment_id already exists (potential ordering issue)
+                            target_exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
+                            existing_target = db.query(Experiment).filter(
+                                func.lower(
+                                    func.replace(
+                                        func.replace(
+                                            func.replace(Experiment.experiment_id, '-', ''),
+                                            '_', ''
+                                        ),
+                                        ' ', ''
+                                    )
+                                ) == target_exp_id_norm
+                            ).first()
+                            
+                            if existing_target and existing_target.id != experiment.id:
+                                # Target ID exists and is a different experiment - chain rename conflict!
+                                warnings.append(
+                                    f"[experiments] Row {idx+2}: ⚠️ CHAIN RENAME CONFLICT: Cannot rename '{old_experiment_id}' "
+                                    f"to '{exp_id}' because '{exp_id}' already exists as a separate experiment. "
+                                    f"If you're renaming '{exp_id}' to something else in a later row, process that row FIRST. "
+                                    f"Correct order: rename experiments AWAY from conflicting names before renaming INTO them. "
+                                    f"See docs/EXPERIMENT_RENAME_GUIDE.md for examples."
+                                )
+                                failed_experiment_ids.add(target_exp_id_norm)
+                                continue  # Skip this row
+                            
+                            info_messages.append(f"[experiments] Row {idx+2}: Will rename '{old_experiment_id}' to '{exp_id}'")
+                        else:
+                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Experiment with old_experiment_id='{old_experiment_id}' NOT FOUND in database")
+                    else:
+                        # Standard normalized matching (backward compatible)
+                        exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
+                        experiment = db.query(Experiment).filter(
+                            func.lower(
+                                func.replace(
+                                    func.replace(
+                                        func.replace(Experiment.experiment_id, '-', ''),
+                                        '_', ''
+                                    ),
+                                    ' ', ''
+                                )
+                            ) == exp_id_norm
+                        ).first()
+                    
+                    # Calculate normalized ID for tracking (use new ID after potential rename)
+                    exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
 
                     # Parse fields
                     current_step = "parsing sample_id field"
                     sample_id = str(row.get('sample_id').strip()) if isinstance(row.get('sample_id'), str) and row.get('sample_id').strip() != '' else None
                     
                     current_step = "parsing researcher field"
-                    # Auto-populate researcher from experiment_id if not provided
+                    # Auto-populate researcher from experiment_id if not provided (only for 3-part format)
                     researcher = str(row.get('researcher').strip()) if isinstance(row.get('researcher'), str) and row.get('researcher').strip() != '' else None
                     if not researcher and parsed.researcher_initials:
+                        # Only set researcher from parsed initials if they exist (3-part format)
                         researcher = parsed.researcher_initials
                     
                     current_step = "parsing status field"
@@ -239,8 +325,13 @@ class NewExperimentsUploadService:
                     current_step = "checking experiment existence and overwrite rules"
                     if experiment is None and overwrite_flag:
                         # Overwrite requested but experiment does not exist
-                        warnings.append(f"[experiments] Row {idx+2}: overwrite=True but experiment_id '{exp_id}' does not exist")
-                        failed_experiment_ids.add(exp_id_norm)  # Use normalized ID for tracking
+                        if old_experiment_id:
+                            warnings.append(f"[experiments] Row {idx+2}: overwrite=True but old_experiment_id '{old_experiment_id}' not found")
+                            old_exp_id_norm = ''.join(ch for ch in old_experiment_id.lower() if ch not in ['-', '_', ' '])
+                            failed_experiment_ids.add(old_exp_id_norm)
+                        else:
+                            warnings.append(f"[experiments] Row {idx+2}: overwrite=True but experiment_id '{exp_id}' does not exist")
+                            failed_experiment_ids.add(exp_id_norm)  # Use normalized ID for tracking
                         continue
 
                     if experiment is not None and not overwrite_flag:
@@ -300,6 +391,55 @@ class NewExperimentsUploadService:
                     else:
                         current_step = "updating existing experiment"
                         # Update provided fields only
+                        # IMPORTANT: Update experiment_id FIRST if it's a rename (old_experiment_id provided)
+                        info_messages.append(f"[experiments] Row {idx+2}: DEBUG - In update branch. old_experiment_id='{old_experiment_id}', current experiment.experiment_id='{experiment.experiment_id}', target exp_id='{exp_id}'")
+                        
+                        if old_experiment_id and experiment.experiment_id != exp_id:
+                            try:
+                                info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Executing rename logic...")
+                                experiment.experiment_id = exp_id
+                                info_messages.append(f"[experiments] Row {idx+2}: Renamed experiment from '{old_experiment_id}' to '{exp_id}'")
+                                renamed_experiment_ids.add(exp_id)
+                                
+                                # Recalculate lineage fields based on new experiment_id
+                                update_experiment_lineage(db, experiment)
+                                
+                                # Update denormalized experiment_id in related ExperimentNotes records
+                                notes_to_update = db.query(ExperimentNotes).filter(
+                                    ExperimentNotes.experiment_fk == experiment.id
+                                ).all()
+                                for note in notes_to_update:
+                                    note.experiment_id = exp_id
+                                
+                                # Update denormalized experiment_id in related ModificationsLog records
+                                mods_to_update = db.query(ModificationsLog).filter(
+                                    ModificationsLog.experiment_fk == experiment.id
+                                ).all()
+                                for mod in mods_to_update:
+                                    mod.experiment_id = exp_id
+                                
+                                # Flush rename changes so subsequent queries see the new ID
+                                db.flush()
+                            except Exception as rename_error:
+                                # Check if this is a UNIQUE constraint error (chain rename ordering issue)
+                                error_str = str(rename_error).lower()
+                                if 'unique constraint' in error_str and 'experiment_id' in error_str:
+                                    # This is likely a chain rename ordering problem
+                                    warnings.append(
+                                        f"[experiments] Row {idx+2}: Cannot rename '{old_experiment_id}' to '{exp_id}' - "
+                                        f"experiment_id '{exp_id}' already exists. "
+                                        f"⚠️ CHAIN RENAME ORDERING ISSUE: If you're renaming multiple experiments where "
+                                        f"new IDs overlap with old IDs, process rows so experiments rename AWAY from "
+                                        f"conflicting names before renaming INTO them. "
+                                        f"See docs/EXPERIMENT_RENAME_GUIDE.md for details."
+                                    )
+                                    failed_experiment_ids.add(exp_id_norm)
+                                    # Re-raise to trigger transaction rollback
+                                    raise
+                                else:
+                                    # Some other error - re-raise with context
+                                    raise
+                        
                         if sample_id is not None:
                             experiment.sample_id = sample_id
                         if researcher is not None:
@@ -309,7 +449,7 @@ class NewExperimentsUploadService:
                         if date_val is not None:
                             experiment.date = date_val.to_pydatetime()
                         updated_exp += 1
-                        processed_experiment_ids.add(exp_id_norm)  # Use normalized ID for tracking
+                        processed_experiment_ids.add(exp_id_norm)  # Use normalized ID for tracking (new ID after rename)
 
                     current_step = "adding initial note"
                     # Handle initial note: create new ExperimentNotes entry, do not overwrite existing
@@ -339,11 +479,20 @@ class NewExperimentsUploadService:
         else:
             errors.append("Missing required 'experiments' sheet")
 
+        # Expire session cache to ensure conditions/additives sheets see renamed experiments
+        db.expire_all()
+
         # === Process conditions sheet (optional but recommended) ===
         if 'conditions' in normalized:
             df_cond = normalized['conditions'].copy()
-            # Strip any display asterisks from headers and normalize
-            df_cond.columns = [str(c).replace('*', '').strip().lower() for c in df_cond.columns]
+            # Strip any display asterisks and parenthetical hints from headers and normalize
+            def normalize_column(col_name: str) -> str:
+                col_str = str(col_name).replace('*', '').strip()
+                if '(' in col_str:
+                    col_str = col_str.split('(')[0].strip()
+                return col_str.lower()
+            
+            df_cond.columns = [normalize_column(c) for c in df_cond.columns]
             if 'experiment_id' not in df_cond.columns:
                 errors.append("[conditions] Missing required column 'experiment_id'")
             else:
@@ -384,9 +533,13 @@ class NewExperimentsUploadService:
                             if exp_id_norm in failed_experiment_ids:
                                 warnings.append(f"[conditions] Row {idx+2}: experiment_id '{exp_id}' not found - experiment creation/update failed in experiments sheet (check errors above)")
                             elif exp_id_norm in processed_experiment_ids:
-                                warnings.append(f"[conditions] Row {idx+2}: experiment_id '{exp_id}' was processed but not found in database - possible transaction issue")
+                                warnings.append(f"[conditions] Row {idx+2}: experiment_id '{exp_id}' was processed but not found in database - possible transaction issue or session cache problem")
                             else:
-                                warnings.append(f"[conditions] Row {idx+2}: experiment_id '{exp_id}' not found - ensure it exists in experiments sheet or database")
+                                warnings.append(
+                                    f"[conditions] Row {idx+2}: experiment_id '{exp_id}' not found. "
+                                    f"If you renamed this experiment in the experiments sheet, ensure you're using the NEW experiment_id here "
+                                    f"(not the old_experiment_id). The conditions/additives sheets should always use the NEW experiment_id."
+                                )
                             continue
                         # Resolve or create conditions
                         conditions = (
@@ -413,6 +566,7 @@ class NewExperimentsUploadService:
                             info_messages.append(f"Experiment {exp_id}: Copied conditions from parent {parent.experiment_id}")
 
                         # Then override with user-provided values from Excel row (requirement 2a)
+                        updated_fields = []
                         for col_name, val in row.items():
                             if col_name in updatable_attrs:
                                 # Convert empty strings to None
@@ -421,9 +575,20 @@ class NewExperimentsUploadService:
                                 elif not pd.isna(val):  # Only override if value is not NaN/blank
                                     try:
                                         setattr(conditions, col_name, val)
-                                    except Exception:
-                                        # Ignore unknown/invalid assignments silently
-                                        pass
+                                        updated_fields.append(f"{col_name}={val}")
+                                    except Exception as set_error:
+                                        # Log the error for debugging
+                                        warnings.append(f"[conditions] Row {idx+2}: Failed to set {col_name}={val}: {set_error}")
+                        # Persist updated fields so later phases see the changed values
+                        if updated_fields:
+                            db.flush()
+                        
+                        # Debug logging for renamed experiments
+                        if exp_id in renamed_experiment_ids:
+                            if updated_fields:
+                                info_messages.append(f"[conditions] Updated fields for renamed experiment '{exp_id}': {', '.join(updated_fields[:5])}")
+                            else:
+                                warnings.append(f"[conditions] Row {idx+2}: No fields updated for '{exp_id}' - check column names match model")
                         
                         # Auto-populate experiment_type from experiment_id if not already set
                         if not conditions.experiment_type or conditions.experiment_type == '':
@@ -498,8 +663,14 @@ class NewExperimentsUploadService:
         # === Process additives sheet ===
         if 'additives' in normalized:
             df_add = normalized['additives'].copy()
-            # Strip any display asterisks from headers and normalize
-            df_add.columns = [str(c).replace('*', '').strip().lower() for c in df_add.columns]
+            # Strip any display asterisks and parenthetical hints from headers and normalize
+            def normalize_column(col_name: str) -> str:
+                col_str = str(col_name).replace('*', '').strip()
+                if '(' in col_str:
+                    col_str = col_str.split('(')[0].strip()
+                return col_str.lower()
+            
+            df_add.columns = [normalize_column(c) for c in df_add.columns]
             required_cols = {'experiment_id', 'compound', 'amount', 'unit'}
             if not required_cols.issubset(set(df_add.columns)):
                 missing = ', '.join(sorted(required_cols - set(df_add.columns)))
@@ -531,9 +702,13 @@ class NewExperimentsUploadService:
                         if exp_id_norm in failed_experiment_ids:
                             warnings.append(f"[additives] experiment_id '{exp_id}' not found - experiment creation/update failed in experiments sheet (check errors above)")
                         elif exp_id_norm in processed_experiment_ids:
-                            warnings.append(f"[additives] experiment_id '{exp_id}' was processed but not found in database - possible transaction issue")
+                            warnings.append(f"[additives] experiment_id '{exp_id}' was processed but not found in database - possible transaction issue or session cache problem")
                         else:
-                            warnings.append(f"[additives] experiment_id '{exp_id}' not found - ensure it exists in experiments sheet or database")
+                            warnings.append(
+                                f"[additives] experiment_id '{exp_id}' not found. "
+                                f"If you renamed this experiment in the experiments sheet, ensure you're using the NEW experiment_id here "
+                                f"(not the old_experiment_id). The conditions/additives sheets should always use the NEW experiment_id."
+                            )
                         continue
 
                     # Resolve or create conditions row

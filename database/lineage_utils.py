@@ -26,25 +26,39 @@ def parse_experiment_id(experiment_id: str) -> Tuple[Optional[str], Optional[int
     - Hyphen-NUMBER for sequential lineage (e.g., -2, -3)
     - Underscore-TEXT for treatment variants (e.g., _Desorption)
     
+    Supports both 2-part (TYPE_INDEX) and 3-part (TYPE_INITIALS_INDEX) formats.
+    
     Args:
-        experiment_id: The experiment ID to parse (e.g., "HPHT_MH_001-2_Desorption")
+        experiment_id: The experiment ID to parse (e.g., "HPHT_MH_001-2_Desorption" or "HPHT_001-2_Desorption")
         
     Returns:
         A tuple of (base_experiment_id, derivation_number, treatment_variant)
         - For "HPHT_MH_001-2": returns ("HPHT_MH_001", 2, None)
+        - For "HPHT_001-2": returns ("HPHT_001", 2, None)
         - For "HPHT_MH_001": returns ("HPHT_MH_001", None, None)
+        - For "HPHT_001": returns ("HPHT_001", None, None)
         - For "HPHT_MH_001_Desorption": returns ("HPHT_MH_001", None, "Desorption")
+        - For "HPHT_001_Desorption": returns ("HPHT_001", None, "Desorption")
         - For "HPHT_MH_001-2_Desorption": returns ("HPHT_MH_001", 2, "Desorption")
+        - For "HPHT_001-2_Desorption": returns ("HPHT_001", 2, "Desorption")
         
     Examples:
         >>> parse_experiment_id("HPHT_MH_001-2")
         ("HPHT_MH_001", 2, None)
+        >>> parse_experiment_id("HPHT_001-2")
+        ("HPHT_001", 2, None)
         >>> parse_experiment_id("HPHT_MH_001")
         ("HPHT_MH_001", None, None)
+        >>> parse_experiment_id("HPHT_001")
+        ("HPHT_001", None, None)
         >>> parse_experiment_id("HPHT_MH_001_Desorption")
         ("HPHT_MH_001", None, "Desorption")
+        >>> parse_experiment_id("HPHT_001_Desorption")
+        ("HPHT_001", None, "Desorption")
         >>> parse_experiment_id("HPHT_MH_001-2_Desorption")
         ("HPHT_MH_001", 2, "Desorption")
+        >>> parse_experiment_id("HPHT_001-2_Desorption")
+        ("HPHT_001", 2, "Desorption")
     """
     if not experiment_id or not isinstance(experiment_id, str):
         return None, None, None
@@ -57,38 +71,35 @@ def parse_experiment_id(experiment_id: str) -> Tuple[Optional[str], Optional[int
     derivation_num = None
     base_id = experiment_id
     
-    # First, extract treatment suffix (last underscore followed by non-numeric text)
-    # We need to be careful not to treat underscore in base name as treatment delimiter
-    # Strategy: Look for last underscore followed by text that's NOT part of standard format
-    parts = experiment_id.split('_')
-    if len(parts) > 3:  # More than TYPE_INITIALS_INDEX format
-        # Check if last part looks like a treatment (not all numeric, not part of base format)
-        potential_treatment = parts[-1]
-        # If it contains a hyphen with number, split and check
-        if '-' in potential_treatment:
-            treatment_parts = potential_treatment.rsplit('-', 1)
-            # Check if last part after hyphen is numeric (sequential)
-            if treatment_parts[-1].isdigit():
-                # Pattern: Treatment-Number, unusual but handle it
-                # Treat the whole thing as treatment for now
-                treatment_variant = potential_treatment
-                base_id = '_'.join(parts[:-1])
-            else:
-                # Last part is not numeric, might be treatment without sequential
-                treatment_variant = potential_treatment
-                base_id = '_'.join(parts[:-1])
-        elif not potential_treatment.isdigit():
-            # Last part is not numeric and has no hyphen, likely a treatment
-            treatment_variant = potential_treatment
-            base_id = '_'.join(parts[:-1])
-    
-    # Now extract sequential number from base_id (or remaining ID)
-    # Look for last hyphen followed by digits
-    if '-' in base_id:
-        hyphen_parts = base_id.rsplit('-', 1)
+    # First, extract sequential number (hyphen-NUMBER pattern from the end)
+    # This must be done before treatment detection to avoid confusion
+    if '-' in experiment_id:
+        hyphen_parts = experiment_id.rsplit('-', 1)
         if len(hyphen_parts) == 2 and hyphen_parts[-1].isdigit():
             derivation_num = int(hyphen_parts[-1])
             base_id = hyphen_parts[0]
+    
+    # Now check for treatment variant in the remaining base_id
+    # Split by underscore to detect if last part is a treatment
+    parts = base_id.split('_')
+    
+    # Determine expected base format by checking part count
+    # After removing sequential, we should have:
+    # - 2 parts for TYPE_INDEX format (e.g., HPHT_001)
+    # - 3 parts for TYPE_INITIALS_INDEX format (e.g., Serum_MH_101)
+    # If we have more parts than expected, the last part is likely a treatment
+    
+    if len(parts) > 2:
+        # Could be 2-part format with treatment, or 3-part format (with or without treatment)
+        potential_treatment = parts[-1]
+        
+        # Check if last part looks like a treatment (not all numeric)
+        if not potential_treatment.isdigit():
+            # Last part is not numeric, likely a treatment
+            # If we have 3+ parts and last is non-numeric, it's a treatment
+            if len(parts) >= 3:
+                treatment_variant = potential_treatment
+                base_id = '_'.join(parts[:-1])
     
     return base_id, derivation_num, treatment_variant
 
