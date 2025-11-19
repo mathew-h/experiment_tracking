@@ -112,8 +112,8 @@ def main():
                 logger.error(f"Error syncing public database: {str(e)}")
                 st.sidebar.error("An error occurred while syncing the public database. Please try again later.")
     except Exception as e:
-        logger.error(f"Error in main application: {str(e)}")
-        st.error("An error occurred while running the application. Please try again later.")
+        logger.error(f"Error in main application: {str(e)}", exc_info=True)
+        st.error(f"An error occurred while running the application: {str(e)}")
 
 if __name__ == "__main__":
     main()

@@ -998,74 +998,109 @@ def handle_solution_chemistry_upload():
     
     template_df = pd.DataFrame(template_cols_ordered)
 
+    # Create template Excel file using simple approach
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # INSTRUCTIONS sheet
-        instructions_data = {
-            "Topic": [
-                "Required Fields",
-                "",
-                "Overwrite Behavior",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "Examples",
-                "",
-                "",
-                "",
-                "Important Notes",
-                "",
-            ],
-            "Description": [
-                "Columns marked with asterisk (*) in the data sheet are required",
-                "",
-                "Controls how existing data is updated when you upload results for experiments that already have data",
-                "",
-                "PARTIAL UPDATE (overwrite = False, default):",
-                "  • Only columns you provide are updated",
-                "  • Empty cells leave existing database values unchanged",
-                "  • Best for adding new measurements or correcting specific values",
-                "",
-                "COMPLETE REPLACEMENT (overwrite = True):",
-                "  • ALL fields are replaced with your uploaded values",
-                "  • Empty cells will set database fields to blank/null",
-                "  • Use when you want to completely replace an entire result entry",
-                "",
-                "Per-row 'overwrite' column takes precedence over global checkbox in UI",
-            ],
-            "Example/Value": [
-                "experiment_id, description",
-                "",
-                "Use 'overwrite' column or checkbox",
-                "",
-                "False (or leave blank)",
-                "",
-                "",
-                "",
-                "",
-                "True",
-                "",
-                "",
-                "",
-                "You can mix modes in one upload",
-            ],
-        }
-        df_instructions = pd.DataFrame(instructions_data)
-        df_instructions.to_excel(writer, index=False, sheet_name='INSTRUCTIONS_READ_FIRST')
+    
+    # Build instructions DataFrame
+    instructions_data = {
+        "Topic": [
+            "Required Fields",
+            "",
+            "Overwrite Behavior",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "Examples",
+            "",
+            "",
+            "",
+            "Important Notes",
+            "",
+            "",
+        ],
+        "Description": [
+            "Columns marked with asterisk (*) in the data sheet are required",
+            "",
+            "Controls how existing data is updated when you upload results for experiments that already have data",
+            "",
+            "PARTIAL UPDATE (overwrite = False, default):",
+            "  • Only columns you provide are updated",
+            "  • Empty cells leave existing database values unchanged",
+            "  • Best for adding new measurements or correcting specific values",
+            "",
+            "COMPLETE REPLACEMENT (overwrite = True):",
+            "  • ALL fields are replaced with your uploaded values",
+            "  • Empty cells will set database fields to blank/null",
+            "  • Use when you want to completely replace an entire result entry",
+            "",
+            "Per-row 'overwrite' column takes precedence over global checkbox in UI",
+        ],
+        "Example/Value": [
+            "experiment_id, description",
+            "",
+            "Use 'overwrite' column or checkbox",
+            "",
+            "False (or leave blank)",
+            "",
+            "",
+            "",
+            "",
+            "True",
+            "",
+            "",
+            "",
+            "You can mix modes in one upload",
+            "",
+        ],
+    }
+    df_instructions = pd.DataFrame(instructions_data)
+    
+    # Write both sheets to Excel (avoid context manager in case that's the issue)
+    from openpyxl import Workbook
+    from openpyxl.utils.dataframe import dataframe_to_rows
+    
+    try:
+        wb = Workbook()
         
-        # Data sheet
-        template_df.to_excel(writer, index=False, sheet_name='Solution Chemistry')
+        # Remove default sheet
+        if 'Sheet' in wb.sheetnames:
+            del wb['Sheet']
         
-        # Autosize columns for readability
-        try:
-            from frontend.components.utils import autosize_excel_columns
-            autosize_excel_columns(writer, 'INSTRUCTIONS_READ_FIRST')
-            autosize_excel_columns(writer, 'Solution Chemistry')
-        except Exception:
-            pass
-    output.seek(0)
+        # Add INSTRUCTIONS sheet
+        ws1 = wb.create_sheet('INSTRUCTIONS_READ_FIRST')
+        for r_idx, row in enumerate(dataframe_to_rows(df_instructions, index=False, header=True), 1):
+            for c_idx, value in enumerate(row, 1):
+                ws1.cell(row=r_idx, column=c_idx, value=value)
+        
+        # Add Solution Chemistry sheet
+        ws2 = wb.create_sheet('Solution Chemistry')
+        for r_idx, row in enumerate(dataframe_to_rows(template_df, index=False, header=True), 1):
+            for c_idx, value in enumerate(row, 1):
+                ws2.cell(row=r_idx, column=c_idx, value=value)
+        
+        # Ensure sheets are visible
+        ws1.sheet_state = 'visible'
+        ws2.sheet_state = 'visible'
+        
+        # Save to BytesIO
+        wb.save(output)
+        output.seek(0)
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating solution chemistry Excel template: {e}", exc_info=True)
+        st.error(f"Error creating template: {e}")
+        # Return a minimal valid Excel file to prevent further errors
+        output = io.BytesIO()
+        wb_fallback = Workbook()
+        ws_fallback = wb_fallback.active
+        ws_fallback.title = "Error"
+        ws_fallback['A1'] = "Template generation failed"
+        wb_fallback.save(output)
+        output.seek(0)
 
     st.download_button(
         label="Download Template",

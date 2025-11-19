@@ -26,6 +26,7 @@ def download_database_as_excel():
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            sheets_written = 0
             for sheet_name, model in tables_to_fetch.items():
                 query_result = db.query(model).all()
                 if query_result:
@@ -34,9 +35,16 @@ def download_database_as_excel():
                     if '_sa_instance_state' in df.columns:
                         df = df.drop(columns=['_sa_instance_state'])
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    sheets_written += 1
                 else:
-                    # Create an empty sheet if the table has no data
-                    pd.DataFrame().to_excel(writer, sheet_name=sheet_name, index=False)
+                    # Create a sheet with just a placeholder message for empty tables
+                    df_placeholder = pd.DataFrame({"Message": [f"No data in {sheet_name} table"]})
+                    df_placeholder.to_excel(writer, sheet_name=sheet_name, index=False)
+                    sheets_written += 1
+            
+            # Ensure at least one sheet exists
+            if sheets_written == 0:
+                pd.DataFrame({"Message": ["No data available"]}).to_excel(writer, sheet_name="Info", index=False)
         
         output.seek(0)  # Reset buffer position to the beginning
         return output
