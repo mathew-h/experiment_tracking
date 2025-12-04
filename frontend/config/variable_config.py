@@ -174,6 +174,16 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Select the type of experiment setup."
     },
+    'reactor_number': {
+        'label': "Reactor Number",
+        'type': 'number',
+        'default': None,
+        'min_value': 0,
+        'step': 1,
+        'format': "%d",
+        'required': False,
+        'help': "Enter the reactor number (optional integer)."
+    },
     'initial_ph': {
         'label': "Initial pH",
         'default': 7.0,

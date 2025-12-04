@@ -68,6 +68,7 @@ class PXRFReading(Base):
     ca = Column(Float, name="Ca", nullable=True)
     k = Column(Float, name="K", nullable=True)
     au = Column(Float, name="Au", nullable=True)
+    zn = Column(Float, name="Zn", nullable=True)
     # Add other elements as needed, matching REQUIRED_COLUMNS in ingestion script
 
     # Timestamps for tracking ingestion

@@ -14,7 +14,8 @@ class ExperimentalConditions(Base):
     rock_mass = Column(Float)
     water_volume = Column(Float)
     temperature = Column(Float)
-    experiment_type = Column(String) 
+    experiment_type = Column(String)
+    reactor_number = Column(Integer, nullable=True)
     feedstock = Column(String, nullable=True)
     room_temp_pressure = Column(Float, nullable=True)  # in psi instead of bar
     rxn_temp_pressure = Column(Float, nullable=True)
