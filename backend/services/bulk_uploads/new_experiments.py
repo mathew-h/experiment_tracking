@@ -177,22 +177,16 @@ class NewExperimentsUploadService:
 
             for idx, row in df_exp.iterrows():
                 try:
-                    # Track progress for debugging
-                    current_step = "extracting experiment_id"
                     exp_id = str(row.get('experiment_id') or '').strip()
                     if not exp_id:
-                        info_messages.append(f"[experiments] Row {idx+2}: DEBUG - SKIPPED - experiment_id is empty")
                         skipped += 1
                         continue
                     
-                    info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Processing experiment_id='{exp_id}'")
-
                     # Validate experiment ID and collect warnings
                     try:
-                        current_step = "validating experiment_id"
                         validation_result = validate_experiment_id(exp_id)
                         if not isinstance(validation_result, tuple) or len(validation_result) != 2:
-                            warnings.append(f"[experiments] Row {idx+2}: Unexpected validation result format for '{exp_id}'. Got: {type(validation_result)} with {len(validation_result) if isinstance(validation_result, (tuple, list)) else 'N/A'} values")
+                            warnings.append(f"[experiments] Row {idx+2}: Unexpected validation result format for '{exp_id}'")
                             continue
                         is_valid, id_warnings = validation_result
                     except ValueError as ve:
@@ -218,10 +212,7 @@ class NewExperimentsUploadService:
                         # Check for NaN first, then check if non-empty string
                         if not pd.isna(old_id_raw) and str(old_id_raw).strip() != '':
                             old_experiment_id = str(old_id_raw).strip()
-                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Parsed old_experiment_id='{old_experiment_id}', overwrite={overwrite_flag}")
-                        else:
-                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - old_experiment_id column exists but value is blank/NaN for this row")
-
+                            
                     # Resolve existing experiment
                     current_step = "normalizing experiment_id and querying database"
                     experiment = None
@@ -229,7 +220,6 @@ class NewExperimentsUploadService:
                     if old_experiment_id and overwrite_flag:
                         # Use old_experiment_id for matching when provided (for renames)
                         old_exp_id_norm = ''.join(ch for ch in old_experiment_id.lower() if ch not in ['-', '_', ' '])
-                        info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Normalized old_experiment_id='{old_exp_id_norm}', searching...")
                         
                         experiment = db.query(Experiment).filter(
                             func.lower(
@@ -244,8 +234,6 @@ class NewExperimentsUploadService:
                         ).first()
                         
                         if experiment:
-                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Found experiment id={experiment.id}, experiment_id='{experiment.experiment_id}'")
-                            
                             # Check if target experiment_id already exists (potential ordering issue)
                             target_exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
                             existing_target = db.query(Experiment).filter(
@@ -266,15 +254,14 @@ class NewExperimentsUploadService:
                                     f"[experiments] Row {idx+2}: ⚠️ CHAIN RENAME CONFLICT: Cannot rename '{old_experiment_id}' "
                                     f"to '{exp_id}' because '{exp_id}' already exists as a separate experiment. "
                                     f"If you're renaming '{exp_id}' to something else in a later row, process that row FIRST. "
-                                    f"Correct order: rename experiments AWAY from conflicting names before renaming INTO them. "
-                                    f"See docs/EXPERIMENT_RENAME_GUIDE.md for examples."
+                                    f"Correct order: rename experiments AWAY from conflicting names before renaming INTO them."
                                 )
                                 failed_experiment_ids.add(target_exp_id_norm)
                                 continue  # Skip this row
                             
-                            info_messages.append(f"[experiments] Row {idx+2}: Will rename '{old_experiment_id}' to '{exp_id}'")
+                            info_messages.append(f"Rename: '{old_experiment_id}' -> '{exp_id}'")
                         else:
-                            info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Experiment with old_experiment_id='{old_experiment_id}' NOT FOUND in database")
+                            warnings.append(f"[experiments] Row {idx+2}: Old experiment_id='{old_experiment_id}' NOT FOUND")
                     else:
                         # Standard normalized matching (backward compatible)
                         exp_id_norm = ''.join(ch for ch in exp_id.lower() if ch not in ['-', '_', ' '])
@@ -392,13 +379,11 @@ class NewExperimentsUploadService:
                         current_step = "updating existing experiment"
                         # Update provided fields only
                         # IMPORTANT: Update experiment_id FIRST if it's a rename (old_experiment_id provided)
-                        info_messages.append(f"[experiments] Row {idx+2}: DEBUG - In update branch. old_experiment_id='{old_experiment_id}', current experiment.experiment_id='{experiment.experiment_id}', target exp_id='{exp_id}'")
                         
                         if old_experiment_id and experiment.experiment_id != exp_id:
                             try:
-                                info_messages.append(f"[experiments] Row {idx+2}: DEBUG - Executing rename logic...")
                                 experiment.experiment_id = exp_id
-                                info_messages.append(f"[experiments] Row {idx+2}: Renamed experiment from '{old_experiment_id}' to '{exp_id}'")
+                                info_messages.append(f"Renamed experiment: '{old_experiment_id}' -> '{exp_id}'")
                                 renamed_experiment_ids.add(exp_id)
                                 
                                 # Recalculate lineage fields based on new experiment_id

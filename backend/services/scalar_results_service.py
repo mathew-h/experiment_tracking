@@ -60,7 +60,7 @@ class ScalarResultsService:
                 'ferrous_iron_yield', 'solution_ammonium_concentration', 'ammonium_quant_method',
                 'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure',
                 'final_ph', 'final_nitrate_concentration', 'final_dissolved_oxygen', 'co2_partial_pressure',
-                'final_conductivity', 'final_alkalinity', 'sampling_volume'
+                'final_conductivity', 'final_alkalinity', 'sampling_volume', 'measurement_date'
             ]
             
             if overwrite:
@@ -92,6 +92,7 @@ class ScalarResultsService:
                 final_conductivity=result_data.get('final_conductivity'),
                 final_alkalinity=result_data.get('final_alkalinity'),
                 sampling_volume=result_data.get('sampling_volume'),
+                measurement_date=result_data.get('measurement_date'),
                 result_entry=experimental_result
             )
             db.add(scalar_data)

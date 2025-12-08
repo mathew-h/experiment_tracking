@@ -56,6 +56,7 @@ class ScalarResults(Base):
     final_conductivity = Column(Float, nullable=True) # in uS/cm
     final_alkalinity = Column(Float, nullable=True) # in mg/L CaCO3
     sampling_volume = Column(Float, nullable=True) # in mL
+    measurement_date = Column(DateTime(timezone=True), nullable=True)
 
     # Hydrogen tracking inputs
     h2_concentration = Column(Float, nullable=True)  # % (vol) or ppm

@@ -970,6 +970,7 @@ def handle_solution_chemistry_upload():
         "experiment_id": ["Serum_MH_025"],
         "time_post_reaction": [1],  # Optional field
         "description": ["Sampled after acid addition"],
+        "measurement_date": [pd.Timestamp.now().strftime('%Y-%m-%d')], # Optional
         "ammonium_quant_method": ["NMR"],
         "solution_ammonium_concentration": [10.5],
         "sampling_volume": [5.0],
@@ -1200,11 +1201,12 @@ def handle_icp_upload():
         else:
             manual_header = 0
         
-        try:
-            _process_icp_csv(file_content, manual_header)
-            
-        except Exception as e:
-            st.error(f"An error occurred processing the CSV file: {e}")
+        if st.button("Process ICP Data"):
+            try:
+                _process_icp_csv(file_content, manual_header)
+                
+            except Exception as e:
+                st.error(f"An error occurred processing the CSV file: {e}")
 
 def _process_icp_csv(file_content: bytes, manual_header_row: int = 0):
     """

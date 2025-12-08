@@ -108,6 +108,10 @@ class ICPService:
             time_value = float(time_match.group(2))
             dilution_factor = float(time_match.group(3))
             
+            # Clean up trailing underscore/hyphen if present after stripping time
+            if experiment_id and experiment_id[-1] in ['_', '-']:
+                experiment_id = experiment_id[:-1]
+            
             # Convert time to days if needed
             if time_unit == 'time':
                 # Assume 'Time' units are in days (adjust if different)
@@ -372,23 +376,6 @@ class ICPService:
             elif key not in ['experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label'] and value is not None:
                 all_elements_data[key] = value  # Store additional elements in JSON only
         
-        # Check if ICPResults already exists for this ExperimentalResults
-        if experimental_result.icp_data:
-            # Update existing ICP data instead of rejecting
-            existing_icp = experimental_result.icp_data
-            
-            # Update fixed columns
-            for element in fixed_elements:
-                setattr(existing_icp, element, fixed_column_data.get(element))
-            
-            # Update JSON and metadata
-            existing_icp.all_elements = all_elements_data if all_elements_data else None
-            existing_icp.dilution_factor = result_data.get('dilution_factor')
-            existing_icp.raw_label = result_data.get('raw_label')
-            
-            db.flush()  # Flush to ensure update is applied
-            return experimental_result, True  # True indicates this was an update
-        
         # Create ICP data with elemental concentrations
         icp_data = ICPResults(
             result_id=experimental_result.id,  # Link to ExperimentalResults
@@ -542,7 +529,17 @@ class ICPService:
             func.lower(func.replace(func.replace(Experiment.experiment_id, '-', ''), '_', '')) == exp_id_normalized
         ).first()
         
-        return experiment
+        if experiment:
+             return experiment
+             
+        # Try to find a partial match if exact normalized match fails
+        # This handles cases where user enters "AUTO_JW_013" but DB has "AUTO-JW-013"
+        # The above query should handle this, but let's be robust
+        
+        # If still not found, check if this is a treatment variant that needs auto-creation?
+        # For now, just return None if not found
+        
+        return None
     
     @staticmethod
     def _find_or_create_experimental_result(
