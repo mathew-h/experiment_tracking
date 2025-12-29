@@ -549,8 +549,8 @@ class ICPService:
         description: str = None
     ) -> ExperimentalResults:
         """
-        Create new ExperimentalResults entry.
-        With the removal of unique constraints, we always create new entries.
+        Find existing ExperimentalResults or create new one.
+        Attempts to reuse existing result for the same time point if it doesn't already have ICP data.
         
         Args:
             db: Database session
@@ -559,8 +559,22 @@ class ICPService:
             description: Optional description
             
         Returns:
-            ExperimentalResults object (new)
+            ExperimentalResults object (new or existing)
         """
+        # Try to find existing result for this experiment and time
+        candidates = db.query(ExperimentalResults).filter(
+            ExperimentalResults.experiment_fk == experiment.id,
+            ExperimentalResults.time_post_reaction == time_post_reaction
+        ).all()
+        
+        # Check candidates for one that doesn't have ICP data yet (to allow merging with Scalar data)
+        for candidate in candidates:
+            if candidate.icp_data is None:
+                # If merging, ensure the description includes the new context
+                if description and description not in candidate.description:
+                    candidate.description = f"{candidate.description} | {description}"
+                return candidate
+
         # Create new ExperimentalResults - no unique constraint means we can always create new
         description_text = description
         if not description_text:

@@ -181,8 +181,8 @@ class ScalarResultsService:
         description: str = None
     ) -> ExperimentalResults:
         """
-        Create new ExperimentalResults entry.
-        With the removal of unique constraints, we always create new entries.
+        Find existing ExperimentalResults or create new one.
+        Reuses any existing result for the same time point (Scalar service handles updates/merges).
         
         Args:
             db: Database session
@@ -191,8 +191,20 @@ class ScalarResultsService:
             description: Optional description
             
         Returns:
-            ExperimentalResults object (new)
+            ExperimentalResults object (new or existing)
         """
+        # Try to find existing result for this experiment and time
+        existing = db.query(ExperimentalResults).filter(
+            ExperimentalResults.experiment_fk == experiment.id,
+            ExperimentalResults.time_post_reaction == time_post_reaction
+        ).first()
+        
+        if existing:
+            # If merging, ensure the description includes the new context
+            if description and description not in existing.description:
+                existing.description = f"{existing.description} | {description}"
+            return existing
+
         # Create new ExperimentalResults - no unique constraint means we can always create new
         description_text = description
         if not description_text:

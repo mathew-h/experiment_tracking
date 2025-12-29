@@ -89,6 +89,39 @@ class ChemicalAdditive(Base):
     def __repr__(self):
         return f"<ChemicalAdditive(compound_id={self.compound_id}, amount={self.amount} {self.unit.value})>"
 
+    def format_additive(self):
+        """Format this chemical additive as a human-readable string.
+        
+        Returns:
+            str: Formatted string like "5 g Magnesium Hydroxide"
+        """
+        if not self.compound:
+            return f"{self.amount} {self.unit.value} (Unknown Compound)"
+        
+        return f"{self.amount} {self.unit.value} {self.compound.name}"
+
+    @classmethod
+    def format_additives_list(cls, additives):
+        """Format a list of chemical additives as a comma-separated string.
+        
+        Args:
+            additives: List of ChemicalAdditive instances
+            
+        Returns:
+            str: Formatted string like "5 g Magnesium Hydroxide, 1 g Magnetite"
+        
+        Example:
+            >>> additives = experiment.chemical_additives
+            >>> formula_string = ChemicalAdditive.format_additives_list(additives)
+            >>> print(formula_string)
+            "5 g Magnesium Hydroxide, 1 g Magnetite"
+        """
+        if not additives:
+            return ""
+        
+        formatted_items = [additive.format_additive() for additive in additives]
+        return ", ".join(formatted_items)
+
     def calculate_derived_values(self):
         """Calculate derived values (mass, moles, and concentration) based on unit and context.
 

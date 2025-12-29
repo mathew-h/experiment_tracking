@@ -255,7 +255,7 @@ FIELD_CONFIG = {
     },
     'initial_nitrate_concentration': {
         'label': "Initial Nitrate Concentration (mM)",
-        'default': 50.0,
+        'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
         'step': 0.1,
@@ -294,16 +294,16 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Initial conductivity measurement (microsiemens per centimeter)."
     },
-    'initial_alkalinity': {
-        'label': "Initial Alkalinity (mg/L CaCO₃)",
-        'type': 'number',
-        'default': None,
-        'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.1f",
-        'required': False,
-        'help': "Initial alkalinity measurement (mg/L as CaCO₃)."
-    },
+    # 'initial_alkalinity': {
+    #     'label': "Initial Alkalinity (mg/L CaCO₃)",
+    #     'type': 'number',
+    #     'default': None,
+    #     'min_value': 0.0,
+    #     'step': 0.1,
+    #     'format': "%.1f",
+    #     'required': False,
+    #     'help': "Initial alkalinity measurement (mg/L as CaCO₃)."
+    # },
     'room_temp_pressure': {  
         'label': "Pressure at Room Temperature (psi)",
         'default': 14.6959, # Standard atmospheric pressure
@@ -398,23 +398,34 @@ FIELD_CONFIG = {
 
 # Configuration for experiment scalar results (formerly RESULTS_CONFIG)
 SCALAR_RESULTS_CONFIG = {
-    'solution_ammonium_concentration': {
-        'label': "Solution Ammonium Concentration (mM)",
+    'gross_ammonium_concentration': {
+        'label': "Gross Ammonium Concentration (mM)",
         'type': 'number',
         'default': 0.0,
         'min_value': 0.0,
         'step': 0.001,
         'format': "%.3f",
         'required': False,
-        'help': "Enter the ammonium concentration in the solution in millimolar (mM)."
+        'help': "Enter the gross ammonium concentration in the solution in millimolar (mM)."
     },
-    'ammonium_quant_method': {
-        'label': 'Ammonium Quant. Method',
-        'type': 'select',
-        'options': AMMONIUM_QUANT_METHODS,
-        'default': AmmoniumQuantMethod.COLORIMETRIC_ASSAY.value,
-        'help': 'Method used for quantifying ammonium concentration.'
+
+    'background_ammonium_concentration': {
+        'label': "Background Ammonium Concentration (mM)",
+        'type': 'number',
+        'default': 0.0,
+        'min_value': 0.0,
+        'step': 0.001,
+        'format': "%.3f",
+        'required': False,
+        'help': "Enter the background ammonium concentration in the solution in millimolar (mM)."
     },
+    # 'ammonium_quant_method': {
+    #     'label': 'Ammonium Quant. Method',
+    #     'type': 'select',
+    #     'options': AMMONIUM_QUANT_METHODS,
+    #     'default': AmmoniumQuantMethod.COLORIMETRIC_ASSAY.value,
+    #     'help': 'Method used for quantifying ammonium concentration.'
+    # },
     'final_ph': {
         'label': "Final pH",
         'type': 'number',

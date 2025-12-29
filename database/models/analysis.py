@@ -21,7 +21,10 @@ class ExternalAnalysis(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     # Add ondelete="CASCADE"
-    sample_id = Column(String, ForeignKey("sample_info.sample_id", ondelete="CASCADE"), nullable=False, index=True)
+    sample_id = Column(String, ForeignKey("sample_info.sample_id", ondelete="CASCADE"), nullable=True, index=True)
+    experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="CASCADE"), nullable=True, index=True)
+    experiment_id = Column(String, nullable=True, index=True)  # Human-readable experiment ID
+    
     analysis_type = Column(String)  # General type/category (e.g., 'Elemental Scan', 'Mineralogy')
     analysis_date = Column(DateTime(timezone=True))
     laboratory = Column(String)
@@ -43,6 +46,13 @@ class ExternalAnalysis(Base):
         back_populates="external_analyses",
         foreign_keys=[sample_id] # Join on sample_id
     )
+    
+    experiment = relationship(
+        "Experiment",
+        back_populates="external_analyses",
+        foreign_keys=[experiment_fk]
+    )
+    
     analysis_files = relationship("AnalysisFiles", back_populates="external_analysis", cascade="all, delete-orphan")
     # Add one-to-one relationships for specific analysis types
     xrd_analysis = relationship("XRDAnalysis", back_populates="external_analysis", uselist=False, cascade="all, delete-orphan")
@@ -77,36 +87,3 @@ class PXRFReading(Base):
 
     def __repr__(self):
         return f"<PXRFReading(reading_no='{self.reading_no}')>"
-
-
-class Analyte(Base):
-    __tablename__ = "analytes"
-
-    id = Column(Integer, primary_key=True, index=True)  # analyte_id
-    analyte_symbol = Column(String, unique=True, nullable=False, index=True)  # e.g., FeO, SiO2
-    unit = Column(String, nullable=False)  # e.g., ppm, %
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Relationships
-    elemental_results = relationship("ElementalAnalysis", back_populates="analyte")
-
-
-class ElementalAnalysis(Base):
-    __tablename__ = "elemental_analysis"
-
-    id = Column(Integer, primary_key=True, index=True)
-    # Link to SampleInfo via its string primary key sample_id
-    sample_id = Column(String, ForeignKey("sample_info.sample_id", ondelete="CASCADE"), nullable=False, index=True)
-    analyte_id = Column(Integer, ForeignKey("analytes.id", ondelete="CASCADE"), nullable=False, index=True)
-    analyte_composition = Column(Float, nullable=True)  # numeric value in the unit defined by Analyte.unit
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Uniqueness: one row per (sample_id, analyte_id)
-    __table_args__ = (
-        UniqueConstraint('sample_id', 'analyte_id', name='uq_elemental_analysis_sample_analyte'),
-    )
-
-    # Relationships
-    analyte = relationship("Analyte", back_populates="elemental_results")

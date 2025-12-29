@@ -26,6 +26,7 @@ class Experiment(Base):
     modifications = relationship("ModificationsLog", back_populates="experiment", cascade="all, delete-orphan")
     results = relationship("ExperimentalResults", back_populates="experiment", foreign_keys="[ExperimentalResults.experiment_fk]", cascade="all, delete-orphan")
     sample_info = relationship("SampleInfo", back_populates="experiments", foreign_keys=[sample_id])
+    external_analyses = relationship("ExternalAnalysis", back_populates="experiment", cascade="all, delete-orphan")
     
     # Lineage relationships
     parent = relationship("Experiment", remote_side=[id], foreign_keys=[parent_experiment_fk], backref="derived_experiments")

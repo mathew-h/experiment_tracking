@@ -10,6 +10,7 @@ from frontend.components.auth_components import init_auth_state, render_login_pa
 from frontend.components.issue_submission import render_issue_submission_form
 from frontend.components.bulk_uploads import render_bulk_uploads_page
 from frontend.components.chemical_additives import render_compound_management, render_edit_compound_form
+from frontend.components.reactor_dashboard import render_reactor_dashboard
 from utils.scheduler import setup_backup_scheduler, shutdown_scheduler
 from utils.database_backup import update_public_db_copy
 from database import SessionLocal
@@ -85,7 +86,9 @@ def main():
         # Render header after setting the current page
         render_header()
         
-        if page == "New Experiment":
+        if page == "Reactor Dashboard":
+            render_reactor_dashboard()
+        elif page == "New Experiment":
             render_new_experiment()
         elif page == "View Experiments":
             render_view_experiments()

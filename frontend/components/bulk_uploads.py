@@ -967,13 +967,13 @@ def handle_solution_chemistry_upload():
 
     # --- Template Generation ---
     template_data = {
+        "measurement_date": [pd.Timestamp.now().strftime('%Y-%m-%d')],
         "experiment_id": ["Serum_MH_025"],
         "time_post_reaction": [1],  # Optional field
         "description": ["Sampled after acid addition"],
-        "measurement_date": [pd.Timestamp.now().strftime('%Y-%m-%d')], # Optional
-        "ammonium_quant_method": ["NMR"],
-        "solution_ammonium_concentration": [10.5],
+        "gross_ammonium_concentration": [10.5],
         "sampling_volume": [5.0],
+        "background_ammonium_concentration": [0.0],
         # Hydrogen gas sampling fields
         "h2_concentration": [0.00],
         "h2_concentration_unit": ["ppm"],
@@ -1311,20 +1311,25 @@ def handle_experiment_status_update():
     st.header("Bulk Update Experiment Status")
     st.markdown("""
     Upload an Excel file with experiment IDs to mark as **ONGOING**. 
-    All other experiments currently marked as **ONGOING** will be changed to **COMPLETED**.
+    All other **HPHT** experiments currently marked as **ONGOING** will be changed to **COMPLETED**.
+    
+    **Columns:**
+    - `experiment_id` (required): Experiments to mark as ONGOING
+    - `reactor_number` (optional): Update reactor number for HPHT experiments
     
     **Important Notes:**
-    - Experiments with status CANCELLED will not be changed
+    - Only HPHT experiments not in the list will be auto-completed
+    - Other experiment types (Serum, Autoclave, etc.) maintain their status
     - You will see a preview before any changes are applied
     - Confirmation is required before applying changes
     """)
 
     # Generate template
     template_df = pd.DataFrame([
-        {"experiment_id": "Serum_MH_001"},
-        {"experiment_id": "Serum_MH_002"},
-        {"experiment_id": "Autoclave_JD_015"},
-    ], columns=["experiment_id"])
+        {"experiment_id": "HPHT_MH_001", "reactor_number": 1},
+        {"experiment_id": "HPHT_MH_002", "reactor_number": 2},
+        {"experiment_id": "Serum_JD_015", "reactor_number": ""},
+    ], columns=["experiment_id", "reactor_number"])
 
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
@@ -1382,13 +1387,19 @@ def handle_experiment_status_update():
             if preview.to_ongoing:
                 st.write("**Will be marked as ONGOING:**")
                 ongoing_df = pd.DataFrame(preview.to_ongoing)
+                # Reorder columns for better display
+                col_order = ['experiment_id', 'current_status', 'current_reactor_number', 'new_reactor_number']
+                ongoing_df = ongoing_df[[col for col in col_order if col in ongoing_df.columns]]
                 st.dataframe(ongoing_df, use_container_width=True)
         
         with col2:
             st.metric("Experiments → COMPLETED", len(preview.to_completed))
             if preview.to_completed:
-                st.write("**Will be marked as COMPLETED:**")
+                st.write("**Will be marked as COMPLETED (HPHT only):**")
                 completed_df = pd.DataFrame(preview.to_completed)
+                # Reorder columns for better display
+                col_order = ['experiment_id', 'current_status', 'current_reactor_number']
+                completed_df = completed_df[[col for col in col_order if col in completed_df.columns]]
                 st.dataframe(completed_df, use_container_width=True)
         
         # No changes to apply
@@ -1416,9 +1427,12 @@ def handle_experiment_status_update():
             # Extract experiment IDs to mark as ONGOING
             exp_ids_to_ongoing = [exp["experiment_id"] for exp in preview.to_ongoing]
             
+            # Get reactor_number_map from preview
+            reactor_number_map = getattr(preview, 'reactor_number_map', {})
+            
             # Apply changes
-            marked_ongoing, marked_completed, errors = ExperimentStatusService.apply_status_changes(
-                db, exp_ids_to_ongoing
+            marked_ongoing, marked_completed, reactor_updates, errors = ExperimentStatusService.apply_status_changes(
+                db, exp_ids_to_ongoing, reactor_number_map
             )
             
             if errors:
@@ -1431,6 +1445,8 @@ def handle_experiment_status_update():
                 st.success(f"✅ Status changes applied successfully!")
                 st.info(f"**{marked_ongoing}** experiment(s) marked as ONGOING")
                 st.info(f"**{marked_completed}** experiment(s) marked as COMPLETED")
+                if reactor_updates > 0:
+                    st.info(f"**{reactor_updates}** reactor number(s) updated")
                 
                 # Clear the confirmation text
                 if 'status_confirm' in st.session_state:
