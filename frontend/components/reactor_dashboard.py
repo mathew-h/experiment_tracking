@@ -19,8 +19,7 @@ def render_reactor_dashboard():
     - Rock Mass (g)
     - Date
     """
-    st.title("⚗️ Reactor Dashboard")
-    st.markdown("**Current reactor assignments for ongoing experiments**")
+    st.title("*Reactor Dashboard*")
     
     # Get database session
     db_session = SessionLocal()
@@ -95,8 +94,8 @@ def render_reactor_dashboard():
 .reactor-dashboard-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 18px;
-    margin: 20px 0;
+    font-size: 16px;
+    margin: 10px 0;
     font-family: 'Source Sans Pro', sans-serif;
     color: inherit;
 }
@@ -105,14 +104,14 @@ def render_reactor_dashboard():
     padding: 16px 12px;
     text-align: left;
     font-weight: 600;
-    font-size: 20px;
+    font-size: 18px;
     border-bottom: 2px solid rgba(128, 128, 128, 0.3);
 }
 .reactor-dashboard-table td {
     padding: 16px 12px;
     border-bottom: 1px solid rgba(128, 128, 128, 0.2);
     line-height: 1.6;
-    vertical-align: top;
+    vertical-align: center;
 }
 .reactor-dashboard-table tr:hover {
     background-color: rgba(128, 128, 128, 0.1);
@@ -145,7 +144,7 @@ def render_reactor_dashboard():
     text-align: center;
 }
 .reactor-dashboard-table .additives-col {
-    width: 25%;
+    width: 15%;
     max-width: 250px;
 }
 .reactor-dashboard-table .description-col {

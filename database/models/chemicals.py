@@ -102,25 +102,26 @@ class ChemicalAdditive(Base):
 
     @classmethod
     def format_additives_list(cls, additives):
-        """Format a list of chemical additives as a comma-separated string.
+        """Format a list of chemical additives as a newline-separated string.
         
         Args:
             additives: List of ChemicalAdditive instances
             
         Returns:
-            str: Formatted string like "5 g Magnesium Hydroxide, 1 g Magnetite"
+            str: Formatted string with each additive on a new line using <br> tags
+                 for HTML rendering (e.g., "5 g Magnesium Hydroxide<br>1 g Magnetite")
         
         Example:
             >>> additives = experiment.chemical_additives
             >>> formula_string = ChemicalAdditive.format_additives_list(additives)
             >>> print(formula_string)
-            "5 g Magnesium Hydroxide, 1 g Magnetite"
+            "5 g Magnesium Hydroxide<br>1 g Magnetite"
         """
         if not additives:
             return ""
         
         formatted_items = [additive.format_additive() for additive in additives]
-        return ", ".join(formatted_items)
+        return "<br>".join(formatted_items)
 
     def calculate_derived_values(self):
         """Calculate derived values (mass, moles, and concentration) based on unit and context.

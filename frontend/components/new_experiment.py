@@ -6,6 +6,7 @@ from frontend.components.utils import log_modification, generate_form_fields, ge
 from frontend.config.variable_config import FIELD_CONFIG, EXPERIMENT_STATUSES
 # Import the new service
 from backend.services.experimental_conditions_service import ExperimentalConditionsService
+from backend.services.bulk_uploads.experiment_status import ExperimentStatusService
 import pytz
 from frontend.components.chemical_managing import render_compound_manager
 from backend.services.experiment_validation import parse_experiment_id, validate_experiment_id, format_validation_warning
@@ -390,6 +391,16 @@ def save_experiment():
             raise Exception(f"Failed to create experimental conditions for {experiment.experiment_id}")
         # Note: The service adds 'conditions' to the session and calls calculate_derived_conditions
         # --- End Service Usage ---
+        
+        # Manage reactor occupancy: if experiment is ONGOING and has reactor_number,
+        # mark other ONGOING experiments in same reactor as COMPLETED
+        if conditions.reactor_number and experiment.status == ExperimentStatus.ONGOING:
+            marked, reactor_warnings = ExperimentStatusService.manage_reactor_occupancy(
+                db, experiment, conditions.reactor_number, commit=False
+            )
+            # Display warnings/info to user
+            for warning in reactor_warnings:
+                st.info(warning)
         
         # Store created identifiers for immediate compound management (step 2)
         try:

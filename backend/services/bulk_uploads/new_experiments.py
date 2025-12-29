@@ -18,6 +18,7 @@ from database import (
     AmountUnit,
 )
 from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
+from backend.services.bulk_uploads.experiment_status import ExperimentStatusService
 from backend.services.experiment_validation import parse_experiment_id as parse_exp_id_validation, validate_experiment_id, extract_lineage_info
 from database.lineage_utils import update_experiment_lineage
 
@@ -425,6 +426,12 @@ class NewExperimentsUploadService:
                                     # Some other error - re-raise with context
                                     raise
                         
+                        # Clear existing notes when overwrite=True (full data replacement)
+                        current_step = "clearing existing notes for overwrite"
+                        db.query(ExperimentNotes).filter(
+                            ExperimentNotes.experiment_fk == experiment.id
+                        ).delete(synchronize_session=False)
+                        
                         if sample_id is not None:
                             experiment.sample_id = sample_id
                         if researcher is not None:
@@ -437,7 +444,8 @@ class NewExperimentsUploadService:
                         processed_experiment_ids.add(exp_id_norm)  # Use normalized ID for tracking (new ID after rename)
 
                     current_step = "adding initial note"
-                    # Handle initial note: create new ExperimentNotes entry, do not overwrite existing
+                    # Handle initial note: create new ExperimentNotes entry
+                    # NOTE: When overwrite=True, all existing notes are cleared first (see above)
                     # NOTE: initial_note is NEVER copied from parent - only user-provided notes are created
                     # This ensures user's description always takes precedence (per requirement)
                     if initial_note:
@@ -583,6 +591,19 @@ class NewExperimentsUploadService:
                         
                         # Recalculate derived fields
                         conditions.calculate_derived_conditions()
+                        
+                        # Manage reactor occupancy: if experiment is ONGOING and has reactor_number, 
+                        # mark other ONGOING experiments in same reactor as COMPLETED
+                        if conditions.reactor_number and experiment.status == ExperimentStatus.ONGOING:
+                            marked, reactor_warnings = ExperimentStatusService.manage_reactor_occupancy(
+                                db, experiment, conditions.reactor_number, commit=False
+                            )
+                            warnings.extend(reactor_warnings)
+                            if marked > 0:
+                                info_messages.append(
+                                    f"Reactor {conditions.reactor_number}: Auto-completed {marked} "
+                                    f"conflicting experiment(s) for '{exp_id}'"
+                                )
                     except Exception as e:
                         warnings.append(f"[conditions] Row {idx+2}: {e}")
         
@@ -644,6 +665,18 @@ class NewExperimentsUploadService:
                 
                 info_messages.append(f"Experiment {exp_id}: Copied all conditions from parent {parent.experiment_id} (no conditions sheet row provided)")
                 conditions.calculate_derived_conditions()
+                
+                # Manage reactor occupancy for auto-copied conditions
+                if conditions.reactor_number and experiment.status == ExperimentStatus.ONGOING:
+                    marked, reactor_warnings = ExperimentStatusService.manage_reactor_occupancy(
+                        db, experiment, conditions.reactor_number, commit=False
+                    )
+                    warnings.extend(reactor_warnings)
+                    if marked > 0:
+                        info_messages.append(
+                            f"Reactor {conditions.reactor_number}: Auto-completed {marked} "
+                            f"conflicting experiment(s) for '{exp_id}'"
+                        )
 
         # === Process additives sheet ===
         if 'additives' in normalized:

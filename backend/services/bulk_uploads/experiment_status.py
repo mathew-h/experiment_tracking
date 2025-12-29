@@ -212,4 +212,69 @@ class ExperimentStatusService:
             errors.append(f"Error applying status changes: {e}")
         
         return marked_ongoing, marked_completed, reactor_updates, errors
+    
+    @staticmethod
+    def manage_reactor_occupancy(
+        db: Session,
+        new_experiment: Experiment,
+        reactor_number: int,
+        commit: bool = True
+    ) -> Tuple[int, List[str]]:
+        """
+        Ensure only one experiment is ONGOING per reactor at a time.
+        
+        When a new experiment is set to ONGOING with a reactor number, this function
+        automatically marks any other ONGOING experiments in the same reactor as COMPLETED.
+        
+        Args:
+            db: Database session
+            new_experiment: The experiment being created/updated
+            reactor_number: The reactor number being assigned
+            commit: Whether to commit changes (default True)
+            
+        Returns:
+            Tuple of (marked_completed_count, warnings)
+            
+        Example:
+            >>> marked, warnings = ExperimentStatusService.manage_reactor_occupancy(
+            ...     db, new_exp, reactor_number=3
+            ... )
+            >>> print(f"Marked {marked} experiments as completed")
+        """
+        warnings: List[str] = []
+        marked_completed = 0
+        
+        try:
+            # Only manage occupancy if the new experiment is ONGOING
+            if new_experiment.status != ExperimentStatus.ONGOING:
+                return 0, []
+            
+            # Find other ONGOING experiments in the same reactor
+            conflicting_experiments = db.query(Experiment).join(
+                ExperimentalConditions,
+                Experiment.id == ExperimentalConditions.experiment_fk
+            ).filter(
+                Experiment.id != new_experiment.id,  # Exclude the current experiment
+                Experiment.status == ExperimentStatus.ONGOING,
+                ExperimentalConditions.reactor_number == reactor_number
+            ).all()
+            
+            # Mark conflicting experiments as COMPLETED
+            for exp in conflicting_experiments:
+                exp.status = ExperimentStatus.COMPLETED
+                marked_completed += 1
+                warnings.append(
+                    f"Reactor {reactor_number}: Marked experiment '{exp.experiment_id}' "
+                    f"as COMPLETED (replaced by '{new_experiment.experiment_id}')"
+                )
+            
+            if commit:
+                db.commit()
+                
+        except Exception as e:
+            warnings.append(f"Error managing reactor occupancy: {e}")
+            if commit:
+                db.rollback()
+        
+        return marked_completed, warnings
 
