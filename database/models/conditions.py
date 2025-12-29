@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.sql import func
 from ..database import Base
 
@@ -60,6 +61,22 @@ class ExperimentalConditions(Base):
 
     experiment = relationship("Experiment", back_populates="conditions", foreign_keys=[experiment_fk])
     chemical_additives = relationship("ChemicalAdditive", back_populates="experiment", cascade="all, delete-orphan")
+
+    @hybrid_property
+    def formatted_additives(self):
+        """Formatted string of all chemical additives for PowerBI reporting.
+        
+        Returns a newline-separated list of chemical additives in the format:
+        "5 g Magnesium Hydroxide
+        1 g Magnetite"
+        
+        This property is accessible in PowerBI as a regular text column.
+        """
+        if not self.chemical_additives:
+            return ""
+        
+        formatted_items = [additive.format_additive() for additive in self.chemical_additives]
+        return "\n".join(formatted_items)
 
     def calculate_derived_conditions(self):
         """
