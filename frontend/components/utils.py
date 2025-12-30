@@ -640,7 +640,7 @@ def backfill_calculated_fields(db: Session):
 
         for scalar_result in results_to_update:
             original_yield = scalar_result.grams_per_ton_yield
-            # This method now calculates yield based on its own solution_ammonium_concentration
+            # This method now calculates yield based on its own gross_ammonium_concentration
             scalar_result.calculate_yields()
             if scalar_result.grams_per_ton_yield != original_yield:
                 updated_scalar_count += 1

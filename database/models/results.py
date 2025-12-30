@@ -97,10 +97,10 @@ class ScalarResults(Base):
             liquid_volume_ml = self.result_entry.experiment.conditions.water_volume
         
         ammonia_mass_g = None
-        if self.solution_ammonium_concentration is not None and liquid_volume_ml is not None and liquid_volume_ml > 0:
+        if self.gross_ammonium_concentration is not None and liquid_volume_ml is not None and liquid_volume_ml > 0:
             # Molar mass of NH4+ is ~18.04 g/mol
             ammonia_mass_g = (
-                (self.solution_ammonium_concentration / 1000) *  # Convert mM to M (mol/L)
+                (self.gross_ammonium_concentration / 1000) *  # Convert mM to M (mol/L)
                 (liquid_volume_ml / 1000) *  # Convert mL to L
                 18.04  # Molar mass of NH4+ (g/mol)
             )

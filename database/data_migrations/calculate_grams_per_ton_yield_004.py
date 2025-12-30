@@ -19,12 +19,12 @@ def run_migration():
     logic for 'grams_per_ton_yield' and commits the updated values to the database.
     
     The calculation uses:
-    - solution_ammonium_concentration (mM)
+    - gross_ammonium_concentration (mM)
     - water_volume from experimental conditions (mL)
     - rock_mass from experimental conditions (g)
     
     Formula: grams_per_ton_yield = 1,000,000 * (ammonia_mass_g / rock_mass)
-    where ammonia_mass_g = (solution_ammonium_concentration / 1000) * (water_volume / 1000) * 18.04
+    where ammonia_mass_g = (gross_ammonium_concentration / 1000) * (water_volume / 1000) * 18.04
     """
     db: Session = SessionLocal()
     try:

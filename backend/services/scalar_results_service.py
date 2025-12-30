@@ -57,7 +57,7 @@ class ScalarResultsService:
             scalar_data = experimental_result.scalar_data
             # Define all updatable fields
             updatable_fields = [
-                'ferrous_iron_yield', 'solution_ammonium_concentration', 'ammonium_quant_method',
+                'ferrous_iron_yield', 'gross_ammonium_concentration', 'background_ammonium_concentration', 'ammonium_quant_method',
                 'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure',
                 'final_ph', 'final_nitrate_concentration', 'final_dissolved_oxygen', 'co2_partial_pressure',
                 'final_conductivity', 'final_alkalinity', 'sampling_volume', 'measurement_date'
@@ -78,7 +78,8 @@ class ScalarResultsService:
             scalar_data = ScalarResults(
                 result_id=experimental_result.id,  # Link to ExperimentalResults
                 ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
-                solution_ammonium_concentration=result_data.get('solution_ammonium_concentration'),
+                gross_ammonium_concentration=result_data.get('gross_ammonium_concentration'),
+                background_ammonium_concentration=result_data.get('background_ammonium_concentration'),
                 ammonium_quant_method=result_data.get('ammonium_quant_method'),
                 # Hydrogen fields from bulk upload (optional)
                 h2_concentration=result_data.get('h2_concentration'),

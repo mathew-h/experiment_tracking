@@ -567,7 +567,7 @@ class TestExperimentLineageMigration:
         result_data = {
             'time_post_reaction': 5.0,
             'description': 'Post-desorption analysis',
-            'solution_ammonium_concentration': 25.5,
+            'gross_ammonium_concentration': 25.5,
             'final_ph': 7.2,
         }
         
