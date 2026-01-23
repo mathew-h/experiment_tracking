@@ -419,13 +419,13 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the background ammonium concentration in the solution in millimolar (mM)."
     },
-    # 'ammonium_quant_method': {
-    #     'label': 'Ammonium Quant. Method',
-    #     'type': 'select',
-    #     'options': AMMONIUM_QUANT_METHODS,
-    #     'default': AmmoniumQuantMethod.COLORIMETRIC_ASSAY.value,
-    #     'help': 'Method used for quantifying ammonium concentration.'
-    # },
+    'ammonium_quant_method': {
+        'label': 'Ammonium Quant. Method',
+        'type': 'select',
+        'options': AMMONIUM_QUANT_METHODS,
+        'default': AmmoniumQuantMethod.COLORIMETRIC_ASSAY.value,
+        'help': 'Method used for quantifying ammonium concentration.'
+    },
     'final_ph': {
         'label': "Final pH",
         'type': 'number',

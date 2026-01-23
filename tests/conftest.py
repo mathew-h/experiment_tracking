@@ -106,6 +106,7 @@ def test_scalar_result(test_db: Session, test_experimental_result: ExperimentalR
         result_id=test_experimental_result.id,
         final_ph=7.0,  # Add some dummy data
         gross_ammonium_concentration=10.5,
+        ammonium_quant_method='NMR'
     )
     # Manually link back (SQLAlchemy doesn't always do this automatically before commit)
     test_experimental_result.scalar_data = scalar_data

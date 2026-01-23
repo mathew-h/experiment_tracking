@@ -48,7 +48,7 @@ class ScalarResults(Base):
     ferrous_iron_yield = Column(Float, nullable=True)  # in percentage
     gross_ammonium_concentration = Column(Float, nullable=True)  # in mM
     background_ammonium_concentration = Column(Float, nullable=True)  # in mM
-    # ammonium_quant_method = Column(String, nullable=True) # e.g., 'NMR', 'Colorimetric Assay'
+    ammonium_quant_method = Column(String, nullable=True) # e.g., 'NMR', 'Colorimetric Assay'
     grams_per_ton_yield = Column(Float, nullable=True)  # yield in g/ton
     final_ph = Column(Float, nullable=True)
     final_nitrate_concentration = Column(Float, nullable=True)  # in mM
@@ -74,7 +74,6 @@ class ScalarResults(Base):
     background_experiment_id = Column(String, nullable=True)
     background_experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="SET NULL"), nullable=True)
     background_experiment = relationship("Experiment", back_populates="scalar_data", foreign_keys=[background_experiment_fk])
-
     # Relationship back to the main entry using result_id
     result_entry = relationship(
         "ExperimentalResults",
@@ -319,7 +318,10 @@ class ICPResults(Base):
         elements = {}
         
         # Add fixed columns
-        fixed_elements = ['fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al']
+        fixed_elements = [
+            'fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al',
+            'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir', 'pd', 'ru', 'os', 'tl'
+        ]
         for element in fixed_elements:
             value = getattr(self, element)
             if value is not None:

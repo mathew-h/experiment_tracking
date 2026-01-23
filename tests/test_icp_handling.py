@@ -230,6 +230,7 @@ class TestICPDuplicateHandling:
             'time_post_reaction': 3.0,
             'description': 'NMR Analysis',
             'gross_ammonium_concentration': 15.5,
+            'ammonium_quant_method': 'NMR',
             'final_ph': 7.2
         }]
         
@@ -259,6 +260,7 @@ class TestICPDuplicateHandling:
         
         # Check scalar data
         assert experimental_result.scalar_data.gross_ammonium_concentration == 15.5
+        assert experimental_result.scalar_data.ammonium_quant_method == 'NMR'
         
         # Check ICP data
         assert experimental_result.icp_data.fe is not None
@@ -279,7 +281,8 @@ class TestICPDuplicateHandling:
             'experiment_id': 'Test_MH_001',
             'time_post_reaction': 3.0,
             'description': 'NMR Analysis',
-            'gross_ammonium_concentration': 15.5
+            'gross_ammonium_concentration': 15.5,
+            'ammonium_quant_method': 'NMR'
         }]
         
         scalar_results, scalar_errors = ScalarResultsService.bulk_create_scalar_results(test_db, scalar_data)

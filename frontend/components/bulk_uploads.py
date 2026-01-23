@@ -972,8 +972,10 @@ def handle_solution_chemistry_upload():
         "time_post_reaction": [1],  # Optional field
         "description": ["Sampled after acid addition"],
         "gross_ammonium_concentration": [10.5],
+        "ammonium_quant_method": ["NMR"],
         "sampling_volume": [5.0],
         "background_ammonium_concentration": [0.0],
+        "background_experiment_id": [""],
         # Hydrogen gas sampling fields
         "h2_concentration": [0.00],
         "h2_concentration_unit": ["ppm"],
