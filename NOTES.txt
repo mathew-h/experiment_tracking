@@ -1,0 +1,43 @@
+Change the order for required parameters
+    - Rock Mass 1st
+Change  parameter defaults to be more useful on view experiments
+    - 50mM nitrate
+    - Ni catalyst
+    - Nitrate feedstock
+
+
+Error message for duplicate experiments
+
+Add functionality for copying over from previous experiments when making new
+
+ALlow users to change experiment ID?
+
+
+Drop down for selecting Rock Sample ID from db
+
+Swap out researcher for description on view experiments page
+
+New Feature: Add ability to select multiple experiments and generate an excel sheet of alll of the conditions to view experimental grid
+
+When selecting different page length and switch to next page it refreshes
+
+Add external analysis entry Error displaying sample details: 'SampleInfo' object has no attribute 'id'
+
+Refreshing order for sample inventory is not loading correctly. 
+- is the simple solution to expand the list to 50 items?
+
+Function for rate of experiment records output (how many records / week)
+
+Experiment Description is required 
+
+Option to load from other experiment
+
+I could save an experiment that was missing inputs in required params
+
+Error saving notes, BUT INITIAL NOTE WORKS IN NEW EXPERIMENT page: Error saving note: (sqlite3.IntegrityError) NOT NULL constraint failed: experiment_notes.experiment_fk [SQL: INSERT INTO experiment_notes (experiment_id, experiment_fk, note_text, updated_at) VALUES (?, ?, ?, ?) RETURNING id, created_at] [parameters: (141, None, 'HPHT pH 10 150C Control Teflon Sleeve', None)] (Background on this error at: https://sqlalche.me/e/20/gkpj)
+
+Water to rock ratio not calculating, when you view an experiment details it shows <function> lambda
+
+Easier way to mark as completed 
+
+Backup is still not working. #m

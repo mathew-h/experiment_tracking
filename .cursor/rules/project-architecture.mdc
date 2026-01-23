@@ -1,0 +1,63 @@
+---
+description: Streamlit webapp project structure and file responsibilities
+globs:
+  - app.py
+  - database/models/.
+  - variable_config.py
+  - utils.py
+  - frontend/components/bulk_uploads.py
+alwaysApply: true
+---
+- Use `app.py` for routing and high-age layout in the Streamlit app.
+- Treat `models.py` as the authoritative source for all SQLAlchemy ORM database schema.
+- Use `variable_config.py` to centralize variables for form rendering, field types, and default values.
+- Abstract reusable logic into `utils.py` instead of duplicating across files.
+- Ensure changes align with these roles to maintain modularity and clarity.
+- Do not suggest alembic migration files, we will automatically generate migration scripts
+- When `models.py` is updated, ensure that the corresponding Excel templates in `frontend/components/bulk_uploads.py` are also updated to reflect the schema changes, this ensures data integrity during bulk uploads and prevents validation errors.
+[models.py](mdc:database/models.py)
+[bulk_uploads.py](mdc:frontend/components/bulk_uploads.py)
+- Do not suggest alembic migration files, we will automatically generate migration scripts 
+[app.py](mdc:app.py)
+[models.py](mdc:database/models.py)
+[variable_config.py](mdc:frontend/config/variable_config.py)
+[utils.py](mdc:frontend/components/utils.py)
+- Use `app.py` for routing and high-age layout in the Streamlit app.
+- Treat `database/models/` as the authoritative source for all SQLAlchemy ORM database schema (modular structure).
+- Use `variable_config.py` to centralize variables for form rendering, field types, and default values.
+- Abstract reusable logic into `utils.py` instead of duplicating across files.
+- Ensure changes align with these roles to maintain modularity and clarity.
+- Do not suggest alembic migration files, we will automatically generate migration scripts.
+- When models are updated, ensure that the corresponding Excel templates in `frontend/components/bulk_uploads.py` are also updated to reflect the schema changes, this ensures data integrity during bulk uploads and prevents validation errors.
+
+## Import Guidelines for Modular Models Structure:
+- Import models from `database.models` (e.g., `from database.models import Experiment, ScalarResults`)
+- Import database utilities from `database` (e.g., `from database import Base, SessionLocal`)
+- Use relative imports within the database package (e.g., `from .models import Experiment`)
+- Import enums from `database.models` (e.g., `from database.models import ExperimentStatus, AnalysisType`)
+
+## Model Organization:
+- `database/models/experiments.py` - Core experiment models (Experiment, ExperimentNotes, ModificationsLog)
+- `database/models/conditions.py` - Experimental conditions and setup
+- `database/models/results.py` - Experimental results and data (ScalarResults, ICPResults, etc.)
+- `database/models/samples.py` - Sample information and photos
+- `database/models/analysis.py` - External analysis models (XRD, Elemental, pXRF, etc.)
+- `database/models/characterization.py` - Future characterization-specific models
+- `database/models/enums.py` - All enum definitions for controlled vocabulary
+
+[bulk_uploads.py](mdc:frontend/components/bulk_uploads.py)
+[app.py](mdc:app.py)
+[database/models/](mdc:database/models/)
+[variable_config.py](mdc:frontend/config/variable_config.py)
+[utils.py](mdc:frontend/components/utils.py)
+- Abstract reusable logic into `utils.py` instead of duplicating across files.
+- Ensure changes align with these roles to maintain modularity and clarity.
+- Do not suggest alembic migration files, we will automatically generate migration scripts
+- When `models.py` is updated, ensure that the corresponding Excel templates in `frontend/components/bulk_uploads.py` are also updated to reflect the schema changes, this ensures data integrity during bulk uploads and prevents validation errors.
+[models.py](mdc:database/models.py)
+[bulk_uploads.py](mdc:frontend/components/bulk_uploads.py)
+- Do not suggest alembic migration files, we will automatically generate migration scripts 
+[app.py](mdc:app.py)
+[models.py](mdc:database/models.py)
+[variable_config.py](mdc:frontend/config/variable_config.py)
+[utils.py](mdc:frontend/components/utils.py)
