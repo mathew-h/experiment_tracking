@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import io
-from datetime import datetime
 from database import SessionLocal, Experiment, SampleInfo, ExperimentalConditions, ExperimentNotes, ExperimentalResults, ScalarResults, ExternalAnalysis, PXRFReading
-from sqlalchemy import text, and_
+from sqlalchemy import text, inspect
 
 def download_database_as_excel():
     """
@@ -24,28 +23,45 @@ def download_database_as_excel():
             "PXRFReadings": PXRFReading,
         }
 
+        inspector = inspect(db.get_bind())
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             sheets_written = 0
             for sheet_name, model in tables_to_fetch.items():
-                query_result = db.query(model).all()
-                if query_result:
-                    df = pd.DataFrame([row.__dict__ for row in query_result])
-                    # Remove SQLAlchemy internal state column if it exists
-                    if '_sa_instance_state' in df.columns:
-                        df = df.drop(columns=['_sa_instance_state'])
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                table_name = model.__tablename__
+                try:
+                    if table_name not in inspector.get_table_names():
+                        df_placeholder = pd.DataFrame({"Message": [f"Table {table_name} not found"]})
+                        df_placeholder.to_excel(writer, sheet_name=sheet_name, index=False)
+                        sheets_written += 1
+                        continue
+
+                    columns = [col["name"] for col in inspector.get_columns(table_name)]
+                    if not columns:
+                        df_placeholder = pd.DataFrame({"Message": [f"No columns found for {table_name}"]})
+                        df_placeholder.to_excel(writer, sheet_name=sheet_name, index=False)
+                        sheets_written += 1
+                        continue
+
+                    quoted_columns = ", ".join([f'"{col}"' for col in columns])
+                    query = text(f'SELECT {quoted_columns} FROM "{table_name}"')
+                    df = pd.read_sql_query(query, db.get_bind())
+
+                    if df.empty:
+                        df_placeholder = pd.DataFrame({"Message": [f"No data in {sheet_name} table"]})
+                        df_placeholder.to_excel(writer, sheet_name=sheet_name, index=False)
+                    else:
+                        df.to_excel(writer, sheet_name=sheet_name, index=False)
                     sheets_written += 1
-                else:
-                    # Create a sheet with just a placeholder message for empty tables
-                    df_placeholder = pd.DataFrame({"Message": [f"No data in {sheet_name} table"]})
+                except Exception as table_error:
+                    df_placeholder = pd.DataFrame({"Message": [f"Failed to export {sheet_name}: {table_error}"]})
                     df_placeholder.to_excel(writer, sheet_name=sheet_name, index=False)
                     sheets_written += 1
-            
+
             # Ensure at least one sheet exists
             if sheets_written == 0:
                 pd.DataFrame({"Message": ["No data available"]}).to_excel(writer, sheet_name="Info", index=False)
-        
+
         output.seek(0)  # Reset buffer position to the beginning
         return output
     except Exception as e:

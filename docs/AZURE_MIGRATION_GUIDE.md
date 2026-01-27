@@ -1,6 +1,159 @@
 # Azure Migration Guide for Experiment Tracking Webapp
 
+This guide is designed for a developer who is comfortable with Python but new to the "DevOps" and "Production" side of things. We will move through this step-by-step, starting with setting up the "home" for your app, then moving the data, and finally deploying the code.
+
+---
+
+### Phase 1: The Azure Foundation (Days 1–2)
+
+Before moving code, you need to create the "containers" where your app and data will live.
+
+1.  **Create a Resource Group:**
+    *   Log into the [Azure Portal](https://portal.azure.com).
+    *   Search for "Resource Groups" -> **Create**.
+    *   Name it `experiment-tracking-rg`. Choose a region close to you (e.g., *East US* or *West Europe*).
+    *   *Think of this as a folder that holds everything related to this project.*
+
+2.  **Create the Database (PostgreSQL):**
+    *   Search for "Azure Database for PostgreSQL flexible servers" -> **Create**.
+    *   **Server name:** `experiment-db-server`
+    *   **Workload type:** Smallest/Development (Burstable, B1ms).
+    *   **Authentication:** Choose "PostgreSQL authentication only" for now (it's easier for beginners). Set an admin username and password. **Save these!**
+    *   **Firewall:** Check the box "Allow public access from any Azure service" (this allows your Web App to talk to the DB).
+
+3.  **Create Storage:**
+    *   Search for "Storage accounts" -> **Create**.
+    *   **Name:** `experimentstorage[randomletters]` (must be unique globally).
+    *   **Redundancy:** Change to "Locally-redundant storage (LRS)" to save money.
+    *   Once created, go to **Containers** (left sidebar) -> click **+ Container** -> name it `uploads`.
+
+---
+
+### Phase 2: Database Migration (Days 3–5)
+
+Since you are moving from a file (SQLite) to a real server (PostgreSQL), you need to "pump" the data from one to the other.
+
+1.  **Install a Database Tool:** Download [DBeaver](https://dbeaver.io/) (Free). It allows you to see your SQLite and Postgres tables side-by-side.
+2.  **The Migration Script:** Because Postgres is "strict" about data types, the easiest way for a Python developer to migrate is using a small script.
+    *   Create a file `migrate_db.py`:
+    ```python
+    import sqlite3
+    import pandas as pd
+    from sqlalchemy import create_engine
+
+    # 1. Connect to local SQLite
+    sqlite_conn = sqlite3.connect('experiments.db')
+
+    # 2. Connect to Azure Postgres
+    # Format: postgresql://user:password@host:port/database
+    pg_engine = create_engine('postgresql://admin:password@your-server.postgres.database.azure.com:5432/postgres')
+
+    # 3. List your tables
+    tables = ['experiments', 'users', 'results'] # Add your table names here
+
+    for table in tables:
+        df = pd.read_sql(f'SELECT * FROM {table}', sqlite_conn)
+        # This creates the table in Postgres and uploads data
+        df.to_sql(table, pg_engine, if_exists='replace', index=False)
+        print(f"Migrated {table}")
+    ```
+3.  **Run Alembic:** Once the data is moved, run your migrations (`alembic upgrade head`) against the new Postgres URL to ensure all constraints/indexes are applied.
+
+---
+
+### Phase 3: Storage Migration (Day 6)
+
+You need to move your `uploads/` folder to Azure Blob Storage.
+
+1.  **Get your Connection String:** In the Azure Portal, go to your Storage Account -> **Access Keys** -> Click "Show" on Connection String. Copy it.
+2.  **Upload existing files:**
+    *   Install [Azure Storage Explorer](https://azure.microsoft.com/en-us/products/storage/storage-explorer/) (a desktop app like File Explorer for Azure).
+    *   Log in and simply drag-and-drop your local `uploads/` folder into the `uploads` container you created in Phase 1.
+
+---
+
+### Phase 4: Authentication Setup (Days 7–10)
+
+Moving from Firebase to Microsoft (Entra ID) is the most "technical" part.
+
+1.  **Register the App:**
+    *   Azure Portal -> **Microsoft Entra ID** -> **App registrations** -> **New registration**.
+    *   Name: `Experiment Tracker Webapp`.
+    *   Redirect URI: Select "Web" and type `https://your-app-name.azurewebsites.net`.
+2.  **Get Secrets:**
+    *   Copy the **Application (client) ID** and **Directory (tenant) ID**.
+    *   Go to **Certificates & secrets** -> **New client secret**. Copy the Value immediately (it disappears forever once you leave the page).
+3.  **Update Streamlit Code:**
+    Use a library like `msal` or a wrapper. A common pattern for Streamlit is using the [msal-streamlit-authentication](https://pypi.org/project/msal-streamlit-authentication/) component which handles the login button for you.
+
+---
+
+### Phase 5: Preparing for Production (Days 11–13)
+
+Azure App Service needs a few specific files to know how to run Streamlit.
+
+1.  **Create `requirements.txt`:** Ensure `psycopg2-binary` (for Postgres) and `azure-storage-blob` are inside.
+2.  **Create `startup.sh`:** (In your root folder)
+    ```bash
+    python -m streamlit run app.py --server.port 8000 --server.address 0.0.0.0
+    ```
+3.  **The `.deployment` file:**
+    ```ini
+    [config]
+    SCM_DO_BUILD_DURING_DEPLOYMENT=true
+    ```
+
+---
+
+### Phase 6: Deploying the App (Day 14)
+
+1.  **Create the Web App:**
+    *   Search "App Services" -> **Create** -> **Web App**.
+    *   **Runtime stack:** Python 3.11.
+    *   **Plan:** Basic B1 (required for "Always On").
+2.  **Set Environment Variables:**
+    *   In the Web App page -> **Environment variables** (left side).
+    *   Add all your keys from your `.env` file here:
+        *   `DATABASE_URL`
+        *   `AZURE_STORAGE_CONNECTION_STRING`
+        *   `AZURE_CLIENT_ID`, etc.
+3.  **Deploy via GitHub (Recommended):**
+    *   Go to **Deployment Center** in the App Service.
+    *   Link your GitHub account and select your repository.
+    *   Azure will automatically create a "GitHub Action" that deploys your code every time you `git push`.
+
+---
+
+### Phase 7: The "Pain Prevention" Settings (Crucial!)
+
+Once the app is running, you **must** do these three things or the app will feel broken:
+
+1.  **Enable ARR Affinity:**
+    *   App Service -> **Configuration** -> **General settings**.
+    *   Set **ARR Affinity** to **On**. (This ensures that if a user is mid-session, they stay connected to the same server "instance").
+2.  **Enable Always On:**
+    *   In the same **General settings** tab, set **Always On** to **On**. (This prevents the app from "sleeping" and taking 30 seconds to wake up when a user visits).
+3.  **Set Startup Command:**
+    *   In the same **General settings** tab, find "Startup Command" and enter:
+    *   `bash startup.sh`
+
+---
+
+### How to Test Your Work
+
+1.  **Check Logs:** If the app doesn't load, go to **Log Stream** in the App Service sidebar. It will show you the Python errors just like your local terminal does.
+2.  **Verify DB:** Use DBeaver to connect to the Azure Postgres DB and see if new experiments are being saved.
+3.  **Check Storage:** Upload a file in the app, then go to the Azure Portal to see if it appeared in the Blob Container.
+
+### Summary of Costs
+*   **App Service (B1):** ~$13/mo
+*   **Postgres (B1ms):** ~$15/mo
+*   **Storage:** ~$1-2/mo (for 30GB)
+*   **Total:** **~$30/month** for a professional, enterprise-grade setup.
+
+
 ## Executive Summary
+
 
 **Is Azure the Right Path?** ✅ **YES**
 
@@ -265,6 +418,7 @@ For a small team (5–10) in a Microsoft-centric environment, this architecture 
    az storage account create --name <storage-name> --resource-group <rg-name> --location <location>
    az storage container create --name uploads --account-name <storage-name>
    
+
    # Azure App Service
    az appservice plan create --name <plan-name> --resource-group <rg-name> --sku B1 --is-linux
    az webapp create --name <app-name> --resource-group <rg-name> --plan <plan-name> --runtime "PYTHON:3.11"
