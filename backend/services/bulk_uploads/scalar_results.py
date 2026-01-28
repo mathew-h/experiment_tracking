@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import io
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 import math
+import datetime as dt
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -11,6 +12,33 @@ from backend.services.scalar_results_service import ScalarResultsService
 
 
 class ScalarResultsUploadService:
+    @staticmethod
+    def _parse_measurement_date(value: Any) -> Optional[dt.datetime]:
+        """
+        Normalize measurement_date to a Python datetime for SQLite DateTime columns.
+
+        Accepts pandas Timestamp, datetime/date, or string-like values.
+        Returns None if the value is empty/invalid.
+        """
+        if value is None:
+            return None
+        if isinstance(value, dt.datetime):
+            return value
+        if isinstance(value, dt.date):
+            return dt.datetime.combine(value, dt.time.min)
+        if isinstance(value, pd.Timestamp):
+            return value.to_pydatetime()
+        if isinstance(value, str):
+            parsed = pd.to_datetime(value, errors="coerce")
+            if pd.isna(parsed):
+                return None
+            return parsed.to_pydatetime()
+        # Try pandas as a last resort (handles numeric Excel dates)
+        parsed = pd.to_datetime(value, errors="coerce")
+        if pd.isna(parsed):
+            return None
+        return parsed.to_pydatetime()
+
     @staticmethod
     def bulk_upsert_from_excel(db: Session, file_bytes: bytes, overwrite_all: bool = False) -> Tuple[int, int, int, List[str]]:
         """
@@ -58,7 +86,7 @@ class ScalarResultsUploadService:
         # Normalize empty cells: convert NaN to None and drop empty strings
         records: List[Dict[str, Any]] = df.to_dict('records')
         cleaned_records: List[Dict[str, Any]] = []
-        for rec in records:
+        for row_index, rec in enumerate(records):
             clean: Dict[str, Any] = {}
             for k, v in rec.items():
                 # Strip asterisks handled above; treat NaN/blank as missing
@@ -69,6 +97,13 @@ class ScalarResultsUploadService:
                 if isinstance(v, str) and v.strip() == '':
                     continue
                 clean[k] = v
+
+            if "measurement_date" in clean:
+                parsed_date = ScalarResultsUploadService._parse_measurement_date(clean.get("measurement_date"))
+                if parsed_date is None:
+                    errors.append(f"Row {row_index + 2}: Invalid measurement_date (expected date/datetime).")
+                    continue
+                clean["measurement_date"] = parsed_date
             
             # Handle per-row overwrite flag: per-row takes precedence over global
             row_overwrite = clean.pop('overwrite', None)

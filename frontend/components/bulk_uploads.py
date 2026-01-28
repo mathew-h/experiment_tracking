@@ -967,7 +967,7 @@ def handle_solution_chemistry_upload():
 
     # --- Template Generation ---
     template_data = {
-        "measurement_date": [pd.Timestamp.now().strftime('%Y-%m-%d')],
+        "measurement_date": [pd.Timestamp.now().date()],
         "experiment_id": ["Serum_MH_025"],
         "time_post_reaction": [1],  # Optional field
         "description": ["Sampled after acid addition"],
