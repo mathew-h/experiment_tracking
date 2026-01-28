@@ -63,7 +63,7 @@ class ScalarResults(Base):
     h2_concentration = Column(Float, nullable=True)  # % (vol) or ppm
     h2_concentration_unit = Column(String, nullable=True)  # '%' or 'ppm'
     gas_sampling_volume_ml = Column(Float, nullable=True)  # mL at sampling conditions
-    gas_sampling_pressure = Column(Float, nullable=True)  # psi at sampling conditions
+    gas_sampling_pressure = Column(Float, nullable=True)  # MPa at sampling conditions
 
     # Hydrogen derived outputs (stored as microunits per requirements)
     h2_moles = Column(Float, nullable=True)  # micromoles (μmol)
@@ -168,7 +168,7 @@ class ScalarResults(Base):
         Calculate hydrogen amount from gas concentration and sample volume using PV = nRT.
         Assumptions:
         - Temperature fixed at 25°C (298.15 K)
-        - Pressure must be provided by user in psi; converted to atm
+        - Pressure must be provided by user in MPa; converted to atm
         - Volume provided in mL; converted to L
         Stores:
         - h2_moles as micromoles (μmol)
@@ -188,7 +188,7 @@ class ScalarResults(Base):
         # Constants
         R = 0.082057  # L·atm/(mol·K)
         T_K = 298.15  # 25°C fixed
-        P_atm = self.gas_sampling_pressure / 14.6959  # psi -> atm
+        P_atm = self.gas_sampling_pressure * 9.86923  # MPa -> atm
 
         if P_atm <= 0:
             self.h2_moles = None

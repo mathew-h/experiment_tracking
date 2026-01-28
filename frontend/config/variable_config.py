@@ -508,14 +508,14 @@ SCALAR_RESULTS_CONFIG = {
         'help': "Volume of gas sampled for the measurement (mL)."
     },
     'gas_sampling_pressure': {
-        'label': "Gas Sampling Pressure (psi)",
+        'label': "Gas Sampling Pressure (MPa)",
         'type': 'number',
-        'default': 14.6959,
+        'default': 0.1013,
         'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
+        'step': 0.0001,
+        'format': "%.4f",
         'required': False,
-        'help': "Pressure of the gas sample during measurement (psi). Required for H₂ calculation."
+        'help': "Pressure of the gas sample during measurement (MPa). Required for H₂ calculation."
     },
     'h2_moles': {
         'label': "H₂ Amount (μmol)",

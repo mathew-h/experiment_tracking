@@ -980,7 +980,7 @@ def handle_solution_chemistry_upload():
         "h2_concentration": [0.00],
         "h2_concentration_unit": ["ppm"],
         "gas_sampling_volume_ml": [0.0],
-        "gas_sampling_pressure": [14.6959],
+        "gas_sampling_pressure": [0.1013],
         "final_ph": [7.2],
         "ferrous_iron_yield": [0.0],
         "final_nitrate_concentration": [0],
