@@ -101,9 +101,15 @@ class ScalarResults(Base):
         
         ammonia_mass_g = None
         if self.gross_ammonium_concentration is not None and liquid_volume_ml is not None and liquid_volume_ml > 0:
+            # Use background_ammonium_concentration or default 0.3 mM
+            bg_conc = self.background_ammonium_concentration if self.background_ammonium_concentration is not None else 0.3
+            
+            # Calculate net concentration, clamped to 0
+            net_conc = max(0.0, self.gross_ammonium_concentration - bg_conc)
+
             # Molar mass of NH4+ is ~18.04 g/mol
             ammonia_mass_g = (
-                (self.gross_ammonium_concentration / 1000) *  # Convert mM to M (mol/L)
+                (net_conc / 1000) *  # Convert mM to M (mol/L)
                 (liquid_volume_ml / 1000) *  # Convert mL to L
                 18.04  # Molar mass of NH4+ (g/mol)
             )
