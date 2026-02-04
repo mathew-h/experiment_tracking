@@ -440,13 +440,13 @@ class TestRenameWithConditionsAndAdditives:
         assert exp_after.conditions is not None, "Conditions should exist"
         
         # Debug: print actual values
-        print(f"\n  Conditions rock_mass: {exp_after.conditions.rock_mass}")
-        print(f"  Conditions water_volume: {exp_after.conditions.water_volume}")
+        print(f"\n  Conditions rock_mass_g: {exp_after.conditions.rock_mass_g}")
+        print(f"  Conditions water_volume_mL: {exp_after.conditions.water_volume_mL}")
         
-        assert exp_after.conditions.rock_mass == 50.0, \
-            f"Expected rock_mass=50.0, got {exp_after.conditions.rock_mass}"
-        assert exp_after.conditions.water_volume == 500.0, \
-            f"Expected water_volume=500.0, got {exp_after.conditions.water_volume}"
+        assert exp_after.conditions.rock_mass_g == 50.0, \
+            f"Expected rock_mass_g=50.0, got {exp_after.conditions.rock_mass_g}"
+        assert exp_after.conditions.water_volume_mL == 500.0, \
+            f"Expected water_volume_mL=500.0, got {exp_after.conditions.water_volume_mL}"
 
 
 class TestRenameEdgeCases:

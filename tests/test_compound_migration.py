@@ -23,8 +23,8 @@ def test_deprecated_fields_migrated_to_chemicals(test_db: Session):
     conditions = ExperimentalConditions(
         experiment_id="MIGRATION_TEST_001",
         experiment_fk=1,  # dummy FK for in-memory test; not asserting FK integrity here
-        rock_mass=100.0,
-        water_volume=500.0,
+        rock_mass_g=100.0,
+        water_volume_mL=500.0,
         catalyst="Nickel chloride",        # deprecated
         catalyst_mass=0.5,                  # deprecated
         buffer_system="NH4Cl",             # deprecated

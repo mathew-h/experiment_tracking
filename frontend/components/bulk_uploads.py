@@ -355,11 +355,11 @@ def handle_new_experiments_upload():
         # Display: mark required fields with asterisks and add format hint
         display_experiments_cols = [
             "experiment_id* (TYPE_INDEX or TYPE_INITIALS_INDEX)", 
-            "old_experiment_id (optional, for renames)",
             "sample_id", 
             "date", 
             "status", 
             "initial_note", 
+            "old_experiment_id (optional, for renames)",
             "overwrite"
         ]
         df_exp.columns = display_experiments_cols

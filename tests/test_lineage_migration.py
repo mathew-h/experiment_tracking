@@ -436,10 +436,10 @@ class TestExperimentLineageMigration:
         parent_conditions = ExperimentalConditions(
             experiment_id=parent.experiment_id,
             experiment_fk=parent.id,
-            temperature=90.0,
+            temperature_c=90.0,
             initial_ph=7.0,
-            rock_mass=100.0,
-            water_volume=500.0,
+            rock_mass_g=100.0,
+            water_volume_mL=500.0,
         )
         test_db_session.add(parent_conditions)
         test_db_session.flush()
@@ -467,10 +467,10 @@ class TestExperimentLineageMigration:
         
         # Verify conditions were copied
         assert treatment_exp.conditions is not None
-        assert treatment_exp.conditions.temperature == parent_conditions.temperature
+        assert treatment_exp.conditions.temperature_c == parent_conditions.temperature_c
         assert treatment_exp.conditions.initial_ph == parent_conditions.initial_ph
-        assert treatment_exp.conditions.rock_mass == parent_conditions.rock_mass
-        assert treatment_exp.conditions.water_volume == parent_conditions.water_volume
+        assert treatment_exp.conditions.rock_mass_g == parent_conditions.rock_mass_g
+        assert treatment_exp.conditions.water_volume_mL == parent_conditions.water_volume_mL
         
         # Verify note was created
         assert len(treatment_exp.notes) > 0
@@ -552,10 +552,10 @@ class TestExperimentLineageMigration:
         parent_conditions = ExperimentalConditions(
             experiment_id=parent.experiment_id,
             experiment_fk=parent.id,
-            temperature=120.0,
+            temperature_c=120.0,
             initial_ph=6.5,
-            rock_mass=200.0,
-            water_volume=1000.0,
+            rock_mass_g=200.0,
+            water_volume_mL=1000.0,
         )
         test_db_session.add(parent_conditions)
         test_db_session.flush()
@@ -593,7 +593,7 @@ class TestExperimentLineageMigration:
         
         # Verify conditions were copied
         assert created_exp.conditions is not None
-        assert created_exp.conditions.temperature == parent_conditions.temperature
+        assert created_exp.conditions.temperature_c == parent_conditions.temperature_c
         
         # Verify scalar results were created
         assert experimental_result is not None

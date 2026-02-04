@@ -58,11 +58,11 @@ def test_experiment(test_db: Session) -> Experiment:
     """Create a sample Experiment with basic conditions."""
     conditions = ExperimentalConditions(
         experiment_id="YIELD_TEST_001",
-        rock_mass=100.0,  # grams
-        water_volume=500.0, # mL
-        temperature=25.0,
-        room_temp_pressure=14.7, # Using a valid pressure field (psi)
-        stir_speed=300          # Corrected field name (RPM)
+        rock_mass_g=100.0,  # grams
+        water_volume_mL=500.0, # mL
+        temperature_c=25.0,
+        room_temp_pressure_psi=14.7, # Using a valid pressure field (psi)
+        stir_speed_rpm=300          # Corrected field name (RPM)
     )
     experiment = Experiment(
         experiment_id="YIELD_TEST_001",

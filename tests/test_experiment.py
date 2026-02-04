@@ -103,10 +103,10 @@ def test_save_experiment_conditions(db_session, mock_session_state):
     assert conditions.catalyst == 'Test Catalyst'
     assert conditions.catalyst_mass == 1.0
     assert conditions.catalyst_percentage == 5.0
-    assert conditions.temperature == 25.0
+    assert conditions.temperature_c == 25.0
     assert conditions.buffer_system == 'Test Buffer'
     assert conditions.buffer_concentration == 0.1
-    assert conditions.room_temp_pressure == 14.7
+    assert conditions.room_temp_pressure_psi == 14.7
     assert conditions.flow_rate == 1.0
     assert conditions.experiment_type == 'Serum'
     assert conditions.initial_nitrate_concentration == 0.1
@@ -171,5 +171,5 @@ def test_save_experiment_empty_conditions(db_session, mock_session_state):
     assert conditions is not None
     assert conditions.water_to_rock_ratio is None
     assert conditions.initial_ph == 7.0  # Default value
-    assert conditions.temperature == 25.0  # Default value
-    assert conditions.room_temp_pressure == 14.6959  # Default value 
+    assert conditions.temperature_c == 25.0  # Default value
+    assert conditions.room_temp_pressure_psi == 14.6959  # Default value 

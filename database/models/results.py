@@ -91,7 +91,7 @@ class ScalarResults(Base):
             self.h2_grams_per_ton_yield = None
             return
 
-        rock_mass = self.result_entry.experiment.conditions.rock_mass
+        rock_mass = self.result_entry.experiment.conditions.rock_mass_g
         # Prefer sampling volume if provided; otherwise use total water volume from conditions
         liquid_volume_ml = None
         if self.sampling_volume_mL is not None and self.sampling_volume_mL > 0:
