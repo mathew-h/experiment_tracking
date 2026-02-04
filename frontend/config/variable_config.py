@@ -195,7 +195,7 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Specify the starting pH of the solution."
     },
-    'rock_mass': {
+    'rock_mass_g': {
         'label': "Rock Mass (g)",
         'default': 0.0,
         'type': 'number',
@@ -205,7 +205,7 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Enter the mass of the rock sample in grams."
     },
-    'water_volume': {
+    'water_volume_mL': {
         'label': "Water Volume (mL)",
         'default': 0.0,
         'type': 'number',
@@ -215,7 +215,7 @@ FIELD_CONFIG = {
         'required': True,
         'help': "Enter the volume of water used in milliliters."
     },
-    'temperature': {
+    'temperature_c': {
         'label': "Temperature (°C)",
         'default': 25.0,
         'type': 'number',
@@ -274,7 +274,7 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Enter the initial dissolved oxygen concentration in parts per million (ppm)."
     },
-    'stir_speed': {
+    'stir_speed_rpm': {
         'label': "Stir Speed (RPM)",
         'type': 'number',
         'default': None,
@@ -304,7 +304,7 @@ FIELD_CONFIG = {
     #     'required': False,
     #     'help': "Initial alkalinity measurement (mg/L as CaCO₃)."
     # },
-    'room_temp_pressure': {  
+    'room_temp_pressure_psi': {  
         'label': "Pressure at Room Temperature (psi)",
         'default': 14.6959, # Standard atmospheric pressure
         'type': 'number',
@@ -314,7 +314,7 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Specify the room temperature pressure in pounds per square inch (psi)."
     },
-    'rxn_temp_pressure': {
+    'rxn_temp_pressure_psi': {
         'label': "Pressure at Reaction Temperature (psi)",
         'type': 'number',
         'default': None,
@@ -344,7 +344,7 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Specify the pore pressure in psi (for core flood/HPHT)."
     },
-    'core_height': {
+    'core_height_cm': {
         'label': "Core Height (cm)",
         'type': 'number',
         'default': None,
@@ -354,7 +354,7 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Core height (in centimeters)."
     },
-    'core_width': {
+    'core_width_cm': {
         'label': "Core Width (cm)",
         'type': 'number',
         'default': None,
@@ -364,7 +364,7 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Core width (in centimeters)."
     },
-    'core_volume': {
+    'core_volume_cm3': {
         'label': "Core Volume (cm³)",
         'type': 'number',
         'default': None,
@@ -384,21 +384,21 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Specify the flow rate in mL/min (for flow-through experiments)."
     },
-    'co2_partial_pressure': {
-        'label': "CO2 Partial Pressure (psi)",
+    'co2_partial_pressure_MPa': {
+        'label': "CO2 Partial Pressure (MPa)",
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
+        'step': 0.001,
+        'format': "%.3f",
         'required': False,
-        'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
+        'help': "Specify the partial pressure of CO2 in MPa (for relevant experiments)."
     },
 }
 
 # Configuration for experiment scalar results (formerly RESULTS_CONFIG)
 SCALAR_RESULTS_CONFIG = {
-    'gross_ammonium_concentration': {
+    'gross_ammonium_concentration_mM': {
         'label': "Gross Ammonium Concentration (mM)",
         'type': 'number',
         'default': 0.0,
@@ -409,7 +409,7 @@ SCALAR_RESULTS_CONFIG = {
         'help': "Enter the gross ammonium concentration in the solution in millimolar (mM)."
     },
 
-    'background_ammonium_concentration': {
+    'background_ammonium_concentration_mM': {
         'label': "Background Ammonium Concentration (mM)",
         'type': 'number',
         'default': 0.0,
@@ -437,7 +437,7 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the final pH of the solution (if measured)."
     },
-    'sampling_volume': {
+    'sampling_volume_mL': {
         'label': "Sampling Volume (mL)",
         'type': 'number',
         'default': 0.0,
@@ -468,15 +468,15 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the ferrous iron yield as a percentage (if measured)."
     },
-    'co2_partial_pressure': {
-        'label': "CO2 Partial Pressure (psi)",
+    'co2_partial_pressure_MPa': {
+        'label': "CO2 Partial Pressure (MPa)",
         'default': 0.0,
         'type': 'number',
         'min_value': 0.0,
-        'step': 0.1,
-        'format': "%.2f",
+        'step': 0.001,
+        'format': "%.3f",
         'required': False,
-        'help': "Specify the partial pressure of CO2 in psi (for relevant experiments)."
+        'help': "Specify the partial pressure of CO2 in MPa (for relevant experiments)."
     },
     # --- Hydrogen tracking fields ---
     'h2_concentration': {
@@ -507,7 +507,7 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Volume of gas sampled for the measurement (mL)."
     },
-    'gas_sampling_pressure': {
+    'gas_sampling_pressure_MPa': {
         'label': "Gas Sampling Pressure (MPa)",
         'type': 'number',
         'default': 0.1013,
@@ -517,7 +517,7 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Pressure of the gas sample during measurement (MPa). Required for H₂ calculation."
     },
-    'h2_moles': {
+    'h2_micromoles': {
         'label': "H₂ Amount (μmol)",
         'type': 'number',
         'default': 0.0,
@@ -528,7 +528,7 @@ SCALAR_RESULTS_CONFIG = {
         'readonly': True,
         'help': "Calculated micromoles of H₂ in the sampled gas."
     },
-    'h2_mass_g': {
+    'h2_mass_ug': {
         'label': "H₂ Mass (μg)",
         'type': 'number',
         'default': 0.0,
@@ -557,7 +557,7 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "ID of the background experiment."
     },
-    'final_nitrate_concentration': {
+    'final_nitrate_concentration_mM': {
         'label': "Final Nitrate Concentration (mM)",
         'type': 'number',
         'default': 0.0,
@@ -567,27 +567,27 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the final nitrate concentration in mM (if measured)."
     },
-    'final_dissolved_oxygen': {
-        'label': "Final Dissolved Oxygen (ppm)",
+    'final_dissolved_oxygen_mg_L': {
+        'label': "Final Dissolved Oxygen (mg/L)",
         'type': 'number',
         'default': 0.0,
         'min_value': 0.0,
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Final dissolved oxygen concentration (ppm)."
+        'help': "Final dissolved oxygen concentration (mg/L)."
     },
-    'final_conductivity': {
-        'label': "Final Conductivity (μS/cm)",
+    'final_conductivity_mS_cm': {
+        'label': "Final Conductivity (mS/cm)",
         'type': 'number',
         'default': 0.0,
         'min_value': 0.0,
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Final conductivity measurement (microsiemens per centimeter)."
+        'help': "Final conductivity measurement (millisiemens per centimeter)."
     },
-    'final_alkalinity': {
+    'final_alkalinity_mg_L': {
         'label': "Final Alkalinity (mg/L CaCO₃)",
         'type': 'number',
         'default': 0.0,

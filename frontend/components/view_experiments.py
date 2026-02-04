@@ -173,7 +173,7 @@ def render_experiment_list():
         with col5:
             st.markdown(f"**{FIELD_CONFIG['initial_ph']['label']}**")
         with col6:
-            st.markdown(f"**{FIELD_CONFIG['temperature']['label']}**")
+            st.markdown(f"**{FIELD_CONFIG['temperature_c']['label']}**")
         with col7:
             st.markdown("**Description**")
         with col8:
@@ -192,8 +192,8 @@ def render_experiment_list():
             notes = exp_detail.get('notes', []) if exp_detail else []
 
             # Water mL and Rock Mass g
-            water_ml = conditions.get('water_volume', 0.0)
-            rock_mass_g = conditions.get('rock_mass', 0.0)
+            water_ml = conditions.get('water_volume_mL', 0.0)
+            rock_mass_g = conditions.get('rock_mass_g', 0.0)
             
             water_ml_disp = f"{water_ml:.1f}" if isinstance(water_ml, (int, float)) else str(water_ml)
             rock_mass_g_disp = f"{rock_mass_g:.3f}" if isinstance(rock_mass_g, (int, float)) else str(rock_mass_g)
@@ -224,7 +224,7 @@ def render_experiment_list():
                 if 'db' in locals() and db:
                     db.close()
             # Temperature
-            temperature = conditions.get('temperature', FIELD_CONFIG['temperature']['default'])
+            temperature = conditions.get('temperature_c', FIELD_CONFIG['temperature_c']['default'])
             temperature_disp = f"{temperature:.1f}" if isinstance(temperature, (int, float)) else str(temperature)
             # Description from first note
             description = notes[0]['note_text'] if notes else ""
@@ -649,6 +649,4 @@ def filter_experiments(query, filters):
         query = query.filter(Experiment.sample_id.ilike(f"%{filters['sample_id']}%"))
     
     return query
-
-
 

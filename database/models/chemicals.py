@@ -15,10 +15,10 @@ class Compound(Base):
     cas_number = Column(String(20), nullable=True, unique=True)  # Optional but highly recommended for lookup
 
     # Additional chemical properties
-    molecular_weight = Column(Float, nullable=True)         # g/mol
-    density = Column(Float, nullable=True)                  # g/cm³ for solids, g/mL for liquids
-    melting_point = Column(Float, nullable=True)           # °C
-    boiling_point = Column(Float, nullable=True)           # °C
+    molecular_weight_g_mol = Column(Float, nullable=True)         # g/mol
+    density_g_cm3 = Column(Float, nullable=True)                  # g/cm³ for solids, g/mL for liquids
+    melting_point_c = Column(Float, nullable=True)           # °C
+    boiling_point_c = Column(Float, nullable=True)           # °C
     solubility = Column(String(100), nullable=True)         # Description of solubility
     hazard_class = Column(String(50), nullable=True)       # Safety information
 
@@ -138,15 +138,15 @@ class ChemicalAdditive(Base):
         
         if getattr(self, 'experiment', None) is not None:
             try:
-                water_volume_ml = getattr(self.experiment, 'water_volume', None)
+                water_volume_ml = getattr(self.experiment, 'water_volume_mL', None)
                 if isinstance(water_volume_ml, (int, float)) and water_volume_ml and water_volume_ml > 0:
                     volume_liters = float(water_volume_ml) / 1000.0
-                rock_mass = getattr(self.experiment, 'rock_mass', None)
+                rock_mass = getattr(self.experiment, 'rock_mass_g', None)
             except Exception:
                 volume_liters = None
                 rock_mass = None
 
-        molecular_weight = getattr(self.compound, 'molecular_weight', None) if self.compound else None
+        molecular_weight = getattr(self.compound, 'molecular_weight_g_mol', None) if self.compound else None
 
         # Reset outputs
         self.mass_in_grams = None

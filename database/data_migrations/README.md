@@ -98,6 +98,21 @@ python database/data_migrations/establish_experiment_lineage_006.py         # Pr
 py database/data_migrations/establish_experiment_lineage_006.py --apply # Apply
 ```
 
+### recompute_calculated_fields_005
+**Recalculate derived fields across the database**
+
+Updates all derived values by running the logic defined in `@database/models/results.py` and `@database/services.py`.
+Specifically, it triggers:
+- `ExperimentalConditions.calculate_derived_conditions()`
+- `ChemicalAdditive.calculate_derived_values()`
+- `ScalarResults.calculate_yields()`
+
+**When to run:** After updating formulas or logic in `database/models/` or `database/services.py`.
+
+```bash
+python database/data_migrations/recompute_calculated_fields_005.py
+```
+
 ---
 
 ## Historical/Utility Migrations
@@ -106,7 +121,6 @@ These migrations were run during development and may not be needed for current d
 
 | Migration | Purpose |
 |-----------|---------|
-| `recompute_calculated_fields_005` | Recalculate all derived fields after formula changes |
 | `calculate_grams_per_ton_yield_004` | Backfill g/ton yield for existing ScalarResults |
 | `update_catalyst_ppm_rounding_003` | Update catalyst PPM rounding consistency |
 | `recalculate_yields_002` | Recalculate yields with updated logic |

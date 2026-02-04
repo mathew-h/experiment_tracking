@@ -12,19 +12,19 @@ class ExperimentalConditions(Base):
     experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False) # FK to Experiment PK
     particle_size = Column(String, nullable=True)  # Accept strings like '<75', '>100', '75-100', or numeric values
     initial_ph = Column(Float)
-    rock_mass = Column(Float)
-    water_volume = Column(Float)
-    temperature = Column(Float)
+    rock_mass_g = Column(Float)
+    water_volume_mL = Column(Float)
+    temperature_c = Column(Float)
     experiment_type = Column(String)
     reactor_number = Column(Integer, nullable=True)
     feedstock = Column(String, nullable=True)
-    room_temp_pressure = Column(Float, nullable=True)  # in psi instead of bar
-    rxn_temp_pressure = Column(Float, nullable=True)
-    stir_speed = Column(Float, nullable=True)
+    room_temp_pressure_psi = Column(Float, nullable=True)  # in psi instead of bar
+    rxn_temp_pressure_psi = Column(Float, nullable=True)
+    stir_speed_rpm = Column(Float, nullable=True)
     initial_conductivity = Column(Float, nullable=True)
-    core_height = Column(Float, nullable=True)
-    core_width = Column(Float, nullable=True)
-    core_volume = Column(Float, nullable=True)
+    core_height_cm = Column(Float, nullable=True)
+    core_width_cm = Column(Float, nullable=True)
+    core_volume_cm3 = Column(Float, nullable=True)
 
     # DEPRECATED: Migrated to ChemicalAdditive - use chemical_additives relationship
     catalyst = Column(String)
@@ -47,7 +47,7 @@ class ExperimentalConditions(Base):
     surfactant_type = Column(String, nullable=True)  # optional
     surfactant_concentration = Column(Float, nullable=True)  # optional
     
-    co2_partial_pressure = Column(Float, nullable=True)  # in psi, optional
+    co2_partial_pressure_MPa = Column(Float, nullable=True)  # in MPa, optional
     confining_pressure = Column(Float, nullable=True)  # optional
     pore_pressure = Column(Float, nullable=True)  # optional
     
@@ -88,8 +88,8 @@ class ExperimentalConditions(Base):
         and to calculate water_to_rock_ratio which is still relevant to ExperimentalConditions.
         """
         # Calculate water_to_rock_ratio
-        if self.water_volume is not None and self.rock_mass is not None and self.rock_mass > 0:
-            self.water_to_rock_ratio = self.water_volume / self.rock_mass
+        if self.water_volume_mL is not None and self.rock_mass_g is not None and self.rock_mass_g > 0:
+            self.water_to_rock_ratio = self.water_volume_mL / self.rock_mass_g
         else:
             self.water_to_rock_ratio = None  # Ensure it is null if inputs are missing
 
@@ -118,12 +118,12 @@ class ExperimentalConditions(Base):
         # # Step 2: If elemental mass was determined, calculate percentage and PPM based on their respective dependencies
         # if elemental_metal_mass is not None:
         #     # Calculate catalyst_percentage if rock_mass is valid
-        #     if self.rock_mass is not None and self.rock_mass > 0:
-        #         self.catalyst_percentage = (elemental_metal_mass / self.rock_mass) * 100
+        #     if self.rock_mass_g is not None and self.rock_mass_g > 0:
+        #         self.catalyst_percentage = (elemental_metal_mass / self.rock_mass_g) * 100
         #
         #     # Calculate catalyst_ppm if water_volume is valid (independent of rock_mass)
-        #     if self.water_volume is not None and self.water_volume > 0:
+        #     if self.water_volume_mL is not None and self.water_volume_mL > 0:
         #         # ppm = (mass_of_solute [g] / mass_of_solvent [g]) * 1,000,000
         #         # Assuming water density is 1 g/mL, water_volume in mL is equivalent to water_mass in g.
-        #         unrounded_ppm = (elemental_metal_mass / self.water_volume) * 1_000_000
+        #         unrounded_ppm = (elemental_metal_mass / self.water_volume_mL) * 1_000_000
         #         self.catalyst_ppm = round(unrounded_ppm / 10) * 10

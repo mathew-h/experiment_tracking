@@ -46,28 +46,28 @@ class ScalarResults(Base):
 
     # Scalar fields
     ferrous_iron_yield = Column(Float, nullable=True)  # in percentage
-    gross_ammonium_concentration = Column(Float, nullable=True)  # in mM
-    background_ammonium_concentration = Column(Float, nullable=True)  # in mM
+    gross_ammonium_concentration_mM = Column(Float, nullable=True)  # in mM
+    background_ammonium_concentration_mM = Column(Float, nullable=True)  # in mM
     ammonium_quant_method = Column(String, nullable=True) # e.g., 'NMR', 'Colorimetric Assay'
     grams_per_ton_yield = Column(Float, nullable=True)  # yield in g/ton
     final_ph = Column(Float, nullable=True)
-    final_nitrate_concentration = Column(Float, nullable=True)  # in mM
-    final_dissolved_oxygen = Column(Float, nullable=True) # in ppm
-    co2_partial_pressure = Column(Float, nullable=True) # in psi
-    final_conductivity = Column(Float, nullable=True) # in uS/cm
-    final_alkalinity = Column(Float, nullable=True) # in mg/L CaCO3
-    sampling_volume = Column(Float, nullable=True) # in mL
+    final_nitrate_concentration_mM = Column(Float, nullable=True)  # in mM
+    final_dissolved_oxygen_mg_L = Column(Float, nullable=True) # in ppm
+    co2_partial_pressure_MPa = Column(Float, nullable=True) # in psi
+    final_conductivity_mS_cm = Column(Float, nullable=True) # in uS/cm
+    final_alkalinity_mg_L = Column(Float, nullable=True) # in mg/L CaCO3
+    sampling_volume_mL = Column(Float, nullable=True) # in mL
     measurement_date = Column(DateTime(timezone=True), nullable=True)
 
     # Hydrogen tracking inputs
     h2_concentration = Column(Float, nullable=True)  # % (vol) or ppm
     h2_concentration_unit = Column(String, nullable=True)  # '%' or 'ppm'
     gas_sampling_volume_ml = Column(Float, nullable=True)  # mL at sampling conditions
-    gas_sampling_pressure = Column(Float, nullable=True)  # MPa at sampling conditions
+    gas_sampling_pressure_MPa = Column(Float, nullable=True)  # MPa at sampling conditions
 
     # Hydrogen derived outputs (stored as microunits per requirements)
-    h2_moles = Column(Float, nullable=True)  # micromoles (μmol)
-    h2_mass_g = Column(Float, nullable=True)  # micrograms (μg)
+    h2_micromoles = Column(Float, nullable=True)  # micromoles (μmol)
+    h2_mass_ug = Column(Float, nullable=True)  # micrograms (μg)
     # Hydrogen yield normalized by rock mass (g/ton rock)
     h2_grams_per_ton_yield = Column(Float, nullable=True)
 
@@ -94,18 +94,18 @@ class ScalarResults(Base):
         rock_mass = self.result_entry.experiment.conditions.rock_mass
         # Prefer sampling volume if provided; otherwise use total water volume from conditions
         liquid_volume_ml = None
-        if self.sampling_volume is not None and self.sampling_volume > 0:
-            liquid_volume_ml = self.sampling_volume
+        if self.sampling_volume_mL is not None and self.sampling_volume_mL > 0:
+            liquid_volume_ml = self.sampling_volume_mL
         else:
-            liquid_volume_ml = self.result_entry.experiment.conditions.water_volume
+            liquid_volume_ml = self.result_entry.experiment.conditions.water_volume_mL
         
         ammonia_mass_g = None
-        if self.gross_ammonium_concentration is not None and liquid_volume_ml is not None and liquid_volume_ml > 0:
-            # Use background_ammonium_concentration or default 0.3 mM
-            bg_conc = self.background_ammonium_concentration if self.background_ammonium_concentration is not None else 0.3
+        if self.gross_ammonium_concentration_mM is not None and liquid_volume_ml is not None and liquid_volume_ml > 0:
+            # Use background_ammonium_concentration_mM or default 0.3 mM
+            bg_conc = self.background_ammonium_concentration_mM if self.background_ammonium_concentration_mM is not None else 0.3
             
             # Calculate net concentration, clamped to 0
-            net_conc = max(0.0, self.gross_ammonium_concentration - bg_conc)
+            net_conc = max(0.0, self.gross_ammonium_concentration_mM - bg_conc)
 
             # Molar mass of NH4+ is ~18.04 g/mol
             ammonia_mass_g = (
@@ -131,9 +131,9 @@ class ScalarResults(Base):
 
         # Normalize hydrogen to g/ton yield if rock mass available and hydrogen mass calculated
         try:
-            if rock_mass is not None and rock_mass > 0 and self.h2_mass_g is not None:
-                # h2_mass_g is stored as micrograms (μg); convert to grams
-                h2_mass_grams = self.h2_mass_g / 1_000_000.0
+            if rock_mass is not None and rock_mass > 0 and self.h2_mass_ug is not None:
+                # h2_mass_ug is stored as micrograms (μg); convert to grams
+                h2_mass_grams = self.h2_mass_ug / 1_000_000.0
                 self.h2_grams_per_ton_yield = 1_000_000.0 * (h2_mass_grams / rock_mass)
             else:
                 self.h2_grams_per_ton_yield = None
@@ -148,7 +148,7 @@ class ScalarResults(Base):
         # else:
         #    self.ferrous_iron_yield = None # Or leave as is if manually entered
 
-    @validates('h2_concentration', 'gas_sampling_volume_ml', 'gas_sampling_pressure')
+    @validates('h2_concentration', 'gas_sampling_volume_ml', 'gas_sampling_pressure_MPa')
     def validate_non_negative(self, key, value):
         if value is not None and value < 0:
             raise ValueError(f"{key} must be non-negative.")
@@ -171,28 +171,28 @@ class ScalarResults(Base):
         - Pressure must be provided by user in MPa; converted to atm
         - Volume provided in mL; converted to L
         Stores:
-        - h2_moles as micromoles (μmol)
-        - h2_mass_g as micrograms (μg)
+        - h2_micromoles as micromoles (μmol)
+        - h2_mass_ug as micrograms (μg)
         """
         # Validate required inputs
         if (
             self.h2_concentration is None or
             self.h2_concentration_unit is None or
             self.gas_sampling_volume_ml is None or self.gas_sampling_volume_ml <= 0 or
-            self.gas_sampling_pressure is None or self.gas_sampling_pressure <= 0
+            self.gas_sampling_pressure_MPa is None or self.gas_sampling_pressure_MPa <= 0
         ):
-            self.h2_moles = None
-            self.h2_mass_g = None
+            self.h2_micromoles = None
+            self.h2_mass_ug = None
             return
 
         # Constants
         R = 0.082057  # L·atm/(mol·K)
         T_K = 298.15  # 25°C fixed
-        P_atm = self.gas_sampling_pressure * 9.86923  # MPa -> atm
+        P_atm = self.gas_sampling_pressure_MPa * 9.86923  # MPa -> atm
 
         if P_atm <= 0:
-            self.h2_moles = None
-            self.h2_mass_g = None
+            self.h2_micromoles = None
+            self.h2_mass_ug = None
             return
 
         V_L = self.gas_sampling_volume_ml / 1000.0
@@ -201,8 +201,8 @@ class ScalarResults(Base):
         try:
             total_moles = (P_atm * V_L) / (R * T_K)
         except ZeroDivisionError:
-            self.h2_moles = None
-            self.h2_mass_g = None
+            self.h2_micromoles = None
+            self.h2_mass_ug = None
             return
 
         # Convert concentration to fraction
@@ -212,13 +212,13 @@ class ScalarResults(Base):
         elif unit == 'ppm':
             fraction = self.h2_concentration / 1_000_000.0
         else:
-            self.h2_moles = None
-            self.h2_mass_g = None
+            self.h2_micromoles = None
+            self.h2_mass_ug = None
             return
 
         if fraction is None or fraction < 0:
-            self.h2_moles = None
-            self.h2_mass_g = None
+            self.h2_micromoles = None
+            self.h2_mass_ug = None
             return
 
         h2_moles = total_moles * fraction
@@ -227,8 +227,8 @@ class ScalarResults(Base):
         h2_micromoles = h2_moles * 1_000_000.0
         h2_micrograms = h2_moles * 2.01588 * 1_000_000.0  # g/mol * mol -> g, then g to μg
 
-        self.h2_moles = h2_micromoles
-        self.h2_mass_g = h2_micrograms
+        self.h2_micromoles = h2_micromoles
+        self.h2_mass_ug = h2_micrograms
 
 class ICPResults(Base):
     __tablename__ = "icp_results"

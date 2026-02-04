@@ -57,11 +57,11 @@ class ScalarResultsService:
             scalar_data = experimental_result.scalar_data
             # Define all updatable fields
             updatable_fields = [
-                'ferrous_iron_yield', 'gross_ammonium_concentration', 'background_ammonium_concentration', 'ammonium_quant_method',
+                'ferrous_iron_yield', 'gross_ammonium_concentration_mM', 'background_ammonium_concentration_mM', 'ammonium_quant_method',
                 'background_experiment_id',
-                'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure',
-                'final_ph', 'final_nitrate_concentration', 'final_dissolved_oxygen', 'co2_partial_pressure',
-                'final_conductivity', 'final_alkalinity', 'sampling_volume', 'measurement_date'
+                'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure_MPa',
+                'final_ph', 'final_nitrate_concentration_mM', 'final_dissolved_oxygen_mg_L', 'co2_partial_pressure_MPa',
+                'final_conductivity_mS_cm', 'final_alkalinity_mg_L', 'sampling_volume_mL', 'measurement_date'
             ]
             
             if overwrite:
@@ -79,22 +79,22 @@ class ScalarResultsService:
             scalar_data = ScalarResults(
                 result_id=experimental_result.id,  # Link to ExperimentalResults
                 ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
-                gross_ammonium_concentration=result_data.get('gross_ammonium_concentration'),
-                background_ammonium_concentration=result_data.get('background_ammonium_concentration'),
+                gross_ammonium_concentration_mM=result_data.get('gross_ammonium_concentration_mM'),
+                background_ammonium_concentration_mM=result_data.get('background_ammonium_concentration_mM'),
                 ammonium_quant_method=result_data.get('ammonium_quant_method'),
                 background_experiment_id=result_data.get('background_experiment_id'),
                 # Hydrogen fields from bulk upload (optional)
                 h2_concentration=result_data.get('h2_concentration'),
                 h2_concentration_unit=result_data.get('h2_concentration_unit'),
                 gas_sampling_volume_ml=result_data.get('gas_sampling_volume_ml'),
-                gas_sampling_pressure=result_data.get('gas_sampling_pressure'),
+                gas_sampling_pressure_MPa=result_data.get('gas_sampling_pressure_MPa'),
                 final_ph=result_data.get('final_ph'),
-                final_nitrate_concentration=result_data.get('final_nitrate_concentration'),
-                final_dissolved_oxygen=result_data.get('final_dissolved_oxygen'),
-                co2_partial_pressure=result_data.get('co2_partial_pressure'),
-                final_conductivity=result_data.get('final_conductivity'),
-                final_alkalinity=result_data.get('final_alkalinity'),
-                sampling_volume=result_data.get('sampling_volume'),
+                final_nitrate_concentration_mM=result_data.get('final_nitrate_concentration_mM'),
+                final_dissolved_oxygen_mg_L=result_data.get('final_dissolved_oxygen_mg_L'),
+                co2_partial_pressure_MPa=result_data.get('co2_partial_pressure_MPa'),
+                final_conductivity_mS_cm=result_data.get('final_conductivity_mS_cm'),
+                final_alkalinity_mg_L=result_data.get('final_alkalinity_mg_L'),
+                sampling_volume_mL=result_data.get('sampling_volume_mL'),
                 measurement_date=result_data.get('measurement_date'),
                 result_entry=experimental_result
             )

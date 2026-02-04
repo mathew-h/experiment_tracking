@@ -52,8 +52,8 @@ def render_reactor_dashboard():
                     'description': exp.description if exp.description else '',
                     'additives': additives_str if additives_str else '',
                     'initial_ph': conditions.initial_ph if conditions.initial_ph is not None else '',
-                    'water_volume': conditions.water_volume if conditions.water_volume is not None else '',
-                    'rock_mass': conditions.rock_mass if conditions.rock_mass is not None else '',
+                    'water_volume_mL': conditions.water_volume_mL if conditions.water_volume_mL is not None else '',
+                    'rock_mass_g': conditions.rock_mass_g if conditions.rock_mass_g is not None else '',
                     'date': exp.date.strftime('%Y-%m-%d') if exp.date else ''
                 }
         
@@ -69,8 +69,8 @@ def render_reactor_dashboard():
                     'Sample ID': exp_data['sample_id'],
                     'Additives': exp_data['additives'],
                     'Initial pH': exp_data['initial_ph'],
-                    'Water (mL)': exp_data['water_volume'],
-                    'Rock (g)': exp_data['rock_mass'],
+                    'Water (mL)': exp_data['water_volume_mL'],
+                    'Rock (g)': exp_data['rock_mass_g'],
                     'Description': exp_data['description'],
                     'Date': exp_data['date']
                 })
