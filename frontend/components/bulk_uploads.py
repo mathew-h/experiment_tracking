@@ -3,6 +3,7 @@ import pandas as pd
 import io
 from database import SessionLocal, Experiment, ExperimentalResults, ScalarResults, SampleInfo, PXRFReading, ExperimentalConditions, Compound, ChemicalAdditive, AmountUnit
 from database.models.enums import ExperimentStatus
+from frontend.config.variable_config import SCALAR_RESULTS_TEMPLATE_HEADERS
 from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
 from backend.services.bulk_uploads.experiment_additives import ExperimentAdditivesService
 from backend.services.bulk_uploads.actlabs_xrd_report import XRDUploadService
@@ -34,8 +35,8 @@ def render_bulk_uploads_page():
         (
             "Select data type",
             "New Experiments",
-            "NMR / Hydrogen / pH / Conductivity / Alkalinity",
-            "ICP-OES Elemental Analysis",
+            "Solution Chemistry (NMR / Hydrogen / pH / Conductivity / Alkalinity)",
+            "ICP-OES",
             # For EDS Later "Elemental Composition (Titration/ICP)",
             "ActLabs XRD",
             "ActLabs Rock Titration",
@@ -49,9 +50,9 @@ def render_bulk_uploads_page():
 
     if upload_option == "New Experiments":
         handle_new_experiments_upload()
-    elif upload_option == "NMR / Hydrogen / pH / Conductivity / Alkalinity":
+    elif upload_option == "Solution Chemistry (NMR / Hydrogen / pH / Conductivity / Alkalinity)":
         handle_solution_chemistry_upload()
-    elif upload_option == "ICP-OES Elemental Analysis":
+    elif upload_option == "ICP-OES":
         handle_icp_upload()
     elif upload_option == "ActLabs XRD":
         handle_xrd_upload()
@@ -150,46 +151,24 @@ def handle_new_experiments_upload():
 
     st.markdown(
         """
-        Use this multi-sheet Excel template to create or update experiments.
-        Columns with an asterisk (*) are required.
-        
-        **Experiment ID Format:** Supports two formats:
-        - `ExperimentType_ResearcherInitials_Index` (3-part, e.g., `Serum_MH_101`)
-        - `ExperimentType_Index` (2-part, e.g., `HPHT_001`)
-        
-        Both formats support optional suffixes:
-        - **Sequential:** Add `-NUMBER` for consecutive runs (e.g., `Serum_MH_101-2` or `HPHT_001-2`)
-        - **Treatment:** Add `_TEXT` for treatment variants (e.g., `Serum_MH_101_Desorption` or `HPHT_001_Desorption`)
-        - **Combined:** Both suffixes together (e.g., `Serum_MH_101-2_Desorption` or `HPHT_001-2_Desorption`)
-        
-        **Experiment Types:** Serum, Autoclave, HPHT, CF (Core Flood), Other
+        This bulk upload uses a multi-sheet Excel template with three sheets:
 
-        **🔄 Renaming Experiments:**
-        - Add `old_experiment_id` column to specify current database experiment_id to rename
-        - When `old_experiment_id` is provided with `overwrite=True`, the experiment will be renamed
-        - All results, conditions, and additives remain linked (uses database ID, not experiment_id)
-        - Example: `experiment_id=HPHT_MH_036_Desorption`, `old_experiment_id=HPHT_MH_036-2`, `overwrite=True`
-        - ⚠️ **IMPORTANT:** For chain renames (new ID = another's old ID), order matters! Process rows so experiments rename away from conflicting names first.
-        - See docs/EXPERIMENT_RENAME_GUIDE.md for detailed examples and ordering rules
+        1. **experiments**: experiment details like experiment ID, sample ID, date, status, and description.
+        2. **conditions**: experiment conditions, such as pH, rock mass, liquid volume, temperature, etc.
+        3. **additives**: chemical additives for each experiment, including compound name, amount, and unit.
 
-        **🔄 Auto-Copy from Parent (Conditions Only):**
-        Sequential/treatment experiments automatically copy CONDITIONS from their parent when `overwrite=False`:
-        - Leave conditions sheet empty to copy all conditions from parent
-        - Provide partial condition values to override specific fields (other fields copied from parent)
-        - **Chemical additives are NEVER auto-copied - must be explicitly provided each time**
-        
-        **Sheets and fields:**
-        - **experiments**: experiment_id* (unique), old_experiment_id (optional, for renames), sample_id, date, status, initial_note, overwrite
-          - researcher & sample_id AUTO-POPULATED from experiment_id/parent
-          - overwrite: when true, metadata/conditions updated and all additives replaced
-          - status: use ExperimentStatus name or value (e.g., ONGOING, COMPLETED)
-          - date: Always use provided value (never copied from parent)
-        - **conditions**: experiment_id* plus valid condition columns
-          - experiment_type AUTO-POPULATED from experiment_id
-          - Sequential experiments: parent conditions copied, then overridden by your values
-        - **additives**: experiment_id*, compound*, amount*, unit* with optional order, method
-          - **Must be explicitly provided for EVERY experiment (never auto-copied from parent)**
-          - unit must be one of the allowed units (e.g., g, mg, mL, ppm, mM, M, % of Rock)
+        **Template notes:**
+        - Columns marked with an asterisk (*) are required.
+        - If a field is not applicable, leave it blank.
+
+        **Experiment ID Formatting:**
+        - `ExperimentType_Index`  &nbsp; (e.g., `HPHT_001`, `SERUM_020`)
+        - Longer strings before the underscore (e.g., `Serum_MH_020`)
+        - Sequential runs are indicated by adding a number after the underscore (e.g., `Serum_MH_101-2`)
+        - Treatment variants are indicated by adding a text after the underscore (e.g., `Serum_MH_101_Desorption`)
+        - Combined experiments are indicated by adding a number and a text after the underscore (e.g., `Serum_MH_101-2_Desorption`)
+
+        Please fill out each sheet as appropriate for your experiments. For details on additional naming options or behaviors (sequential runs, renaming, copying from parent, etc.), see the detailed documentation.
         """
     )
 
@@ -948,53 +927,48 @@ def handle_solution_chemistry_upload():
     Upload an Excel file for results such as NMR, Hydrogen, pH, Conductivity, Alkalinity. 
     The file should have the following columns found in the template below.
 
-    **Columns marked with an asterisk (*) are required.**
-    
-    ### 🔄 Update Behavior & Overwrite Mode
-    
-    When uploading results for experiments that already have data:
-    
-    **Two ways to control overwrite:**
-    1. **Per-row control**: Use the `overwrite` column in the template (`True` or `False`)
-    2. **Global control**: Use the checkbox below to apply to all rows
-    
-    **Overwrite Modes:**
-    - **Partial Update (`False`, default)**: Only fields you provide are updated. Empty cells leave existing values unchanged.
-    - **Complete Replacement (`True`)**: All fields are replaced with your values. Empty cells will set fields to blank/null.
-    
-    💡 **Tip**: Per-row `overwrite` column takes precedence over the global checkbox setting.
+    ***Instructions:***
+    - Columns marked with an asterisk (*) are required.
+    - If a field is not applicable, leave it blank.
+    - Experiment ID, Description, and Measurement Date are required.
+   
+    ***Download the template below to get started.***
     """)
 
     # --- Template Generation ---
+    # Use English headers from config
     template_data = {
-        "measurement_date": [pd.Timestamp.now().date()],
-        "experiment_id": ["Serum_MH_025"],
-        "time_post_reaction": [1],  # Optional field
-        "description": ["Sampled after acid addition"],
-        "gross_ammonium_concentration_mM": [10.5],
-        "ammonium_quant_method": ["NMR"],
-        "sampling_volume_mL": [5.0],
-        "background_ammonium_concentration_mM": [0.0],
-        "background_experiment_id": [""],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["measurement_date"]: [pd.Timestamp.now().date()],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["experiment_id"]: ["Serum_MH_025"],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["time_post_reaction"]: [1],  # Optional field
+        SCALAR_RESULTS_TEMPLATE_HEADERS["description"]: ["Sampled after acid addition"],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["gross_ammonium_concentration_mM"]: [10.5],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["sampling_volume_mL"]: [5.0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["background_ammonium_concentration_mM"]: [0.0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["background_experiment_id"]: [""],
         # Hydrogen gas sampling fields
-        "h2_concentration": [0.00],
-        "h2_concentration_unit": ["ppm"],
-        "gas_sampling_volume_ml": [0.0],
-        "gas_sampling_pressure_MPa": [0.1013],
-        "final_ph": [7.2],
-        "ferrous_iron_yield": [0.0],
-        "final_nitrate_concentration_mM": [0],
-        "final_dissolved_oxygen_mg_L": [0],
-        "co2_partial_pressure_MPa": [0],
-        "final_conductivity_mS_cm": [1500.0],
-        "final_alkalinity_mg_L": [120.0],
-        "overwrite": [False],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["h2_concentration"]: [0.00],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["gas_sampling_volume_ml"]: [0.0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["gas_sampling_pressure_MPa"]: [0.1013],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["final_ph"]: [7.2],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["ferrous_iron_yield"]: [0.0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["final_nitrate_concentration_mM"]: [0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["final_dissolved_oxygen_mg_L"]: [0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["co2_partial_pressure_MPa"]: [0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["final_conductivity_mS_cm"]: [1500.0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["final_alkalinity_mg_L"]: [120.0],
+        SCALAR_RESULTS_TEMPLATE_HEADERS["overwrite"]: [False],
 
     }
 
+    # Helper to find original key from header value
+    REVERSE_HEADERS = {v: k for k, v in SCALAR_RESULTS_TEMPLATE_HEADERS.items()}
+
     template_cols_ordered = {}
     for col, val in template_data.items():
-        if col in EXPERIMENTAL_RESULTS_REQUIRED_COLS:
+        # Get the original variable name to check if it's required
+        variable_name = REVERSE_HEADERS.get(col)
+        if variable_name in EXPERIMENTAL_RESULTS_REQUIRED_COLS:
             template_cols_ordered[f"{col}*"] = val
         else:
             template_cols_ordered[col] = val

@@ -21,7 +21,7 @@ class ExperimentalConditions(Base):
     room_temp_pressure_psi = Column(Float, nullable=True)  # in psi instead of bar
     rxn_temp_pressure_psi = Column(Float, nullable=True)
     stir_speed_rpm = Column(Float, nullable=True)
-    initial_conductivity = Column(Float, nullable=True)
+    initial_conductivity_mS_cm = Column(Float, nullable=True)
     core_height_cm = Column(Float, nullable=True)
     core_width_cm = Column(Float, nullable=True)
     core_volume_cm3 = Column(Float, nullable=True)

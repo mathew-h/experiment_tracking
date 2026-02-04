@@ -31,6 +31,11 @@ class ScalarResultsService:
         # Extract overwrite flag (default False)
         overwrite = result_data.pop('_overwrite', False)
         
+        # Ensure h2_concentration_unit defaults to ppm if concentration is present
+        if result_data.get('h2_concentration') is not None:
+            if not result_data.get('h2_concentration_unit'):
+                result_data['h2_concentration_unit'] = 'ppm'
+
         # Find experiment with normalization
         experiment = ScalarResultsService._find_experiment(db, experiment_id)
         if not experiment:
@@ -57,7 +62,7 @@ class ScalarResultsService:
             scalar_data = experimental_result.scalar_data
             # Define all updatable fields
             updatable_fields = [
-                'ferrous_iron_yield', 'gross_ammonium_concentration_mM', 'background_ammonium_concentration_mM', 'ammonium_quant_method',
+                'ferrous_iron_yield', 'gross_ammonium_concentration_mM', 'background_ammonium_concentration_mM',
                 'background_experiment_id',
                 'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure_MPa',
                 'final_ph', 'final_nitrate_concentration_mM', 'final_dissolved_oxygen_mg_L', 'co2_partial_pressure_MPa',
@@ -81,7 +86,6 @@ class ScalarResultsService:
                 ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
                 gross_ammonium_concentration_mM=result_data.get('gross_ammonium_concentration_mM'),
                 background_ammonium_concentration_mM=result_data.get('background_ammonium_concentration_mM'),
-                ammonium_quant_method=result_data.get('ammonium_quant_method'),
                 background_experiment_id=result_data.get('background_experiment_id'),
                 # Hydrogen fields from bulk upload (optional)
                 h2_concentration=result_data.get('h2_concentration'),

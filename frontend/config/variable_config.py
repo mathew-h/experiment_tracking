@@ -285,14 +285,14 @@ FIELD_CONFIG = {
         'help': "Stir speed in rotations per minute (RPM)."
     },
     'initial_conductivity': {
-        'label': "Initial Conductivity (μS/cm)",
+        'label': "Initial Conductivity (mS/cm)",
         'type': 'number',
         'default': None,
         'min_value': 0.0,
         'step': 0.1,
         'format': "%.1f",
         'required': False,
-        'help': "Initial conductivity measurement (microsiemens per centimeter)."
+        'help': "Initial conductivity measurement (millisiemens per centimeter)."
     },
     # 'initial_alkalinity': {
     #     'label': "Initial Alkalinity (mg/L CaCO₃)",
@@ -419,13 +419,6 @@ SCALAR_RESULTS_CONFIG = {
         'required': False,
         'help': "Enter the background ammonium concentration in the solution in millimolar (mM)."
     },
-    'ammonium_quant_method': {
-        'label': 'Ammonium Quant. Method',
-        'type': 'select',
-        'options': AMMONIUM_QUANT_METHODS,
-        'default': AmmoniumQuantMethod.COLORIMETRIC_ASSAY.value,
-        'help': 'Method used for quantifying ammonium concentration.'
-    },
     'final_ph': {
         'label': "Final pH",
         'type': 'number',
@@ -480,22 +473,14 @@ SCALAR_RESULTS_CONFIG = {
     },
     # --- Hydrogen tracking fields ---
     'h2_concentration': {
-        'label': "H₂ Concentration",
+        'label': "H₂ Concentration (ppm)",
         'type': 'number',
         'default': 0.0,
         'min_value': 0.0,
         'step': 0.01,
         'format': "%.2f",
         'required': False,
-        'help': "Measured hydrogen concentration in the gas (% vol or ppm)."
-    },
-    'h2_concentration_unit': {
-        'label': "H₂ Concentration Unit",
-        'type': 'select',
-        'options': [ConcentrationUnit.PERCENT.value, ConcentrationUnit.PPM.value],
-        'default': ConcentrationUnit.PPM.value,
-        'required': False,
-        'help': "Unit for H₂ concentration (choose % or ppm)."
+        'help': "Measured hydrogen concentration in the gas (ppm)."
     },
     'gas_sampling_volume_ml': {
         'label': "Gas Sampling Volume (mL)",
@@ -849,4 +834,29 @@ ELEMENTAL_ANALYSIS_CONFIG = {
         'required': False,
         'help': "Enter analytical conditions (e.g., {'instrument': 'Thermo Fisher iCAP Q', 'digestion_method': 'HF-HNO3'})."
     }
-} 
+}
+
+# Mapping for Bulk Upload Template Headers (English -> DB Variable)
+# Used in frontend/components/bulk_uploads.py (template generation)
+# and backend/services/bulk_uploads/scalar_results.py (parsing)
+SCALAR_RESULTS_TEMPLATE_HEADERS = {
+    "measurement_date": "Date",
+    "experiment_id": "Experiment ID",
+    "time_post_reaction": "Time (days)",
+    "description": "Description",
+    "gross_ammonium_concentration_mM": "Gross Ammonium (mM)",
+    "sampling_volume_mL": "Sampling Vol (mL)",
+    "background_ammonium_concentration_mM": "Bkg Ammonium (mM)",
+    "background_experiment_id": "Bkg Exp ID",
+    "h2_concentration": "H2 Conc (ppm)",
+    "gas_sampling_volume_ml": "Gas Sample Vol (mL)",
+    "gas_sampling_pressure_MPa": "Gas Pressure (MPa)",
+    "final_ph": "Final pH",
+    "ferrous_iron_yield": "Fe2+ Yield (%)",
+    "final_nitrate_concentration_mM": "Final Nitrate (mM)",
+    "final_dissolved_oxygen_mg_L": "Final DO (mg/L)",
+    "co2_partial_pressure_MPa": "CO2 Pressure (MPa)",
+    "final_conductivity_mS_cm": "Conductivity (mS/cm)",
+    "final_alkalinity_mg_L": "Alkalinity (mg/L)",
+    "overwrite": "Overwrite"
+}

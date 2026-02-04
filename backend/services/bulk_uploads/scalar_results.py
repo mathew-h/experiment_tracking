@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.services.scalar_results_service import ScalarResultsService
+from frontend.config.variable_config import SCALAR_RESULTS_TEMPLATE_HEADERS
 
 
 class ScalarResultsUploadService:
@@ -82,6 +83,22 @@ class ScalarResultsUploadService:
 
         # Remove any asterisks used to mark required columns in UI templates
         df.columns = [str(c).replace('*', '') for c in df.columns]
+
+        # Rename English headers to variable names using config mapping
+        # Create reverse mapping: English Header -> variable_name
+        header_map = {v: k for k, v in SCALAR_RESULTS_TEMPLATE_HEADERS.items()}
+        
+        new_columns = []
+        for col in df.columns:
+            col_str = str(col).strip()
+            # Map English header to variable name if it matches
+            if col_str in header_map:
+                new_columns.append(header_map[col_str])
+            else:
+                # Keep original column name (allows backward compatibility with variable names)
+                new_columns.append(col_str)
+        
+        df.columns = new_columns
 
         # Normalize empty cells: convert NaN to None and drop empty strings
         records: List[Dict[str, Any]] = df.to_dict('records')

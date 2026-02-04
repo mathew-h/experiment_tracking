@@ -27,8 +27,8 @@ class ExternalAnalysis(Base):
     
     analysis_type = Column(String)  # General type/category (e.g., 'Elemental Scan', 'Mineralogy')
     analysis_date = Column(DateTime(timezone=True))
-    laboratory = Column(String)
-    analyst = Column(String)
+    laboratory = Column(String, nullable=True)
+    analyst = Column(String, nullable=True)
     # Store comma-separated pXRF reading numbers (e.g., "2,3,4" for multiple readings)
     # No FK constraint to allow multiple readings per sample
     pxrf_reading_no = Column(String, nullable=True, index=True)
