@@ -46,7 +46,14 @@ def upgrade() -> None:
     # Skip self-referential FK constraint in SQLite to avoid circular dependency
     # We will SKIP adding this constraint in SQLite.
     
-    # 3. Update external_analyses: drop FK to pxrf_readings
+    # 3. Add missing initial_conductivity_mS_cm column to experimental_conditions
+    # Check if column exists to be idempotent
+    exp_conditions_columns = [col['name'] for col in inspector.get_columns('experimental_conditions')]
+    if 'initial_conductivity_mS_cm' not in exp_conditions_columns:
+        with op.batch_alter_table('experimental_conditions', schema=None) as batch_op:
+            batch_op.add_column(sa.Column('initial_conductivity_mS_cm', sa.Float(), nullable=True))
+
+    # 4. Update external_analyses: drop FK to pxrf_readings
     # Define naming convention to handle unnamed FKs in SQLite
     # This allows us to refer to the unnamed constraint by a deterministic name during batch op
     naming_convention = {
@@ -73,7 +80,13 @@ def downgrade() -> None:
     conn = context.get_context().bind
     inspector = inspect(conn)
     
-    # 1. Re-add FK to external_analyses
+    # 1. Remove initial_conductivity_mS_cm column from experimental_conditions
+    exp_conditions_columns = [col['name'] for col in inspector.get_columns('experimental_conditions')]
+    if 'initial_conductivity_mS_cm' in exp_conditions_columns:
+        with op.batch_alter_table('experimental_conditions', schema=None) as batch_op:
+            batch_op.drop_column('initial_conductivity_mS_cm')
+
+    # 2. Re-add FK to external_analyses
     with op.batch_alter_table('external_analyses', schema=None) as batch_op:
         # Re-add FK to pxrf_readings if it doesn't exist
         fks = inspector.get_foreign_keys('external_analyses')
@@ -81,10 +94,10 @@ def downgrade() -> None:
         if not has_fk:
             batch_op.create_foreign_key('fk_external_analyses_pxrf_reading_no_pxrf_readings', 'pxrf_readings', ['pxrf_reading_no'], ['reading_no'], ondelete='SET NULL')
 
-    # 2. Drop parent_experiment_fk FK in experiments (if it existed)
+    # 3. Drop parent_experiment_fk FK in experiments (if it existed)
     # Since we skipped creating it in upgrade, we technically don't need to drop it here for SQLite correctness.
     
-    # 3. Revert elemental_analysis nullability
+    # 4. Revert elemental_analysis nullability
     with op.batch_alter_table('elemental_analysis', schema=None) as batch_op:
         batch_op.alter_column('external_analysis_id',
                existing_type=sa.INTEGER(),
