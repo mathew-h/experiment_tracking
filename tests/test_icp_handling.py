@@ -229,7 +229,7 @@ class TestICPDuplicateHandling:
             'experiment_id': 'Test_MH_001',
             'time_post_reaction': 3.0,
             'description': 'NMR Analysis',
-            'gross_ammonium_concentration': 15.5,
+            'gross_ammonium_concentration_mM': 15.5,
             'ammonium_quant_method': 'NMR',
             'final_ph': 7.2
         }]
@@ -259,7 +259,7 @@ class TestICPDuplicateHandling:
         assert experimental_result.icp_data is not None
         
         # Check scalar data
-        assert experimental_result.scalar_data.gross_ammonium_concentration == 15.5
+        assert experimental_result.scalar_data.gross_ammonium_concentration_mM == 15.5
         assert experimental_result.scalar_data.ammonium_quant_method == 'NMR'
         
         # Check ICP data
@@ -281,7 +281,7 @@ class TestICPDuplicateHandling:
             'experiment_id': 'Test_MH_001',
             'time_post_reaction': 3.0,
             'description': 'NMR Analysis',
-            'gross_ammonium_concentration': 15.5,
+            'gross_ammonium_concentration_mM': 15.5,
             'ammonium_quant_method': 'NMR'
         }]
         
@@ -447,10 +447,10 @@ class TestUniqueResultTrackingImprovements:
             'experiment_id': 'Test_MH_001',
             'time_post_reaction': 3.0,
             'description': 'Solution Chemistry Analysis',
-            'gross_ammonium_concentration': 12.5,
+            'gross_ammonium_concentration_mM': 12.5,
             'ammonium_quant_method': 'NMR',
             'final_ph': 7.1,
-            'final_conductivity': 1200.0
+            'final_conductivity_mS_cm': 1200.0
         }]
         
         scalar_results, scalar_errors = ScalarResultsService.bulk_create_scalar_results(test_db, scalar_data)
@@ -474,7 +474,7 @@ class TestUniqueResultTrackingImprovements:
         assert exp_result.icp_data is not None
         
         # Verify data integrity
-        assert exp_result.scalar_data.gross_ammonium_concentration == 12.5
+        assert exp_result.scalar_data.gross_ammonium_concentration_mM == 12.5
         assert exp_result.icp_data.dilution_factor == 10.0
         assert exp_result.icp_data.fe is not None
     
@@ -485,7 +485,7 @@ class TestUniqueResultTrackingImprovements:
             'experiment_id': 'Test_MH_001',
             'time_post_reaction': 5.0,
             'description': 'First Analysis',
-            'gross_ammonium_concentration': 10.0
+            'gross_ammonium_concentration_mM': 10.0
         }]
         
         ScalarResultsService.bulk_create_scalar_results(test_db, scalar_data)

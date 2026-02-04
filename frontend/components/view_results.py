@@ -88,9 +88,9 @@ def display_single_result(result, experiment_db_id):
     icp_data = result.icp_data
     
     # Add concentration if available
-    if scalar_data and scalar_data.gross_ammonium_concentration is not None:
-        conc_config = SCALAR_RESULTS_CONFIG['gross_ammonium_concentration']
-        formatted_conc = format_value(scalar_data.gross_ammonium_concentration, conc_config)
+    if scalar_data and scalar_data.gross_ammonium_concentration_mM is not None:
+        conc_config = SCALAR_RESULTS_CONFIG['gross_ammonium_concentration_mM']
+        formatted_conc = format_value(scalar_data.gross_ammonium_concentration_mM, conc_config)
         method_value = getattr(scalar_data, "ammonium_quant_method", None)
         method = f" ({method_value})" if method_value else ""
         title_parts.append(f"{formatted_conc} mM NH₄⁺{method}")
