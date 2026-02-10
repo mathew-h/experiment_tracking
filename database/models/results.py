@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, JSON, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Float, JSON, ForeignKey, Text, Index, Boolean, text
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func
 from typing import Dict
@@ -6,12 +6,24 @@ from ..database import Base
 
 class ExperimentalResults(Base):
     __tablename__ = "experimental_results"
+    __table_args__ = (
+        Index(
+            "uq_primary_result_per_experiment_bucket",
+            "experiment_fk",
+            "time_post_reaction_bucket_days",
+            unique=True,
+            sqlite_where=text("is_primary_timepoint_result = 1"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     experiment_fk = Column(Integer,
                            ForeignKey("experiments.id", ondelete="CASCADE"),
                            nullable=False, index=True)
-    time_post_reaction = Column(Float, nullable=True, index=True) # Time in days post-reaction start
+    time_post_reaction_days = Column(Float, nullable=True, index=True) # Time in days post-reaction start
+    time_post_reaction_bucket_days = Column(Float, nullable=True, index=True) # Normalized bucket for tolerant matching
+    cumulative_time_post_reaction_days = Column(Float, nullable=True, index=True) # Cumulative time across lineage chain (days)
+    is_primary_timepoint_result = Column(Boolean, nullable=False, default=True, server_default=text("1"), index=True)
     description = Column(Text, nullable=False) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

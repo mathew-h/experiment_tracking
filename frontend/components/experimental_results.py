@@ -7,6 +7,7 @@ from database import SessionLocal, Experiment, ExperimentalResults, ResultFiles,
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
 from frontend.config.variable_config import SCALAR_RESULTS_CONFIG# Import the main config mapping
+from backend.services.result_merge_utils import update_cumulative_times_for_chain
 
 # TODO: Define a base class or interface for different result types (e.g., Scalar, pXRF, NMR)
 # class BaseResultHandler:
@@ -138,7 +139,7 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
             # Creating new entry - Check for existing entry at this timepoint first
             existing_result_at_time = db.query(ExperimentalResults).filter(
                 ExperimentalResults.experiment_fk == experiment_id, # Filter by FK
-                ExperimentalResults.time_post_reaction == time_post_reaction
+                ExperimentalResults.time_post_reaction_days == time_post_reaction
             ).first()
             if existing_result_at_time:
                  # Use existing_result_at_time.experiment.experiment_id for user-friendly message if needed
@@ -154,7 +155,7 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
             # Create the main result entry
             result = ExperimentalResults(
                 experiment_fk=parent_experiment.id, # Foreign Key
-                time_post_reaction=time_post_reaction,
+                time_post_reaction_days=time_post_reaction,
                 description=result_description # Set the description
             )
             
@@ -218,6 +219,9 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
                             }
                         )
         
+        # Recalculate cumulative times for the entire lineage chain
+        update_cumulative_times_for_chain(db, result.experiment_fk)
+
         db.commit()
         st.success("Results saved successfully!")
         return True
@@ -253,7 +257,7 @@ def delete_experimental_results(result_id):
             return
 
         experiment_str_id = result_entry.experiment.experiment_id if result_entry.experiment else None
-        time_point = result_entry.time_post_reaction
+        time_point = result_entry.time_post_reaction_days
 
         # --- Delete associated files from storage FIRST ---
         associated_files = result_entry.files

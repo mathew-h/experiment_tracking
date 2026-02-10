@@ -37,7 +37,7 @@ def render_results_section(experiment):
             orm.selectinload(ExperimentalResults.files)
         ).filter(
             ExperimentalResults.experiment_fk == experiment['id']  # Use FK instead of experiment_id
-        ).order_by(ExperimentalResults.time_post_reaction.asc().nulls_last()).all()  # Handle nulls
+        ).order_by(ExperimentalResults.time_post_reaction_days.asc().nulls_last()).all()  # Handle nulls
 
     finally:
         db.close()
@@ -81,7 +81,7 @@ def render_results_section(experiment):
 def display_single_result(result, experiment_db_id):
     """Displays a single result entry (time point) in an expander."""
     # --- Build the expander title ---
-    title_parts = [f"Results at {result.time_post_reaction:.1f} days"]
+    title_parts = [f"Results at {result.time_post_reaction_days:.1f} days"]
     
     # Get scalar data for use in title and body
     scalar_data = result.scalar_data
@@ -284,8 +284,8 @@ def render_results_form(experiment_db_id):
             ).first()
 
             if result_to_edit:
-                form_title = f"Edit Results at {result_to_edit.time_post_reaction:.1f} days"
-                editing_time = result_to_edit.time_post_reaction
+                form_title = f"Edit Results at {result_to_edit.time_post_reaction_days:.1f} days"
+                editing_time = result_to_edit.time_post_reaction_days
                 current_data['time_post_reaction'] = editing_time # Pre-populate time
                 current_data['description'] = result_to_edit.description # Pre-populate description
                 current_data['measurement_date'] = result_to_edit.created_at # Pre-populate date for editing

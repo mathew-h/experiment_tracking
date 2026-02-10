@@ -842,7 +842,7 @@ def experiments_additives():
       - experiment_id* (string)
       - compound* (existing compound name)
       - amount* (numeric > 0)
-      - unit* (one of AmountUnit values, e.g., g, mg, μg, kg, μL, mL, L, μmol, mmol, mol, ppm, mM, M)
+      - unit* (one of AmountUnit values, e.g., g, mg, μg, kg, μL, mL, L, μmol, mmol, mol, ppm, mM, M, %, wt%)
       - order (optional integer)
       - method (optional text)
     """

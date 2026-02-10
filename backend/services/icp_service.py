@@ -2,13 +2,28 @@ import pandas as pd
 import re
 from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from database import Experiment, ExperimentalResults, ICPResults
 from io import StringIO
+from backend.services.result_merge_utils import (
+    create_experimental_result_row,
+    ensure_primary_result_for_timepoint,
+    find_timepoint_candidates,
+    choose_parent_candidate,
+    update_cumulative_times_for_chain,
+)
 
 class ICPService:
     """Service for handling ICP elemental analysis data operations."""
+    FIXED_ELEMENT_FIELDS = [
+        'fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al',
+        'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir',
+        'pd', 'ru', 'os', 'tl'
+    ]
+    NON_ELEMENT_FIELDS = {
+        'experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label',
+        'analysis_date', 'instrument_used', 'detection_limits'
+    }
     
     @staticmethod
     def parse_csv_file(file_content: bytes, manual_header_row: int = None) -> pd.DataFrame:
@@ -369,7 +384,15 @@ class ICPService:
         # Find experiment with normalization
         experiment = ICPService._find_experiment(db, experiment_id)
         if not experiment:
-            raise ValueError(f"Experiment with ID '{experiment_id}' not found.")
+            # Keep behavior aligned with scalar uploads for treatment-variant IDs.
+            from database.lineage_utils import auto_create_treatment_experiment
+            experiment = auto_create_treatment_experiment(
+                db=db,
+                experiment_id=experiment_id,
+                initial_note=result_data.get('description', 'Auto-created from ICP upload')
+            )
+            if not experiment:
+                raise ValueError(f"Experiment with ID '{experiment_id}' not found and could not be auto-created.")
         
         # Find or create ExperimentalResults using unique result tracking improvements
         experimental_result = ICPService._find_or_create_experimental_result(
@@ -380,62 +403,90 @@ class ICPService:
         )
         
         # Separate fixed columns from all elemental data
-        fixed_elements = ['fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al', 'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir', 'pd', 'ru', 'os', 'tl']
         fixed_column_data = {}
         all_elements_data = {}
         
         # Extract fixed columns and prepare all elements JSON
         for key, value in result_data.items():
-            if key in fixed_elements and value is not None:
+            if key in ICPService.FIXED_ELEMENT_FIELDS and value is not None:
                 fixed_column_data[key] = value
                 all_elements_data[key] = value  # Also store in JSON for completeness
-            elif key not in ['experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label'] and value is not None:
+            elif key not in ICPService.NON_ELEMENT_FIELDS and value is not None:
                 all_elements_data[key] = value  # Store additional elements in JSON only
-        
-        # Create ICP data with elemental concentrations
-        icp_data = ICPResults(
-            result_id=experimental_result.id,  # Link to ExperimentalResults
-            # Fixed columns for Power BI efficiency
-            fe=fixed_column_data.get('fe'),
-            si=fixed_column_data.get('si'),
-            ni=fixed_column_data.get('ni'),
-            cu=fixed_column_data.get('cu'),
-            mo=fixed_column_data.get('mo'),
-            zn=fixed_column_data.get('zn'),
-            mn=fixed_column_data.get('mn'),
-            cr=fixed_column_data.get('cr'),
-            co=fixed_column_data.get('co'),
-            mg=fixed_column_data.get('mg'),
-            al=fixed_column_data.get('al'),
-            sr=fixed_column_data.get('sr'),
-            y=fixed_column_data.get('y'),
-            nb=fixed_column_data.get('nb'),
-            sb=fixed_column_data.get('sb'),
-            cs=fixed_column_data.get('cs'),
-            ba=fixed_column_data.get('ba'),
-            nd=fixed_column_data.get('nd'),
-            gd=fixed_column_data.get('gd'),
-            pt=fixed_column_data.get('pt'),
-            rh=fixed_column_data.get('rh'),
-            ir=fixed_column_data.get('ir'),
-            pd=fixed_column_data.get('pd'),
-            ru=fixed_column_data.get('ru'),
-            os=fixed_column_data.get('os'),
-            tl=fixed_column_data.get('tl'),
-            # JSON storage for all elements (including fixed ones)
-            all_elements=all_elements_data if all_elements_data else None,
-            # ICP metadata
-            dilution_factor=result_data.get('dilution_factor'),
-            raw_label=result_data.get('raw_label'),
-            # Relationship
-            result_entry=experimental_result
-        )
+
+        was_update = False
+        if experimental_result.icp_data:
+            # Update existing ICP record for this result row.
+            icp_data = experimental_result.icp_data
+            for element in ICPService.FIXED_ELEMENT_FIELDS:
+                setattr(icp_data, element, fixed_column_data.get(element))
+            icp_data.all_elements = all_elements_data if all_elements_data else None
+            icp_data.dilution_factor = result_data.get('dilution_factor')
+            icp_data.raw_label = result_data.get('raw_label')
+            if 'analysis_date' in result_data:
+                icp_data.analysis_date = result_data.get('analysis_date')
+            if 'instrument_used' in result_data:
+                icp_data.instrument_used = result_data.get('instrument_used')
+            if 'detection_limits' in result_data:
+                icp_data.detection_limits = result_data.get('detection_limits')
+            was_update = True
+        else:
+            # Create ICP data with elemental concentrations
+            icp_data = ICPResults(
+                result_id=experimental_result.id,  # Link to ExperimentalResults
+                # Fixed columns for Power BI efficiency
+                fe=fixed_column_data.get('fe'),
+                si=fixed_column_data.get('si'),
+                ni=fixed_column_data.get('ni'),
+                cu=fixed_column_data.get('cu'),
+                mo=fixed_column_data.get('mo'),
+                zn=fixed_column_data.get('zn'),
+                mn=fixed_column_data.get('mn'),
+                cr=fixed_column_data.get('cr'),
+                co=fixed_column_data.get('co'),
+                mg=fixed_column_data.get('mg'),
+                al=fixed_column_data.get('al'),
+                sr=fixed_column_data.get('sr'),
+                y=fixed_column_data.get('y'),
+                nb=fixed_column_data.get('nb'),
+                sb=fixed_column_data.get('sb'),
+                cs=fixed_column_data.get('cs'),
+                ba=fixed_column_data.get('ba'),
+                nd=fixed_column_data.get('nd'),
+                gd=fixed_column_data.get('gd'),
+                pt=fixed_column_data.get('pt'),
+                rh=fixed_column_data.get('rh'),
+                ir=fixed_column_data.get('ir'),
+                pd=fixed_column_data.get('pd'),
+                ru=fixed_column_data.get('ru'),
+                os=fixed_column_data.get('os'),
+                tl=fixed_column_data.get('tl'),
+                # JSON storage for all elements (including fixed ones)
+                all_elements=all_elements_data if all_elements_data else None,
+                # ICP metadata
+                dilution_factor=result_data.get('dilution_factor'),
+                raw_label=result_data.get('raw_label'),
+                analysis_date=result_data.get('analysis_date'),
+                instrument_used=result_data.get('instrument_used'),
+                detection_limits=result_data.get('detection_limits'),
+                # Relationship
+                result_entry=experimental_result
+            )
+            db.add(icp_data)
         
         # Add to session (commit handled by caller)
         db.add(experimental_result)  # May be existing or new
         db.flush()  # Flush to get IDs assigned
+        ensure_primary_result_for_timepoint(
+            db=db,
+            experiment_fk=experiment.id,
+            time_post_reaction=result_data.get('time_post_reaction'),
+        )
+
+        # Recalculate cumulative times for the entire lineage chain
+        update_cumulative_times_for_chain(db, experiment.id)
         
-        return experimental_result, False  # False indicates this was a new creation
+        return experimental_result, was_update
     
     @staticmethod
     def bulk_create_icp_results(db: Session, processed_data: List[Dict[str, Any]]) -> Tuple[List[ExperimentalResults], List[str]]:
@@ -498,9 +549,12 @@ class ICPService:
         Returns:
             List of ICPResults objects
         """
+        experiment = ICPService._find_experiment(db, experiment_id)
+        if not experiment:
+            return []
         return (db.query(ICPResults)
                 .join(ExperimentalResults)
-                .filter(ExperimentalResults.experiment_id == experiment_id)
+                .filter(ExperimentalResults.experiment_fk == experiment.id)
                 .all())
     
     @staticmethod
@@ -522,8 +576,7 @@ class ICPService:
             raise ValueError(f"ICPResult with result_id {result_id} not found.")
         
         # Update fixed columns
-        fixed_elements = ['fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al', 'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir', 'pd', 'ru', 'os', 'tl']
-        for element in fixed_elements:
+        for element in ICPService.FIXED_ELEMENT_FIELDS:
             if element in update_data:
                 setattr(icp_result, element, update_data[element])
         
@@ -577,7 +630,8 @@ class ICPService:
         db: Session, 
         experiment: Experiment, 
         time_post_reaction: float = None, 
-        description: str = None
+        description: str = None,
+        incoming_data_type: str = "icp",
     ) -> ExperimentalResults:
         """
         Find existing ExperimentalResults or create new one.
@@ -592,36 +646,30 @@ class ICPService:
         Returns:
             ExperimentalResults object (new or existing)
         """
-        # Try to find existing result for this experiment and time
-        candidates = db.query(ExperimentalResults).filter(
-            ExperimentalResults.experiment_fk == experiment.id,
-            ExperimentalResults.time_post_reaction == time_post_reaction
-        ).all()
-        
-        # Check candidates for one that doesn't have ICP data yet (to allow merging with Scalar data)
-        for candidate in candidates:
-            if candidate.icp_data is None:
-                # If merging, ensure the description includes the new context
-                if description and description not in candidate.description:
-                    candidate.description = f"{candidate.description} | {description}"
-                return candidate
+        candidates = find_timepoint_candidates(
+            db=db,
+            experiment_fk=experiment.id,
+            time_post_reaction=time_post_reaction,
+        )
+        existing = choose_parent_candidate(candidates, incoming_data_type=incoming_data_type)
+        if existing:
+            if description and description not in existing.description:
+                existing.description = f"{existing.description} | {description}"
+            return existing
 
-        # Create new ExperimentalResults - no unique constraint means we can always create new
+        # Create new parent result row when no candidate exists for the time bucket.
         description_text = description
         if not description_text:
             if time_post_reaction is not None:
                 description_text = f"Analysis results for Day {time_post_reaction}"
             else:
                 description_text = "Analysis results"
-        
-        new_result = ExperimentalResults(
-            experiment_fk=experiment.id,
+        return create_experimental_result_row(
+            db=db,
+            experiment=experiment,
             time_post_reaction=time_post_reaction,
-            description=description_text
+            description=description_text,
         )
-        db.add(new_result)
-        db.flush()  # Get ID assigned
-        return new_result
     
     @staticmethod
     def validate_icp_data(processed_data: List[Dict[str, Any]]) -> List[str]:

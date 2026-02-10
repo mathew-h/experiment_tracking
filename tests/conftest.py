@@ -91,7 +91,7 @@ def test_experimental_result(test_db: Session, test_experiment: Experiment) -> E
     """Create a base ExperimentalResults entry linked to the test experiment."""
     result_entry = ExperimentalResults(
         experiment_fk=test_experiment.id,
-        time_post_reaction=1.0, # 1 hour
+        time_post_reaction_days=1.0,
         description="Test result entry"
     )
     test_db.add(result_entry)

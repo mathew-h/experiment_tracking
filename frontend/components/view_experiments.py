@@ -580,7 +580,7 @@ def get_experiment_by_id(experiment_id):
             for data in results: # data is an ExperimentalResults object
                 result_item = {
                     'id': data.id,
-                    'time_post_reaction': data.time_post_reaction,  
+                    'time_post_reaction': data.time_post_reaction_days,  
                     'description': data.description,
                     'created_at': data.created_at,
                     'updated_at': data.updated_at,

@@ -1,8 +1,14 @@
 from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from database import Experiment, ExperimentalResults, ScalarResults
+from backend.services.result_merge_utils import (
+    create_experimental_result_row,
+    ensure_primary_result_for_timepoint,
+    find_timepoint_candidates,
+    choose_parent_candidate,
+    update_cumulative_times_for_chain,
+)
 
 class ScalarResultsService:
     """Service for handling scalar results (solution chemistry) operations."""
@@ -49,12 +55,13 @@ class ScalarResultsService:
             if not experiment:
                 raise ValueError(f"Experiment with ID '{experiment_id}' not found and could not be auto-created.")
         
-        # Find or create ExperimentalResults using unique result tracking improvements
+        # Find or create ExperimentalResults with deterministic timepoint merge rules.
         experimental_result = ScalarResultsService._find_or_create_experimental_result(
             db=db,
             experiment=experiment,
             time_post_reaction=result_data.get('time_post_reaction'),
-            description=result_data.get('description')
+            description=result_data.get('description'),
+            incoming_data_type="scalar",
         )
         
         # Upsert ScalarResults: update if exists; otherwise create new
@@ -110,6 +117,14 @@ class ScalarResultsService:
         # Touch parent entry and flush IDs if needed
         db.add(experimental_result)
         db.flush()
+        ensure_primary_result_for_timepoint(
+            db=db,
+            experiment_fk=experiment.id,
+            time_post_reaction=result_data.get('time_post_reaction'),
+        )
+
+        # Recalculate cumulative times for the entire lineage chain
+        update_cumulative_times_for_chain(db, experiment.id)
 
         return experimental_result
     
@@ -185,7 +200,8 @@ class ScalarResultsService:
         db: Session, 
         experiment: Experiment, 
         time_post_reaction: float = None, 
-        description: str = None
+        description: str = None,
+        incoming_data_type: str = "scalar",
     ) -> ExperimentalResults:
         """
         Find existing ExperimentalResults or create new one.
@@ -200,34 +216,31 @@ class ScalarResultsService:
         Returns:
             ExperimentalResults object (new or existing)
         """
-        # Try to find existing result for this experiment and time
-        existing = db.query(ExperimentalResults).filter(
-            ExperimentalResults.experiment_fk == experiment.id,
-            ExperimentalResults.time_post_reaction == time_post_reaction
-        ).first()
-        
+        candidates = find_timepoint_candidates(
+            db=db,
+            experiment_fk=experiment.id,
+            time_post_reaction=time_post_reaction,
+        )
+        existing = choose_parent_candidate(candidates, incoming_data_type=incoming_data_type)
         if existing:
             # If merging, ensure the description includes the new context
             if description and description not in existing.description:
                 existing.description = f"{existing.description} | {description}"
             return existing
 
-        # Create new ExperimentalResults - no unique constraint means we can always create new
+        # Create new parent result row when no timepoint candidate exists.
         description_text = description
         if not description_text:
             if time_post_reaction is not None:
                 description_text = f"Analysis results for Day {time_post_reaction}"
             else:
                 description_text = "Analysis results"
-        
-        new_result = ExperimentalResults(
-            experiment_fk=experiment.id,
+        return create_experimental_result_row(
+            db=db,
+            experiment=experiment,
             time_post_reaction=time_post_reaction,
-            description=description_text
+            description=description_text,
         )
-        db.add(new_result)
-        db.flush()  # Get ID assigned
-        return new_result
     
     @staticmethod
     def get_scalar_results_for_experiment(db: Session, experiment_id: str) -> List[ScalarResults]:
@@ -241,10 +254,15 @@ class ScalarResultsService:
         Returns:
             List of ScalarResults objects
         """
-        return (db.query(ScalarResults)
-                .join(ExperimentalResults)
-                .filter(ExperimentalResults.experiment_id == experiment_id)
-                .all())
+        experiment = ScalarResultsService._find_experiment(db, experiment_id)
+        if not experiment:
+            return []
+        return (
+            db.query(ScalarResults)
+            .join(ExperimentalResults)
+            .filter(ExperimentalResults.experiment_fk == experiment.id)
+            .all()
+        )
     
     @staticmethod
     def update_scalar_result(db: Session, result_id: int, update_data: Dict[str, Any]) -> Optional[ScalarResults]:

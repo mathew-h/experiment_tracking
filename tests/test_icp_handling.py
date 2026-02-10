@@ -251,7 +251,7 @@ class TestICPDuplicateHandling:
         # Verify both data types exist for Day3
         experimental_result = test_db.query(ExperimentalResults).filter_by(
             experiment_id='Test_MH_001',
-            time_post_reaction=3.0
+            time_post_reaction_days=3.0
         ).first()
         
         assert experimental_result is not None
@@ -295,7 +295,7 @@ class TestICPDuplicateHandling:
         # Verify both data types exist
         experimental_result = test_db.query(ExperimentalResults).filter_by(
             experiment_id='Test_MH_001',
-            time_post_reaction=3.0
+            time_post_reaction_days=3.0
         ).first()
         
         assert experimental_result.scalar_data is not None
@@ -414,7 +414,7 @@ class TestICPModelMethods:
         exp_result = ExperimentalResults(
             experiment_id='Test_MH_001',
             experiment_fk=1,
-            time_post_reaction=1.0,
+            time_post_reaction_days=1.0,
             description='Test'
         )
         test_db.add(exp_result)
@@ -466,7 +466,7 @@ class TestUniqueResultTrackingImprovements:
         # Verify single ExperimentalResults record with both data types
         exp_result = test_db.query(ExperimentalResults).filter_by(
             experiment_id='Test_MH_001',
-            time_post_reaction=3.0
+            time_post_reaction_days=3.0
         ).first()
         
         assert exp_result is not None
@@ -494,7 +494,7 @@ class TestUniqueResultTrackingImprovements:
         # Count ExperimentalResults before second upload
         initial_count = test_db.query(ExperimentalResults).filter_by(
             experiment_id='Test_MH_001',
-            time_post_reaction=5.0
+            time_post_reaction_days=5.0
         ).count()
         assert initial_count == 1
         
@@ -514,14 +514,14 @@ class TestUniqueResultTrackingImprovements:
         # Should still be only 1 ExperimentalResults record
         final_count = test_db.query(ExperimentalResults).filter_by(
             experiment_id='Test_MH_001',
-            time_post_reaction=5.0
+            time_post_reaction_days=5.0
         ).count()
         assert final_count == 1
         
         # Verify both data types are linked to the same ExperimentalResults
         exp_result = test_db.query(ExperimentalResults).filter_by(
             experiment_id='Test_MH_001',
-            time_post_reaction=5.0
+            time_post_reaction_days=5.0
         ).first()
         
         assert exp_result.scalar_data is not None

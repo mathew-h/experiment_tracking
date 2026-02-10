@@ -300,7 +300,7 @@ class TestRenamePreservesRelationships:
         
         result = ExperimentalResults(
             experiment_fk=exp.id,
-            time_post_reaction=1.0,
+            time_post_reaction_days=1.0,
             description="Test result"
         )
         db_session.add(result)

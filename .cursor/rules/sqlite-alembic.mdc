@@ -74,7 +74,45 @@ def upgrade() -> None:
 
 **Why this happens:** Batch mode creates a temporary table, copies data, then swaps tables. If any step fails, the temp table remains.
 
-### 4. Batch Mode Tries to Recreate All Indexes
+### 4. SQL Views Block Batch Mode Table Renames
+When batch mode finishes, it renames `_alembic_tmp_<table>` back to `<table>`. SQLite validates **all views** that reference that table during the rename. If a view references the table, the rename fails because the original table was already dropped.
+
+**Error:** `sqlite3.OperationalError: error in view v_my_view: no such table: main.my_table`
+
+**Solution:** **Drop ALL views that reference the table BEFORE any batch operation on it**, then recreate them AFTER all batch operations are done.
+
+```python
+# ❌ BAD - View references experimental_results, batch rename fails
+with op.batch_alter_table('experimental_results', schema=None) as batch_op:
+    batch_op.drop_column('old_column')  # Fails on rename step
+
+# ✅ GOOD - Drop views first, batch, then recreate
+op.execute("DROP VIEW IF EXISTS v_primary_experiment_results")
+op.execute("DROP VIEW IF EXISTS v_experiment_additives_summary")
+
+with op.batch_alter_table('experimental_results', schema=None) as batch_op:
+    batch_op.drop_column('old_column')
+
+with op.batch_alter_table('experimental_conditions', schema=None) as batch_op:
+    batch_op.drop_column('another_column')
+
+# Recreate views AFTER all batch operations complete
+op.execute("""
+    CREATE VIEW IF NOT EXISTS v_experiment_additives_summary AS ...
+""")
+# v_primary_experiment_results is recreated by event_listeners.py on app startup
+```
+
+**Key rules:**
+1. Drop views at the **very start** of the migration (after temp table cleanup), not per-batch-operation
+2. Recreate views at the **very end** of the migration, after all batch operations
+3. This applies to **both upgrade() and downgrade()** — both may use batch mode
+4. **Known views in this project that reference tables:**
+   - `v_primary_experiment_results` → references `experimental_results`, `experiments`, `scalar_results`, `icp_results`
+   - `v_experiment_additives_summary` → references `experimental_conditions`, `experiments`, `chemical_additives`, `compounds`
+5. `v_primary_experiment_results` does NOT need to be recreated in the migration — `database/event_listeners.py` recreates it on every app startup
+
+### 5. Batch Mode Tries to Recreate All Indexes
 When using batch mode, SQLite recreates the table and attempts to recreate ALL indexes from the original table. If you're dropping a column that has an index, the index recreation will fail.
 
 **Error:** `sqlite3.OperationalError: no such column: column_name` when creating index
@@ -212,17 +250,29 @@ temp_table = '_alembic_tmp_table_name'
 if temp_table in all_tables:
     op.drop_table(temp_table)
 
-# 1. Drop indexes BEFORE batch mode (if dropping columns with indexes)
+# 1. CRITICAL: Drop ALL SQL views that reference tables you'll batch-alter!
+#    SQLite validates view deps during batch rename and will fail otherwise.
+op.execute("DROP VIEW IF EXISTS v_primary_experiment_results")
+op.execute("DROP VIEW IF EXISTS v_experiment_additives_summary")
+
+# 2. Drop indexes BEFORE batch mode (if dropping columns with indexes)
 op.drop_index('ix_table_old_col', table_name='table_name')
 
-# 2. Use batch mode for constraints and column operations
+# 3. Use batch mode for constraints and column operations
 with op.batch_alter_table('table_name', schema=None) as batch_op:
     batch_op.drop_constraint('some_constraint', type_='unique')
     batch_op.add_column(sa.Column('new_col', sa.String()))
     batch_op.drop_column('old_col')
 
-# 3. Create new indexes AFTER batch mode
+# 4. Create new indexes AFTER batch mode
 op.create_index('ix_table_new_col', 'table_name', ['new_col'], unique=False)
+
+# 5. Recreate views AFTER all batch operations
+op.execute("""
+    CREATE VIEW IF NOT EXISTS v_experiment_additives_summary AS
+    SELECT ...
+""")
+# v_primary_experiment_results is auto-recreated by event_listeners.py
 ```
 
 ## Recommended Migration Pattern for New Columns
@@ -305,6 +355,20 @@ with op.batch_alter_table('table_name', schema=None) as batch_op:
 **Cause:** Self-referential FK in batch mode.
 **Solution:** Remove FK constraint from migration, define relationship in model only.
 
+### Error: "error in view v_my_view: no such table: main.my_table"
+**Cause:** Batch mode dropped the original table and is trying to rename `_alembic_tmp_my_table` to `my_table`, but SQLite validates all views referencing `my_table` during the rename and the original is already gone.
+**Solution:** Drop ALL views referencing the table BEFORE any batch operation, recreate them AFTER all batch operations:
+```python
+op.execute("DROP VIEW IF EXISTS v_primary_experiment_results")
+op.execute("DROP VIEW IF EXISTS v_experiment_additives_summary")
+
+with op.batch_alter_table('experimental_results', schema=None) as batch_op:
+    batch_op.drop_column('old_column')
+
+# Recreate views after all batch ops
+op.execute("CREATE VIEW IF NOT EXISTS v_experiment_additives_summary AS ...")
+```
+
 ### Error: "No such table: table_name_new"
 **Cause:** Trying to drop a temp table that doesn't exist.
 **Solution:** Remove unrelated `drop_table()` calls from auto-generated migration.
@@ -318,6 +382,7 @@ Before committing an Alembic migration:
 - [ ] **All constraint operations use batch mode** (`drop_constraint`, `create_constraint`)
 - [ ] **Drop indexes BEFORE batch mode** if dropping columns with indexes
 - [ ] **Clean up temp tables** at start of migration (`_alembic_tmp_*`)
+- [ ] **Drop SQL views** before batch operations on tables they reference, recreate after
 - [ ] No FK constraints for self-referential relationships
 - [ ] Migration is idempotent (checks for existence before adding/dropping)
 - [ ] Test: `alembic upgrade head` works
@@ -390,8 +455,9 @@ def downgrade() -> None:
 ## Key Takeaway
 
 **For SQLite, keep migrations simple:**
-1. Add/drop columns directly (no batch mode needed)
+1. Add/drop columns directly (no batch mode needed for adds; batch required for drops)
 2. Skip FK constraints (SQLAlchemy ORM handles relationships)
 3. Always check for existence before adding/dropping (idempotency)
 4. Remove unrelated auto-generated changes
 5. Never try to alter column types or add self-referential FKs
+6. **Drop ALL SQL views before batch operations** on tables they reference, recreate after

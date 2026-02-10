@@ -173,6 +173,25 @@ class ChemicalAdditive(Base):
                 except Exception:
                     self.moles_added = None
 
+        elif self.unit in (AmountUnit.PERCENT, AmountUnit.WEIGHT_PERCENT):
+            # Interpret amount as % (w/w) in solution; assume density ~1 g/mL
+            try:
+                if water_volume_ml is not None and isinstance(water_volume_ml, (int, float)) and water_volume_ml > 0:
+                    solution_mass_g = float(water_volume_ml)
+                    self.mass_in_grams = (float(self.amount) / 100.0) * solution_mass_g
+            except Exception:
+                self.mass_in_grams = None
+
+            if self.mass_in_grams and molecular_weight:
+                try:
+                    self.moles_added = self.mass_in_grams / molecular_weight
+                except Exception:
+                    self.moles_added = None
+
+            # final concentration mirrors input
+            self.final_concentration = float(self.amount)
+            self.concentration_units = self.unit.value
+
         elif self.unit == AmountUnit.PPM:
             # ppm input is mg/L; compute grams if volume known
             if volume_liters is not None:
