@@ -72,7 +72,7 @@ typing_extensions==4.12.2
 tzdata==2025.1
 uritemplate==4.1.1
 urllib3==2.3.0
-watchdog==4.0.1
+watchdog>=6.0.0
 win32-setctime==1.1.0
 python-dotenv
 boto3>=1.37.38

@@ -28,8 +28,11 @@ set STREAMLIT_SERVER_PORT=8501
 set STREAMLIT_SERVER_ADDRESS=0.0.0.0
 
 :: Start the Streamlit application
+:: --server.fileWatcherType none disables the watchdog file watcher,
+:: which crashes on Python 3.13 due to threading changes.
+:: Not needed in production — the auto-updater handles restarts.
 echo Starting Streamlit application...
-python -m streamlit run app.py
+python -m streamlit run app.py --server.fileWatcherType none
 if errorlevel 1 (
     echo Failed to start Streamlit application!
     pause

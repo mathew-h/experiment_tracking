@@ -292,7 +292,7 @@ def restart_streamlit() -> None:
     logger.info("Starting Streamlit application...")
     # CREATE_NEW_CONSOLE ensures the Streamlit process survives this script
     subprocess.Popen(
-        [python, "-m", "streamlit", "run", "app.py"],
+        [python, "-m", "streamlit", "run", "app.py", "--server.fileWatcherType", "none"],
         cwd=str(PROJECT_ROOT),
         env=env,
         creationflags=subprocess.CREATE_NEW_CONSOLE,
@@ -403,7 +403,7 @@ def main():
     parser.add_argument(
         "--interval",
         type=int,
-        default=300,
+        default=600,
         help="Polling interval in seconds (default: 300 = 5 minutes)",
     )
     parser.add_argument(
