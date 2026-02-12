@@ -130,6 +130,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# Auto-updater
+.update_lock
+
 # Misc
 .DS_Store
 Thumbs.db

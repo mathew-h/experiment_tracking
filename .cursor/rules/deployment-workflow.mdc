@@ -30,13 +30,30 @@ alwaysApply: true
 - Backup location is configured via BACKUP_DIRECTORY environment variable
 - Public copy location is configured via PUBLIC_DATABASE environment variable
 
-## Deployment Process
+## Deployment Process (Automated)
+The Lab PC uses `auto_update.bat` to automatically pull, migrate, and restart.
+
 1. Make changes on personal work computer
-2. Test changes locally
+2. Test changes locally (including database migrations)
 3. Commit and push to GitHub
-4. Pull changes on lab PC
-5. Run any new migrations
-6. Restart the Streamlit app if necessary
+4. Lab PC auto-updater detects the new commit(s) and:
+   a. Creates a timestamped database backup via `utils/database_backup.py`
+   b. Pulls changes from origin/main
+   c. Installs any new dependencies from requirements.txt
+   d. Runs `alembic upgrade head`
+   e. Restarts the Streamlit application
+   f. On failure: rolls back git and restores the database backup
+
+### Auto-Updater Setup on Lab PC
+- **Polling mode:** Run `auto_update.bat --poll` to check every 5 minutes
+- **Task Scheduler:** Schedule `auto_update.bat` (no args) to run every N minutes
+- **Manual trigger:** Run `auto_update.bat` once to check and update immediately
+- **Restart only:** Run `auto_update.bat --restart-only` to restart Streamlit
+- **Logs:** Check `logs/auto_updater.log` for update history and errors
+
+### Auto-Updater Files
+- `utils/auto_updater.py` — Core update logic (backup, pull, migrate, restart, rollback)
+- `auto_update.bat` — Windows batch launcher for the auto-updater
 
 ## Environment Variables
 - Keep sensitive configuration in environment variables
@@ -48,6 +65,8 @@ alwaysApply: true
 - Always pull latest changes before starting new development
 - Test database migrations locally before deploying
 - Keep backup and public copy locations synchronized between environments
-- Monitor backup logs for any issues
+- Monitor `logs/auto_updater.log` for update and backup issues
+- The auto-updater will refuse to update if there are uncommitted local changes on the Lab PC
+- A file lock (`.update_lock`) prevents concurrent update processes
 - I am using cursor from my personal PC, command line tool requests can not be run on Lab PC. Write them out for me to run in Git Bash on Lab PC.
 
