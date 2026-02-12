@@ -1,6 +1,10 @@
 @echo off
 echo Starting Experiment Tracker Application...
 
+:: Change to the project directory (where this bat file lives)
+:: This ensures the script works regardless of where Windows launches it from
+cd /d "%~dp0"
+
 :: Check if Python is installed
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -10,9 +14,11 @@ if errorlevel 1 (
 )
 
 :: Activate virtual environment
-call .venv\Scripts\activate
-if errorlevel 1 (
-    echo Failed to activate virtual environment!
+if exist .venv\Scripts\activate.bat (
+    call .venv\Scripts\activate
+) else (
+    echo Virtual environment not found at .venv!
+    echo Run setup_lab_pc.bat first to create it.
     pause
     exit /b 1
 )
@@ -31,4 +37,4 @@ if errorlevel 1 (
 )
 
 :: Keep the window open if there's an error
-pause 
+pause
