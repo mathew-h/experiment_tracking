@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import Experiment, ExperimentalResults, ICPResults
 from io import StringIO
+from frontend.config.variable_config import ICP_FIXED_ELEMENT_FIELDS
 from backend.services.result_merge_utils import (
     create_experimental_result_row,
     ensure_primary_result_for_timepoint,
@@ -15,11 +16,6 @@ from backend.services.result_merge_utils import (
 
 class ICPService:
     """Service for handling ICP elemental analysis data operations."""
-    FIXED_ELEMENT_FIELDS = [
-        'fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al',
-        'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir',
-        'pd', 'ru', 'os', 'tl'
-    ]
     NON_ELEMENT_FIELDS = {
         'experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label',
         'analysis_date', 'instrument_used', 'detection_limits'
@@ -284,11 +280,9 @@ class ICPService:
                         element_label = str(row['Element Label']).strip()
                         element = element_label.split()[0]  # Get first part before space
                         concentration = row['Corrected_Concentration']
-                        
-                        if pd.notna(concentration):
-                            # Standardize element name for database
-                            element_key = ICPService._standardize_element_name(element)
-                            elemental_data[element_key] = float(concentration)
+                        concentration_val = float(concentration) if pd.notna(concentration) else 0.0
+                        element_key = ICPService._standardize_element_name(element)
+                        elemental_data[element_key] = concentration_val
                     
                     # Combine sample info with elemental data
                     result_data = {
@@ -408,7 +402,7 @@ class ICPService:
         
         # Extract fixed columns and prepare all elements JSON
         for key, value in result_data.items():
-            if key in ICPService.FIXED_ELEMENT_FIELDS and value is not None:
+            if key in ICP_FIXED_ELEMENT_FIELDS and value is not None:
                 fixed_column_data[key] = value
                 all_elements_data[key] = value  # Also store in JSON for completeness
             elif key not in ICPService.NON_ELEMENT_FIELDS and value is not None:
@@ -417,10 +411,15 @@ class ICPService:
         was_update = False
         if experimental_result.icp_data:
             # Update existing ICP record for this result row.
+            # Only overwrite elements present in incoming CSV; preserve others.
             icp_data = experimental_result.icp_data
-            for element in ICPService.FIXED_ELEMENT_FIELDS:
-                setattr(icp_data, element, fixed_column_data.get(element))
-            icp_data.all_elements = all_elements_data if all_elements_data else None
+            for element in ICP_FIXED_ELEMENT_FIELDS:
+                if element in fixed_column_data:
+                    setattr(icp_data, element, fixed_column_data[element])
+            # Merge all_elements: incoming overrides, preserve existing for keys not in incoming
+            existing = dict(icp_data.all_elements) if icp_data.all_elements else {}
+            existing.update(all_elements_data)
+            icp_data.all_elements = existing if existing else None
             icp_data.dilution_factor = result_data.get('dilution_factor')
             icp_data.raw_label = result_data.get('raw_label')
             if 'analysis_date' in result_data:
@@ -576,7 +575,7 @@ class ICPService:
             raise ValueError(f"ICPResult with result_id {result_id} not found.")
         
         # Update fixed columns
-        for element in ICPService.FIXED_ELEMENT_FIELDS:
+        for element in ICP_FIXED_ELEMENT_FIELDS:
             if element in update_data:
                 setattr(icp_result, element, update_data[element])
         

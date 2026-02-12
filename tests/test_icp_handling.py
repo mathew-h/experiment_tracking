@@ -530,5 +530,79 @@ class TestUniqueResultTrackingImprovements:
         assert exp_result.icp_data.result_id == exp_result.id
 
 
+class TestICPZeroHandlingAndMerge:
+    """Test non-numeric treated as 0, explicit 0 retained, and update preserves missing elements."""
+
+    def test_non_numeric_concentration_stored_as_zero(self):
+        """Sample with element concentration 'N/D' or empty string is stored as 0."""
+        csv_with_nond = """Header Row 1
+Header Row 2
+Label,Element Label,Concentration,Intensity,Type
+Test_MH_001_Day3_10x,Fe 238.204,N/D,1500,SAMP
+Test_MH_001_Day3_10x,Mg 285.213,,800,SAMP
+Test_MH_001_Day3_10x,Ni 231.604,2.1,600,SAMP
+""".encode("utf-8")
+        df = ICPService.parse_csv_file(csv_with_nond)
+        processed_data, errors = ICPService.process_icp_dataframe(df)
+        assert len(processed_data) == 1
+        sample = processed_data[0]
+        assert sample["fe"] == 0.0
+        assert sample["mg"] == 0.0
+        assert sample["ni"] == 21.0  # 2.1 * 10 dilution
+
+    def test_explicit_zero_retained(self):
+        """Sample with explicit 0 for an element retains 0 in the record."""
+        csv_with_zero = """Header Row 1
+Header Row 2
+Label,Element Label,Concentration,Intensity,Type
+Test_MH_001_Day3_10x,Fe 238.204,0,1500,SAMP
+Test_MH_001_Day3_10x,Mg 285.213,4.2,800,SAMP
+""".encode("utf-8")
+        df = ICPService.parse_csv_file(csv_with_zero)
+        processed_data, errors = ICPService.process_icp_dataframe(df)
+        assert len(processed_data) == 1
+        sample = processed_data[0]
+        assert sample["fe"] == 0.0
+        assert sample["mg"] == 42.0  # 4.2 * 10 dilution
+
+    def test_update_preserves_elements_not_in_incoming_csv(
+        self, test_db, sample_icp_csv_content
+    ):
+        """File A has Fe+Nd, File B has Fe only - Nd remains from File A after update."""
+        csv_with_fe_nd = """Header Row 1
+Header Row 2
+Label,Element Label,Concentration,Intensity,Type
+Test_MH_001_Day3_10x,Fe 238.204,12.5,1500,SAMP
+Test_MH_001_Day3_10x,Nd 430.358,3.2,400,SAMP
+""".encode("utf-8")
+        csv_fe_only = """Header Row 1
+Header Row 2
+Label,Element Label,Concentration,Intensity,Type
+Test_MH_001_Day3_5x,Fe 238.204,20.0,1800,SAMP
+""".encode("utf-8")
+
+        # Upload File A (Fe and Nd)
+        processed_a, _ = ICPService.parse_and_process_icp_file(csv_with_fe_nd)
+        results_a, _ = ICPService.bulk_create_icp_results(test_db, processed_a)
+        assert len(results_a) == 1
+        test_db.commit()
+
+        # Upload File B (Fe only) - same experiment and time point
+        processed_b, _ = ICPService.parse_and_process_icp_file(csv_fe_only)
+        results_b, errors_b = ICPService.bulk_create_icp_results(test_db, processed_b)
+        assert len(results_b) == 1
+        test_db.commit()
+
+        # Verify Nd preserved, Fe updated
+        exp = test_db.query(Experiment).filter_by(experiment_id="Test_MH_001").first()
+        er = test_db.query(ExperimentalResults).filter_by(
+            experiment_fk=exp.id, time_post_reaction_days=3.0
+        ).first()
+        icp_result = er.icp_data
+        assert icp_result is not None
+        assert icp_result.nd == 32.0  # Preserved from File A (3.2 * 10 dilution)
+        assert icp_result.fe == 100.0  # 20.0 * 5 dilution from File B
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

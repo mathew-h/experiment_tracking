@@ -54,6 +54,13 @@ PXRF_REQUIRED_COLUMNS = set(PXRF_ELEMENT_COLUMNS) | {'Reading No'}
 # Backward-compatibility alias for tests expecting ELEMENT_COLUMNS
 ELEMENT_COLUMNS = PXRF_ELEMENT_COLUMNS
 
+# ICP fixed element columns (ordered for Power BI / fixed-column storage)
+ICP_FIXED_ELEMENT_FIELDS = [
+    'fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al',
+    'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir',
+    'pd', 'ru', 'os', 'tl'
+]
+
 # Configuration for rock sample form fields
 ROCK_SAMPLE_CONFIG = {
     'sample_id': {

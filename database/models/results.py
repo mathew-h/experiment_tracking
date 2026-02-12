@@ -333,14 +333,13 @@ class ICPResults(Base):
         Returns:
             Dictionary of {element: concentration_ppm}
         """
+        # Import at runtime to avoid circular dependency
+        from frontend.config.variable_config import ICP_FIXED_ELEMENT_FIELDS
+        
         elements = {}
         
         # Add fixed columns
-        fixed_elements = [
-            'fe', 'si', 'ni', 'cu', 'mo', 'zn', 'mn', 'cr', 'co', 'mg', 'al',
-            'sr', 'y', 'nb', 'sb', 'cs', 'ba', 'nd', 'gd', 'pt', 'rh', 'ir', 'pd', 'ru', 'os', 'tl'
-        ]
-        for element in fixed_elements:
+        for element in ICP_FIXED_ELEMENT_FIELDS:
             value = getattr(self, element)
             if value is not None:
                 elements[element] = value
