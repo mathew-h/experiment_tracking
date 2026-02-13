@@ -464,7 +464,7 @@ class ICPService:
             db=db,
             experiment=experiment,
             time_post_reaction=result_data['time_post_reaction'],
-            description=f"ICP Analysis - {result_data.get('raw_label', 'Unknown')}"
+            description=f"Day {result_data['time_post_reaction']} results"
         )
         
         # Separate fixed columns from all elemental data
@@ -739,8 +739,8 @@ class ICPService:
         )
         existing = choose_parent_candidate(candidates, incoming_data_type=incoming_data_type)
         if existing:
-            if description and description not in existing.description:
-                existing.description = f"{existing.description} | {description}"
+            # ICP metadata (raw_label) is stored on the ICP record itself;
+            # don't pollute the parent description with auto-generated ICP text.
             return existing
 
         # Create new parent result row when no candidate exists for the time bucket.

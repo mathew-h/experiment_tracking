@@ -20,7 +20,7 @@ from backend.services.icp_service import ICPService
 from sqlalchemy.exc import IntegrityError
 
 EXPERIMENTAL_RESULTS_REQUIRED_COLS = {
-    "experiment_id", "description"  # time_post_reaction is now optional
+    "experiment_id", "description", "time_post_reaction"
 }
 
 def render_bulk_uploads_page():
@@ -940,7 +940,7 @@ def handle_solution_chemistry_upload():
     template_data = {
         SCALAR_RESULTS_TEMPLATE_HEADERS["measurement_date"]: [pd.Timestamp.now().date()],
         SCALAR_RESULTS_TEMPLATE_HEADERS["experiment_id"]: ["Serum_MH_025"],
-        SCALAR_RESULTS_TEMPLATE_HEADERS["time_post_reaction"]: [1],  # Optional field
+        SCALAR_RESULTS_TEMPLATE_HEADERS["time_post_reaction"]: [1],
         SCALAR_RESULTS_TEMPLATE_HEADERS["description"]: ["Sampled after acid addition"],
         SCALAR_RESULTS_TEMPLATE_HEADERS["gross_ammonium_concentration_mM"]: [10.5],
         SCALAR_RESULTS_TEMPLATE_HEADERS["sampling_volume_mL"]: [5.0],

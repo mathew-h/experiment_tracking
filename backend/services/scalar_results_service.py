@@ -55,11 +55,19 @@ class ScalarResultsService:
             if not experiment:
                 raise ValueError(f"Experiment with ID '{experiment_id}' not found and could not be auto-created.")
         
+        # Validate time_post_reaction is provided (required for proper merge with ICP data)
+        time_post_reaction = result_data.get('time_post_reaction')
+        if time_post_reaction is None:
+            raise ValueError(
+                "time_post_reaction (Time (days)) is required for scalar results. "
+                "Use 0 for pre-reaction baselines."
+            )
+
         # Find or create ExperimentalResults with deterministic timepoint merge rules.
         experimental_result = ScalarResultsService._find_or_create_experimental_result(
             db=db,
             experiment=experiment,
-            time_post_reaction=result_data.get('time_post_reaction'),
+            time_post_reaction=time_post_reaction,
             description=result_data.get('description'),
             incoming_data_type="scalar",
         )
@@ -223,9 +231,9 @@ class ScalarResultsService:
         )
         existing = choose_parent_candidate(candidates, incoming_data_type=incoming_data_type)
         if existing:
-            # If merging, ensure the description includes the new context
-            if description and description not in existing.description:
-                existing.description = f"{existing.description} | {description}"
+            # User-provided scalar descriptions take priority over auto-generated ones
+            if description:
+                existing.description = description
             return existing
 
         # Create new parent result row when no timepoint candidate exists.

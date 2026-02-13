@@ -367,10 +367,18 @@ def display_experiment_details(experiment):
 
     # Display existing notes
     if 'notes' in experiment and experiment['notes']:
-        # Sort notes by creation date, newest first
-        sorted_notes = sorted(experiment['notes'], key=lambda x: x['created_at'], reverse=True)
+        # Sort notes by creation date, newest first (guard against None created_at)
+        sorted_notes = sorted(
+            experiment['notes'],
+            key=lambda x: x['created_at'] or datetime.datetime.min,
+            reverse=True,
+        )
         for note in sorted_notes:
-            with st.expander(f"Note from {note['created_at'].strftime('%Y-%m-%d %H:%M')}"):
+            note_date_label = (
+                note['created_at'].strftime('%Y-%m-%d %H:%M')
+                if note.get('created_at') else 'Unknown date'
+            )
+            with st.expander(f"Note from {note_date_label}"):
                 # Check if editing this specific note
                 is_editing_this_note = st.session_state.note_form_state.get('editing_note_id') == note['id']
 
@@ -379,7 +387,7 @@ def display_experiment_details(experiment):
                     with st.form(f"edit_note_{note['id']}"):
                         edited_text = st.text_area(
                             "Edit Note",
-                            value=note['note_text'],
+                            value=note['note_text'] or '',
                             height=150,
                             key=f"edit_text_{note['id']}",
                             help="Edit your lab note here."
@@ -396,8 +404,8 @@ def display_experiment_details(experiment):
                                 st.rerun() # Rerun to exit edit mode
                 else:
                     # View mode for this note
-                    st.markdown(note['note_text'])
-                    if note.get('updated_at') and note['updated_at'] > note['created_at']:
+                    st.markdown(note['note_text'] or '')
+                    if note.get('updated_at') and note.get('created_at') and note['updated_at'] > note['created_at']:
                         st.caption(f"Last updated: {note['updated_at'].strftime('%Y-%m-%d %H:%M')}")
 
                     # Edit button (only show if not adding a new note)

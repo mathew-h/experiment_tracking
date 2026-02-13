@@ -122,6 +122,22 @@ class ScalarResultsUploadService:
                     continue
                 clean["measurement_date"] = parsed_date
             
+            # Validate time_post_reaction is present and numeric
+            time_val = clean.get('time_post_reaction')
+            if time_val is None:
+                errors.append(
+                    f"Row {row_index + 2}: 'Time (days)' is required. "
+                    f"Use 0 for pre-reaction baselines."
+                )
+                continue
+            try:
+                clean['time_post_reaction'] = float(time_val)
+            except (ValueError, TypeError):
+                errors.append(
+                    f"Row {row_index + 2}: 'Time (days)' must be a number, got '{time_val}'."
+                )
+                continue
+
             # Handle per-row overwrite flag: per-row takes precedence over global
             row_overwrite = clean.pop('overwrite', None)
             if row_overwrite is not None:

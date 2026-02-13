@@ -226,8 +226,8 @@ def render_experiment_list():
             # Temperature
             temperature = conditions.get('temperature_c', FIELD_CONFIG['temperature_c']['default'])
             temperature_disp = f"{temperature:.1f}" if isinstance(temperature, (int, float)) else str(temperature)
-            # Description from first note
-            description = notes[0]['note_text'] if notes else ""
+            # Description from first note (guard against None note_text)
+            description = (notes[0]['note_text'] or '') if notes else ""
             # Status
             status = exp.get('status', '')
             # Row layout

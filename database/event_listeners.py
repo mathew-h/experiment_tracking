@@ -151,6 +151,8 @@ try:
                 icp.dilution_factor AS icp_dilution_factor,
                 icp.raw_label AS icp_raw_label,
                 icp.analysis_date AS icp_analysis_date,
+                icp.measurement_date AS icp_measurement_date,
+                icp.sample_date AS icp_sample_date,
                 icp.instrument_used AS icp_instrument_used,
                 
                 -- ICP Elements
@@ -161,6 +163,7 @@ try:
                 icp.mo AS icp_mo_ppm,
                 icp.zn AS icp_zn_ppm,
                 icp.mn AS icp_mn_ppm,
+                icp.ca AS icp_ca_ppm,
                 icp.cr AS icp_cr_ppm,
                 icp.co AS icp_co_ppm,
                 icp.mg AS icp_mg_ppm,
