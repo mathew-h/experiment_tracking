@@ -403,7 +403,7 @@ def main():
     parser.add_argument(
         "--interval",
         type=int,
-        default=600,
+        default=300,
         help="Polling interval in seconds (default: 300 = 5 minutes)",
     )
     parser.add_argument(
