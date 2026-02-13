@@ -1142,9 +1142,22 @@ def handle_icp_upload():
     uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
     if uploaded_file:
+        state_sig_key = "icp_upload_file_signature"
+        state_data_key = "icp_upload_processed_data"
+        state_errors_key = "icp_upload_processing_errors"
+        state_header_key = "icp_upload_manual_header"
+
         # Show CSV analysis and allow manual header row specification
         file_content = uploaded_file.read()
         uploaded_file.seek(0)  # Reset for potential re-reading
+        file_signature = f"{uploaded_file.name}:{uploaded_file.size}:{hash(file_content)}"
+
+        # Reset cached processing state when the uploaded file changes
+        if st.session_state.get(state_sig_key) != file_signature:
+            st.session_state[state_sig_key] = file_signature
+            st.session_state.pop(state_data_key, None)
+            st.session_state.pop(state_errors_key, None)
+            st.session_state.pop(state_header_key, None)
         
         # Quick analysis
         diagnosis = ICPService.diagnose_csv_structure(file_content)
@@ -1177,22 +1190,51 @@ def handle_icp_upload():
         else:
             manual_header = 0
         
-        if st.button("Process ICP Data"):
+        if st.button("Process ICP Data", key="process_icp_data_btn"):
             try:
-                _process_icp_csv(file_content, manual_header)
-                
+                st.info("Processing ICP-OES data file...")
+                processed_data, processing_errors = ICPService.parse_and_process_icp_file(file_content, manual_header)
+                st.session_state[state_data_key] = processed_data
+                st.session_state[state_errors_key] = processing_errors
+                st.session_state[state_header_key] = manual_header
             except Exception as e:
                 st.error(f"An error occurred processing the CSV file: {e}")
 
-def _process_icp_csv(file_content: bytes, manual_header_row: int = 0):
+        # Persist parsed payload across reruns so "Upload Despite Warnings" can execute reliably.
+        if state_data_key in st.session_state:
+            saved_data = st.session_state.get(state_data_key) or []
+            saved_errors = st.session_state.get(state_errors_key) or []
+            upload_despite_warnings = False
+            if saved_errors:
+                upload_despite_warnings = st.button(
+                    "Upload Despite Warnings",
+                    key="upload_icp_despite_warnings_btn"
+                )
+
+            _process_icp_csv(
+                file_content=file_content,
+                manual_header_row=st.session_state.get(state_header_key, manual_header),
+                processed_data=saved_data,
+                processing_errors=saved_errors,
+                force_upload=upload_despite_warnings
+            )
+
+def _process_icp_csv(
+    file_content: bytes,
+    manual_header_row: int = 0,
+    processed_data: list | None = None,
+    processing_errors: list | None = None,
+    force_upload: bool = False,
+):
     """
     Processes the ICP-OES CSV file using ICPService for all backend logic.
     """
     db = SessionLocal()
     try:
-        # Step 1: Parse and process the ICP file
-        st.info("Processing ICP-OES data file...")
-        processed_data, processing_errors = ICPService.parse_and_process_icp_file(file_content, manual_header_row)
+        # Step 1: Parse and process the ICP file (if not already cached in session state)
+        if processed_data is None or processing_errors is None:
+            st.info("Processing ICP-OES data file...")
+            processed_data, processing_errors = ICPService.parse_and_process_icp_file(file_content, manual_header_row)
         
         if processing_errors:
             st.subheader("⚠️ Processing Issues Found")
@@ -1224,15 +1266,19 @@ def _process_icp_csv(file_content: bytes, manual_header_row: int = 0):
             
             st.dataframe(preview_df[display_cols].head(10))
         
-        # Step 3: Upload to database if no critical errors
-        if not processing_errors or st.button("Upload Despite Warnings"):
+        # Step 3: Upload to database if no critical errors, or user explicitly accepted warnings
+        if not processing_errors or force_upload:
             st.info("Uploading ICP-OES data to database...")
             
             results, upload_errors = ICPService.bulk_create_icp_results(db, processed_data)
             
-            # Separate errors from overwrite notifications
-            actual_errors = [msg for msg in upload_errors if not msg.startswith("Sample") or "Updated existing ICP-OES data" not in msg]
-            overwrite_notifications = [msg for msg in upload_errors if "Updated existing ICP-OES data" in msg]
+            # Separate hard errors from non-blocking overwrite/update notifications.
+            overwrite_markers = ("Updated existing ICP data", "Updated existing ICP-OES data")
+            overwrite_notifications = [
+                msg for msg in upload_errors
+                if any(marker in msg for marker in overwrite_markers)
+            ]
+            actual_errors = [msg for msg in upload_errors if msg not in overwrite_notifications]
             
             # Handle upload feedback
             if actual_errors:
@@ -1262,6 +1308,10 @@ def _process_icp_csv(file_content: bytes, manual_header_row: int = 0):
                 
                 summary = " and ".join(summary_parts)
                 st.info(f"**Summary:** {summary} ICP-OES results for {len(experiments)} experiments")
+                # Clear cached processing payload after successful upload to prevent accidental re-uploads.
+                st.session_state.pop("icp_upload_processed_data", None)
+                st.session_state.pop("icp_upload_processing_errors", None)
+                st.session_state.pop("icp_upload_manual_header", None)
                 
             elif not results and not actual_errors:
                 st.info("ℹ️ No new ICP-OES data to upload.")

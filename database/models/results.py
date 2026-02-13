@@ -282,6 +282,8 @@ class ICPResults(Base):
     # ICP-specific metadata
     dilution_factor = Column(Float, nullable=True)
     analysis_date = Column(DateTime(timezone=True), nullable=True)
+    measurement_date = Column(DateTime(timezone=True), nullable=True)
+    sample_date = Column(DateTime(timezone=True), nullable=True)
     instrument_used = Column(String, nullable=True)
     detection_limits = Column(JSON, nullable=True)  # Store per-element detection limits
     raw_label = Column(String, nullable=True)  # Original sample label from ICP file

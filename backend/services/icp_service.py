@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import datetime as dt
 from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -18,7 +19,7 @@ class ICPService:
     """Service for handling ICP elemental analysis data operations."""
     NON_ELEMENT_FIELDS = {
         'experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label',
-        'analysis_date', 'instrument_used', 'detection_limits'
+        'analysis_date', 'instrument_used', 'detection_limits', 'measurement_date', 'sample_date'
     }
     
     @staticmethod
@@ -45,7 +46,7 @@ class ICPService:
                 # Find the header row by looking for common ICP column patterns
                 header_row = None
                 for i, line in enumerate(lines[:20]):  # Check first 20 lines
-                    if any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity']):
+                    if any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity', 'date time']):
                         # Check if this line has a reasonable number of columns (not too few, not too many)
                         columns = line.split(',')
                         if 5 <= len(columns) <= 50:  # Reasonable range for ICP data
@@ -64,6 +65,7 @@ class ICPService:
                 df = pd.read_csv(StringIO(csv_string), skiprows=header_row, error_bad_lines=False, warn_bad_lines=False)
             
             # Clean up any unnamed columns or empty columns
+            df.columns = [str(col).strip() for col in df.columns]
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
             df = df.dropna(how='all')  # Remove completely empty rows
             
@@ -164,6 +166,27 @@ class ICPService:
             raise ValueError("DataFrame must contain 'Concentration' column for dilution correction")
         
         return df_corrected
+
+    @staticmethod
+    def extract_measurement_date(sample_df: pd.DataFrame) -> Optional[dt.datetime]:
+        """
+        Extract measurement date from ICP long-format rows.
+
+        The raw column is expected as 'Date Time'. We normalize to calendar day
+        by setting time to midnight (e.g., '2/9/2026 1:14:27 PM' -> 2026-02-09 00:00:00).
+        """
+        if sample_df is None or sample_df.empty:
+            return None
+        if 'Date Time' not in sample_df.columns:
+            return None
+
+        parsed = pd.to_datetime(sample_df['Date Time'], errors='coerce')
+        parsed = parsed.dropna()
+        if parsed.empty:
+            return None
+
+        first_valid = parsed.iloc[0]
+        return dt.datetime.combine(first_valid.date(), dt.time.min)
     
     @staticmethod
     def select_best_lines(df: pd.DataFrame) -> pd.DataFrame:
@@ -264,6 +287,7 @@ class ICPService:
                     
                     # Get all data for this sample
                     sample_data = df_samples[df_samples['Label'] == label].copy()
+                    measurement_date = ICPService.extract_measurement_date(sample_data)
                     
                     # Apply dilution correction to this sample's data
                     sample_data_corrected = ICPService.apply_dilution_correction(
@@ -288,7 +312,9 @@ class ICPService:
                     result_data = {
                         **sample_info,
                         **elemental_data,
-                        'raw_label': label
+                        'raw_label': label,
+                        'measurement_date': measurement_date,
+                        'sample_date': None,
                     }
                     
                     processed_data.append(result_data)
@@ -428,6 +454,10 @@ class ICPService:
                 icp_data.instrument_used = result_data.get('instrument_used')
             if 'detection_limits' in result_data:
                 icp_data.detection_limits = result_data.get('detection_limits')
+            if 'measurement_date' in result_data:
+                icp_data.measurement_date = result_data.get('measurement_date')
+            if 'sample_date' in result_data:
+                icp_data.sample_date = result_data.get('sample_date')
             was_update = True
         else:
             # Create ICP data with elemental concentrations
@@ -468,6 +498,8 @@ class ICPService:
                 analysis_date=result_data.get('analysis_date'),
                 instrument_used=result_data.get('instrument_used'),
                 detection_limits=result_data.get('detection_limits'),
+                measurement_date=result_data.get('measurement_date'),
+                sample_date=result_data.get('sample_date'),
                 # Relationship
                 result_entry=experimental_result
             )
@@ -527,7 +559,9 @@ class ICPService:
                     
                     # Add informational message for overwrites
                     if was_update:
-                        errors.append(f"Sample {idx + 1}: Updated existing ICP data for experiment '{experiment_id}' at time {time_post_reaction} days")
+                        errors.append(
+                            f"Sample {idx + 1}: Updated existing ICP-OES data for experiment '{experiment_id}' at time {time_post_reaction} days"
+                        )
                     
             except ValueError as e:
                 errors.append(f"Sample {idx + 1}: {str(e)}")
@@ -580,7 +614,15 @@ class ICPService:
                 setattr(icp_result, element, update_data[element])
         
         # Update metadata fields
-        metadata_fields = ['dilution_factor', 'analysis_date', 'instrument_used', 'detection_limits', 'raw_label']
+        metadata_fields = [
+            'dilution_factor',
+            'analysis_date',
+            'instrument_used',
+            'detection_limits',
+            'raw_label',
+            'measurement_date',
+            'sample_date',
+        ]
         for field in metadata_fields:
             if field in update_data:
                 setattr(icp_result, field, update_data[field])
@@ -735,7 +777,7 @@ class ICPService:
                     line_info = {
                         'line_number': i + 1,
                         'column_count': len(columns),
-                        'has_icp_keywords': any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity']),
+                        'has_icp_keywords': any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity', 'date time']),
                         'preview': line[:100] + '...' if len(line) > 100 else line
                     }
                     diagnosis['line_analysis'].append(line_info)
