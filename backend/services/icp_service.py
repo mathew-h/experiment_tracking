@@ -21,6 +21,48 @@ class ICPService:
         'experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label',
         'analysis_date', 'instrument_used', 'detection_limits', 'measurement_date', 'sample_date'
     }
+
+    @staticmethod
+    def _infer_delimiter_from_line(line: str) -> str:
+        """Infer the delimiter used in an ICP export header/data line."""
+        delimiter_candidates = [",", "\t", ";"]
+        delimiter_counts = {d: line.count(d) for d in delimiter_candidates}
+        best_delimiter = max(delimiter_counts, key=delimiter_counts.get)
+        return best_delimiter if delimiter_counts[best_delimiter] > 0 else ","
+
+    @staticmethod
+    def _detect_header_row_and_delimiter(lines: List[str]) -> Tuple[int, str]:
+        """
+        Detect header row and delimiter.
+
+        Primary rule: header is the row containing a true `Label` column token.
+        """
+        max_scan = min(80, len(lines))
+
+        # Pass 1 (strict): look for a tokenized "Label" column.
+        for i, raw_line in enumerate(lines[:max_scan]):
+            line = raw_line.strip()
+            if not line:
+                continue
+            delimiter = ICPService._infer_delimiter_from_line(line)
+            columns = [c.strip().strip('"').lower() for c in line.split(delimiter)]
+            if "label" in columns and 5 <= len(columns) <= 80:
+                return i, delimiter
+
+        # Pass 2 (fallback): existing keyword-style detection, delimiter-aware.
+        for i, raw_line in enumerate(lines[:max_scan]):
+            line = raw_line.strip()
+            if not line:
+                continue
+            lower_line = line.lower()
+            if any(pattern in lower_line for pattern in ["label", "element", "concentration", "intensity", "date time"]):
+                delimiter = ICPService._infer_delimiter_from_line(line)
+                columns = line.split(delimiter)
+                if 5 <= len(columns) <= 80:
+                    return i, delimiter
+
+        # Legacy fallback
+        return 2, ","
     
     @staticmethod
     def parse_csv_file(file_content: bytes, manual_header_row: int = None) -> pd.DataFrame:
@@ -35,34 +77,37 @@ class ICPService:
             DataFrame with CSV data starting from detected header row
         """
         try:
-            # Convert bytes to string
-            csv_string = file_content.decode('utf-8')
+            # Convert bytes to string and tolerate UTF-8 BOM
+            csv_string = file_content.decode('utf-8-sig', errors='replace')
             lines = csv_string.split('\n')
-            
-            # Use manual header row if provided, otherwise auto-detect
+
+            # Use manual header row if provided, otherwise auto-detect.
             if manual_header_row is not None and manual_header_row > 0:
                 header_row = manual_header_row
+                source_line = lines[header_row] if header_row < len(lines) else ""
+                delimiter = ICPService._infer_delimiter_from_line(source_line)
             else:
-                # Find the header row by looking for common ICP column patterns
-                header_row = None
-                for i, line in enumerate(lines[:20]):  # Check first 20 lines
-                    if any(pattern in line.lower() for pattern in ['label', 'element', 'concentration', 'intensity', 'date time']):
-                        # Check if this line has a reasonable number of columns (not too few, not too many)
-                        columns = line.split(',')
-                        if 5 <= len(columns) <= 50:  # Reasonable range for ICP data
-                            header_row = i
-                            break
-                
-                if header_row is None:
-                    # Fallback: try starting from row 3 as before
-                    header_row = 2
+                header_row, delimiter = ICPService._detect_header_row_and_delimiter(lines)
             
             # Read CSV with detected header row and flexible error handling
             try:
-                df = pd.read_csv(StringIO(csv_string), skiprows=header_row, on_bad_lines='skip')
+                df = pd.read_csv(
+                    StringIO(csv_string),
+                    skiprows=header_row,
+                    sep=delimiter,
+                    engine='python',
+                    on_bad_lines='skip'
+                )
             except TypeError:
                 # Fallback for older pandas versions that don't support on_bad_lines
-                df = pd.read_csv(StringIO(csv_string), skiprows=header_row, error_bad_lines=False, warn_bad_lines=False)
+                df = pd.read_csv(
+                    StringIO(csv_string),
+                    skiprows=header_row,
+                    sep=delimiter,
+                    engine='python',
+                    error_bad_lines=False,
+                    warn_bad_lines=False
+                )
             
             # Clean up any unnamed columns or empty columns
             df.columns = [str(col).strip() for col in df.columns]
