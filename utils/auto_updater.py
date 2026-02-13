@@ -89,6 +89,53 @@ def _run(cmd: list[str], check: bool = True, **kwargs) -> subprocess.CompletedPr
     return result
 
 
+def _resolve_python_executable() -> str:
+    """
+    Resolve a usable Python executable path for subprocess calls.
+
+    Priority:
+      1) project venv Python
+      2) current interpreter (sys.executable)
+      3) python launcher on PATH
+      4) python on PATH
+    """
+    candidates: list[str] = []
+    if VENV_PYTHON.exists():
+        candidates.append(str(VENV_PYTHON))
+    if sys.executable:
+        candidates.append(sys.executable)
+    py_launcher = shutil.which("py")
+    if py_launcher:
+        candidates.append(py_launcher)
+    python_on_path = shutil.which("python")
+    if python_on_path:
+        candidates.append(python_on_path)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_candidates = []
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            unique_candidates.append(candidate)
+            seen.add(candidate)
+
+    for candidate in unique_candidates:
+        try:
+            probe = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+            )
+            if probe.returncode == 0:
+                return candidate
+        except Exception:
+            continue
+
+    raise RuntimeError(
+        "Could not locate a working Python executable for auto-updater subprocesses."
+    )
+
+
 @contextmanager
 def _file_lock():
     """
@@ -218,14 +265,14 @@ def rollback_git(commit_hash: str) -> None:
 
 def install_dependencies() -> None:
     """Install Python dependencies from requirements.txt."""
-    python = str(VENV_PYTHON) if VENV_PYTHON.exists() else "python"
+    python = _resolve_python_executable()
     _run([python, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"])
     logger.info("Dependencies installed")
 
 
 def run_migrations() -> None:
     """Run any pending Alembic migrations."""
-    python = str(VENV_PYTHON) if VENV_PYTHON.exists() else "python"
+    python = _resolve_python_executable()
     _run([python, "-m", "alembic", "upgrade", "head"])
     logger.info("Alembic migrations applied")
 
@@ -284,7 +331,7 @@ def restart_streamlit() -> None:
         logger.info("No running Streamlit processes found")
 
     # --- Start a new instance ---
-    python = str(VENV_PYTHON) if VENV_PYTHON.exists() else "python"
+    python = _resolve_python_executable()
     env = os.environ.copy()
     env["STREAMLIT_SERVER_PORT"] = str(STREAMLIT_PORT)
     env["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
