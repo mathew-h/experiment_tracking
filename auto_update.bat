@@ -29,18 +29,29 @@ if errorlevel 1 (
 if exist .venv\Scripts\activate.bat (
     call .venv\Scripts\activate
 ) else (
-    echo [WARNING] Virtual environment not found at .venv – using system Python
+    echo [WARNING] Virtual environment not found at .venv - using system Python
 )
 
-:: Default to --poll mode if no arguments provided
-if "%~1"=="" (
-    echo Starting auto-updater in polling mode (Ctrl+C to stop)...
-    python -m utils.auto_updater --poll
-) else if "%~1"=="--once" (
-    python -m utils.auto_updater
-) else (
-    python -m utils.auto_updater %*
-)
+:: Default to --poll mode if no arguments provided.
+:: NOTE: cmd.exe does not support "else if", so we use labels/goto.
+if "%~1"=="" goto RUN_POLL
+if /I "%~1"=="--once" goto RUN_ONCE
+goto RUN_WITH_ARGS
+
+:RUN_POLL
+echo Starting auto-updater in polling mode (Ctrl+C to stop)...
+python -m utils.auto_updater --poll
+goto AFTER_RUN
+
+:RUN_ONCE
+python -m utils.auto_updater
+goto AFTER_RUN
+
+:RUN_WITH_ARGS
+python -m utils.auto_updater %*
+goto AFTER_RUN
+
+:AFTER_RUN
 
 :: Capture exit code
 set EXIT_CODE=%ERRORLEVEL%
