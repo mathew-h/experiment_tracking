@@ -277,6 +277,48 @@ def run_migrations() -> None:
     logger.info("Alembic migrations applied")
 
 
+def _get_process_commandline(pid: int) -> str:
+    """
+    Best-effort process command line lookup on Windows.
+
+    Uses WMIC when available, with PowerShell/CIM fallback for newer Windows
+    installations where WMIC is removed.
+    """
+    wmic_path = shutil.which("wmic")
+    if wmic_path:
+        try:
+            wmic_result = subprocess.run(
+                [wmic_path, "process", "where", f"ProcessId={pid}", "get", "CommandLine"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if wmic_result.returncode == 0 and wmic_result.stdout:
+                return wmic_result.stdout
+        except Exception:
+            pass
+
+    powershell = shutil.which("powershell") or shutil.which("powershell.exe")
+    if powershell:
+        try:
+            ps_cmd = (
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\" "
+                f"| Select-Object -ExpandProperty CommandLine)"
+            )
+            ps_result = subprocess.run(
+                [powershell, "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if ps_result.returncode == 0 and ps_result.stdout:
+                return ps_result.stdout
+        except Exception:
+            pass
+
+    return ""
+
+
 def _find_streamlit_pids() -> list[int]:
     """Find PIDs of running Streamlit processes."""
     result = subprocess.run(
@@ -291,11 +333,8 @@ def _find_streamlit_pids() -> list[int]:
             try:
                 pid = int(parts[1].strip('"'))
                 # Check the command line of this process
-                wmic_result = subprocess.run(
-                    ["wmic", "process", "where", f"ProcessId={pid}", "get", "CommandLine"],
-                    capture_output=True, text=True,
-                )
-                if "streamlit" in wmic_result.stdout.lower():
+                command_line = _get_process_commandline(pid)
+                if "streamlit" in command_line.lower():
                     pids.append(pid)
             except (ValueError, IndexError):
                 continue
