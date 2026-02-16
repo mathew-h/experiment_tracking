@@ -35,7 +35,8 @@ def render_reactor_dashboard():
             Experiment.id == ExperimentalConditions.experiment_fk
         ).filter(
             Experiment.status == ExperimentStatus.ONGOING,
-            ExperimentalConditions.reactor_number.isnot(None)
+            ExperimentalConditions.reactor_number.isnot(None),
+            ExperimentalConditions.experiment_type == "HPHT"
         ).all()
         
         # Create a mapping of reactor_number to experiment data
