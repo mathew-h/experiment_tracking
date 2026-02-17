@@ -110,17 +110,55 @@ try:
         conn.execute(text(
             """
             CREATE VIEW v_primary_experiment_results AS
+            WITH base AS (
+                SELECT
+                    er.id,
+                    er.experiment_fk,
+                    er.time_post_reaction_days,
+                    COALESCE(er.time_post_reaction_bucket_days, ROUND(er.time_post_reaction_days, 4)) AS bucket_key,
+                    er.time_post_reaction_bucket_days,
+                    er.cumulative_time_post_reaction_days,
+                    er.description,
+                    er.created_at,
+                    er.is_primary_timepoint_result
+                FROM experimental_results er
+                WHERE er.is_primary_timepoint_result = 1
+            ),
+            scalar_bucket AS (
+                SELECT
+                    er.experiment_fk,
+                    COALESCE(er.time_post_reaction_bucket_days, ROUND(er.time_post_reaction_days, 4)) AS bucket_key,
+                    sr.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY er.experiment_fk, COALESCE(er.time_post_reaction_bucket_days, ROUND(er.time_post_reaction_days, 4))
+                        ORDER BY er.is_primary_timepoint_result DESC, er.id DESC
+                    ) AS rn
+                FROM experimental_results er
+                JOIN scalar_results sr ON sr.result_id = er.id
+            ),
+            icp_bucket AS (
+                SELECT
+                    er.experiment_fk,
+                    COALESCE(er.time_post_reaction_bucket_days, ROUND(er.time_post_reaction_days, 4)) AS bucket_key,
+                    icp.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY er.experiment_fk, COALESCE(er.time_post_reaction_bucket_days, ROUND(er.time_post_reaction_days, 4))
+                        ORDER BY er.is_primary_timepoint_result DESC, er.id DESC
+                    ) AS rn
+                FROM experimental_results er
+                JOIN icp_results icp ON icp.result_id = er.id
+            )
             SELECT
                 e.experiment_id AS experiment_id,
-                er.experiment_fk AS experiment_fk,
-                er.id AS result_id,
-                er.time_post_reaction_days AS time_post_reaction_days,
-                er.time_post_reaction_bucket_days AS time_post_reaction_bucket_days,
-                er.cumulative_time_post_reaction_days AS cumulative_time_post_reaction_days,
-                er.description AS result_description,
-                er.created_at AS result_created_at,
-                
-                -- Scalar Results
+                b.experiment_fk AS experiment_fk,
+                b.id AS result_id,
+                b.time_post_reaction_days AS time_post_reaction_days,
+                b.time_post_reaction_bucket_days AS time_post_reaction_bucket_days,
+                b.cumulative_time_post_reaction_days AS cumulative_time_post_reaction_days,
+                b.description AS result_description,
+                b.created_at AS result_created_at,
+
+                -- Scalar Results (resolved by experiment + time bucket)
                 sr.id AS scalar_result_id,
                 sr.gross_ammonium_concentration_mM AS gross_ammonium_concentration_mM,
                 sr.background_ammonium_concentration_mM AS background_ammonium_concentration_mM,
@@ -146,7 +184,7 @@ try:
                 sr.h2_mass_ug AS h2_mass_ug,
                 sr.h2_grams_per_ton_yield AS h2_grams_per_ton_yield,
 
-                -- ICP Results
+                -- ICP Results (resolved by experiment + time bucket)
                 icp.id AS icp_result_id,
                 icp.dilution_factor AS icp_dilution_factor,
                 icp.raw_label AS icp_raw_label,
@@ -154,7 +192,7 @@ try:
                 icp.measurement_date AS icp_measurement_date,
                 icp.sample_date AS icp_sample_date,
                 icp.instrument_used AS icp_instrument_used,
-                
+
                 -- ICP Elements
                 icp.fe AS icp_fe_ppm,
                 icp.si AS icp_si_ppm,
@@ -184,11 +222,16 @@ try:
                 icp.os AS icp_os_ppm,
                 icp.tl AS icp_tl_ppm
 
-            FROM experimental_results er
-            JOIN experiments e ON e.id = er.experiment_fk
-            LEFT JOIN scalar_results sr ON sr.result_id = er.id
-            LEFT JOIN icp_results icp ON icp.result_id = er.id
-            WHERE er.is_primary_timepoint_result = 1;
+            FROM base b
+            JOIN experiments e ON e.id = b.experiment_fk
+            LEFT JOIN scalar_bucket sr
+                ON sr.experiment_fk = b.experiment_fk
+               AND sr.bucket_key = b.bucket_key
+               AND sr.rn = 1
+            LEFT JOIN icp_bucket icp
+                ON icp.experiment_fk = b.experiment_fk
+               AND icp.bucket_key = b.bucket_key
+               AND icp.rn = 1;
             """
         ))
         conn.commit()
