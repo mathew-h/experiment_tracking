@@ -4,7 +4,7 @@ import datetime as dt
 from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from database import Experiment, ExperimentalResults, ICPResults
+from database import Experiment, ExperimentalResults, ICPResults, ModificationsLog
 from io import StringIO
 from frontend.config.variable_config import ICP_FIXED_ELEMENT_FIELDS
 from backend.services.result_merge_utils import (
@@ -484,6 +484,11 @@ class ICPService:
             # Update existing ICP record for this result row.
             # Only overwrite elements present in incoming CSV; preserve others.
             icp_data = experimental_result.icp_data
+
+            # Snapshot old element values for audit trail
+            old_fixed = {el: getattr(icp_data, el) for el in ICP_FIXED_ELEMENT_FIELDS}
+            old_all = dict(icp_data.all_elements) if icp_data.all_elements else {}
+
             for element in ICP_FIXED_ELEMENT_FIELDS:
                 if element in fixed_column_data:
                     setattr(icp_data, element, fixed_column_data[element])
@@ -504,6 +509,27 @@ class ICPService:
             if 'sample_date' in result_data:
                 icp_data.sample_date = result_data.get('sample_date')
             was_update = True
+
+            # Audit trail: log changed element values
+            changed_old: Dict[str, Any] = {}
+            changed_new: Dict[str, Any] = {}
+            for el in ICP_FIXED_ELEMENT_FIELDS:
+                if el in fixed_column_data and old_fixed.get(el) != getattr(icp_data, el):
+                    changed_old[el] = old_fixed.get(el)
+                    changed_new[el] = getattr(icp_data, el)
+            for el_key, el_val in all_elements_data.items():
+                if old_all.get(el_key) != el_val:
+                    changed_old[el_key] = old_all.get(el_key)
+                    changed_new[el_key] = el_val
+            if changed_old or changed_new:
+                db.add(ModificationsLog(
+                    experiment_id=experiment.experiment_id,
+                    experiment_fk=experiment.id,
+                    modification_type="update",
+                    modified_table="icp_results",
+                    old_values=changed_old or None,
+                    new_values=changed_new or None,
+                ))
         else:
             # Create ICP data with elemental concentrations
             icp_data = ICPResults(
@@ -516,6 +542,7 @@ class ICPService:
                 mo=fixed_column_data.get('mo'),
                 zn=fixed_column_data.get('zn'),
                 mn=fixed_column_data.get('mn'),
+                ca=fixed_column_data.get('ca'),
                 cr=fixed_column_data.get('cr'),
                 co=fixed_column_data.get('co'),
                 mg=fixed_column_data.get('mg'),
@@ -549,7 +576,18 @@ class ICPService:
                 result_entry=experimental_result
             )
             db.add(icp_data)
-        
+
+            # Audit trail for new ICP record
+            if all_elements_data:
+                db.add(ModificationsLog(
+                    experiment_id=experiment.experiment_id,
+                    experiment_fk=experiment.id,
+                    modification_type="create",
+                    modified_table="icp_results",
+                    old_values=None,
+                    new_values=all_elements_data,
+                ))
+
         # Add to session (commit handled by caller)
         db.add(experimental_result)  # May be existing or new
         db.flush()  # Flush to get IDs assigned

@@ -256,6 +256,7 @@ class ICPResults(Base):
     mo = Column(Float, nullable=True)   # Molybdenum
     zn = Column(Float, nullable=True)   # Zinc
     mn = Column(Float, nullable=True)   # Manganese
+    ca = Column(Float, nullable=True)   # Calcium
     cr = Column(Float, nullable=True)   # Chromium
     co = Column(Float, nullable=True)   # Cobalt
     mg = Column(Float, nullable=True)   # Magnesium

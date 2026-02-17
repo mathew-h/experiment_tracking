@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any, List, Tuple
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from database import Experiment, ExperimentalResults, ScalarResults
+from database import Experiment, ExperimentalResults, ScalarResults, ModificationsLog
 from backend.services.result_merge_utils import (
     create_experimental_result_row,
     ensure_primary_result_for_timepoint,
@@ -9,6 +9,33 @@ from backend.services.result_merge_utils import (
     choose_parent_candidate,
     update_cumulative_times_for_chain,
 )
+
+# All updatable scalar fields -- shared by create and audit-trail logic.
+SCALAR_UPDATABLE_FIELDS = [
+    'ferrous_iron_yield', 'gross_ammonium_concentration_mM', 'background_ammonium_concentration_mM',
+    'background_experiment_id',
+    'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure_MPa',
+    'final_ph', 'final_nitrate_concentration_mM', 'final_dissolved_oxygen_mg_L', 'co2_partial_pressure_MPa',
+    'final_conductivity_mS_cm', 'final_alkalinity_mg_L', 'sampling_volume_mL', 'measurement_date',
+]
+
+
+class ScalarUpsertResult:
+    """Structured result from a single scalar upsert operation."""
+
+    __slots__ = (
+        "experimental_result", "action", "fields_updated",
+        "fields_preserved", "old_values", "new_values",
+    )
+
+    def __init__(self, experimental_result: ExperimentalResults, action: str):
+        self.experimental_result = experimental_result
+        self.action: str = action  # "created" | "updated"
+        self.fields_updated: List[str] = []
+        self.fields_preserved: List[str] = []
+        self.old_values: Dict[str, Any] = {}
+        self.new_values: Dict[str, Any] = {}
+
 
 class ScalarResultsService:
     """Service for handling scalar results (solution chemistry) operations."""
@@ -33,6 +60,17 @@ class ScalarResultsService:
             
         Raises:
             ValueError: If experiment not found or scalar data already exists for this time point
+        """
+        upsert = ScalarResultsService.create_scalar_result_ex(db, experiment_id, result_data)
+        return upsert.experimental_result if upsert else None
+
+    @staticmethod
+    def create_scalar_result_ex(
+        db: Session, experiment_id: str, result_data: Dict[str, Any],
+    ) -> ScalarUpsertResult:
+        """
+        Extended version of ``create_scalar_result`` that returns a
+        ``ScalarUpsertResult`` with field-level change tracking.
         """
         # Extract overwrite flag (default False)
         overwrite = result_data.pop('_overwrite', False)
@@ -75,34 +113,39 @@ class ScalarResultsService:
         # Upsert ScalarResults: update if exists; otherwise create new
         if experimental_result.scalar_data:
             scalar_data = experimental_result.scalar_data
-            # Define all updatable fields
-            updatable_fields = [
-                'ferrous_iron_yield', 'gross_ammonium_concentration_mM', 'background_ammonium_concentration_mM',
-                'background_experiment_id',
-                'h2_concentration', 'h2_concentration_unit', 'gas_sampling_volume_ml', 'gas_sampling_pressure_MPa',
-                'final_ph', 'final_nitrate_concentration_mM', 'final_dissolved_oxygen_mg_L', 'co2_partial_pressure_MPa',
-                'final_conductivity_mS_cm', 'final_alkalinity_mg_L', 'sampling_volume_mL', 'measurement_date'
-            ]
-            
+
+            # Snapshot old values before modification
+            old_snapshot = {
+                f: getattr(scalar_data, f) for f in SCALAR_UPDATABLE_FIELDS
+            }
+
             if overwrite:
-                # Overwrite mode: set all fields from result_data, missing fields become None
-                for field in updatable_fields:
+                for field in SCALAR_UPDATABLE_FIELDS:
                     setattr(scalar_data, field, result_data.get(field))
             else:
-                # Partial update mode: only update provided fields (leave others untouched)
-                for field in updatable_fields:
+                for field in SCALAR_UPDATABLE_FIELDS:
                     if field in result_data:
                         setattr(scalar_data, field, result_data.get(field))
-                    # If a field is omitted in the upload row, we leave existing DB value unchanged
+
+            # Build change tracking
+            upsert = ScalarUpsertResult(experimental_result, action="updated")
+            for field in SCALAR_UPDATABLE_FIELDS:
+                old_val = old_snapshot[field]
+                new_val = getattr(scalar_data, field)
+                if old_val != new_val:
+                    upsert.fields_updated.append(field)
+                    upsert.old_values[field] = old_val
+                    upsert.new_values[field] = new_val
+                elif old_val is not None:
+                    upsert.fields_preserved.append(field)
         else:
             # Create scalar data with chemistry measurements
             scalar_data = ScalarResults(
-                result_id=experimental_result.id,  # Link to ExperimentalResults
+                result_id=experimental_result.id,
                 ferrous_iron_yield=result_data.get('ferrous_iron_yield'),
                 gross_ammonium_concentration_mM=result_data.get('gross_ammonium_concentration_mM'),
                 background_ammonium_concentration_mM=result_data.get('background_ammonium_concentration_mM'),
                 background_experiment_id=result_data.get('background_experiment_id'),
-                # Hydrogen fields from bulk upload (optional)
                 h2_concentration=result_data.get('h2_concentration'),
                 h2_concentration_unit=result_data.get('h2_concentration_unit'),
                 gas_sampling_volume_ml=result_data.get('gas_sampling_volume_ml'),
@@ -115,12 +158,38 @@ class ScalarResultsService:
                 final_alkalinity_mg_L=result_data.get('final_alkalinity_mg_L'),
                 sampling_volume_mL=result_data.get('sampling_volume_mL'),
                 measurement_date=result_data.get('measurement_date'),
-                result_entry=experimental_result
+                result_entry=experimental_result,
             )
             db.add(scalar_data)
 
+            upsert = ScalarUpsertResult(experimental_result, action="created")
+            upsert.fields_updated = [
+                f for f in SCALAR_UPDATABLE_FIELDS if result_data.get(f) is not None
+            ]
+            upsert.new_values = {
+                f: result_data[f] for f in upsert.fields_updated
+            }
+
         # Calculate derived values (yields, conversions, etc.)
         scalar_data.calculate_yields()
+
+        # Audit trail: log changes via ModificationsLog
+        if upsert.fields_updated:
+            # Serialize values to JSON-safe types (datetimes -> isoformat strings)
+            def _serialize(val: Any) -> Any:
+                if hasattr(val, 'isoformat'):
+                    return val.isoformat()
+                return val
+
+            log_entry = ModificationsLog(
+                experiment_id=experiment.experiment_id,
+                experiment_fk=experiment.id,
+                modification_type=upsert.action,
+                modified_table="scalar_results",
+                old_values={k: _serialize(v) for k, v in upsert.old_values.items()} or None,
+                new_values={k: _serialize(v) for k, v in upsert.new_values.items()} or None,
+            )
+            db.add(log_entry)
 
         # Touch parent entry and flush IDs if needed
         db.add(experimental_result)
@@ -134,52 +203,101 @@ class ScalarResultsService:
         # Recalculate cumulative times for the entire lineage chain
         update_cumulative_times_for_chain(db, experiment.id)
 
-        return experimental_result
+        return upsert
     
     @staticmethod
-    def bulk_create_scalar_results(db: Session, results_data: List[Dict[str, Any]]) -> Tuple[List[ExperimentalResults], List[str]]:
+    def bulk_create_scalar_results(
+        db: Session,
+        results_data: List[Dict[str, Any]],
+    ) -> Tuple[List[ExperimentalResults], List[str]]:
         """
         Bulk create scalar results with validation and error collection.
-        
-        Args:
-            db: Database session
-            results_data: List of dictionaries containing result data
-            
+
         Returns:
             Tuple of (successful_results, error_messages)
         """
-        results_to_add = []
-        errors = []
-        
+        results, errors, _feedbacks = ScalarResultsService.bulk_create_scalar_results_ex(
+            db, results_data,
+        )
+        return results, errors
+
+    @staticmethod
+    def bulk_create_scalar_results_ex(
+        db: Session,
+        results_data: List[Dict[str, Any]],
+    ) -> Tuple[List[ExperimentalResults], List[str], List[Dict[str, Any]]]:
+        """
+        Extended bulk create that also returns per-row structured feedback.
+
+        Returns:
+            ``(successful_results, error_messages, row_feedbacks)``
+            Each feedback dict has keys: row, experiment_id, time_post_reaction,
+            status, fields_updated, fields_preserved, old_values, new_values,
+            warnings, errors.
+        """
+        results_to_add: List[ExperimentalResults] = []
+        errors: List[str] = []
+        feedbacks: List[Dict[str, Any]] = []
+
         for index, row_data in enumerate(results_data):
+            row_num = index + 2  # Excel row (1-indexed header + 1)
+            fb: Dict[str, Any] = {
+                "row": row_num,
+                "experiment_id": str(row_data.get("experiment_id", "")),
+                "time_post_reaction": row_data.get("time_post_reaction"),
+                "status": "pending",
+                "fields_updated": [],
+                "fields_preserved": [],
+                "old_values": {},
+                "new_values": {},
+                "warnings": [],
+                "errors": [],
+            }
             try:
                 exp_id_raw = row_data.get('experiment_id')
                 if not exp_id_raw:
-                    errors.append(f"Row {index + 2}: Missing experiment_id.")
+                    fb["status"] = "error"
+                    fb["errors"].append("Missing experiment_id.")
+                    errors.append(f"Row {row_num}: Missing experiment_id.")
+                    feedbacks.append(fb)
                     continue
-                
-                # time_post_reaction is now optional - no validation needed
-                    
+
+                # Auto-generate description when not provided
                 if not row_data.get('description'):
-                    errors.append(f"Row {index + 2}: Missing description.")
-                    continue
-                
-                # Create the result
-                new_result = ScalarResultsService.create_scalar_result(
+                    time_val = row_data.get('time_post_reaction')
+                    if time_val is not None:
+                        row_data['description'] = f"Day {time_val} results"
+                    else:
+                        row_data['description'] = "Analysis results"
+
+                upsert = ScalarResultsService.create_scalar_result_ex(
                     db=db,
                     experiment_id=exp_id_raw,
-                    result_data=row_data
+                    result_data=row_data,
                 )
-                
-                if new_result:
-                    results_to_add.append(new_result)
-                    
+
+                if upsert and upsert.experimental_result:
+                    results_to_add.append(upsert.experimental_result)
+                    fb["status"] = upsert.action
+                    fb["fields_updated"] = list(upsert.fields_updated)
+                    fb["fields_preserved"] = list(upsert.fields_preserved)
+                    fb["old_values"] = dict(upsert.old_values)
+                    fb["new_values"] = dict(upsert.new_values)
+                else:
+                    fb["status"] = "skipped"
+
             except ValueError as e:
-                errors.append(f"Row {index + 2}: {str(e)}")
+                fb["status"] = "error"
+                fb["errors"].append(str(e))
+                errors.append(f"Row {row_num}: {str(e)}")
             except Exception as e:
-                errors.append(f"Row {index + 2}: Unexpected error - {str(e)}")
-        
-        return results_to_add, errors
+                fb["status"] = "error"
+                fb["errors"].append(f"Unexpected error - {str(e)}")
+                errors.append(f"Row {row_num}: Unexpected error - {str(e)}")
+
+            feedbacks.append(fb)
+
+        return results_to_add, errors, feedbacks
     
     @staticmethod
     def _find_experiment(db: Session, experiment_id: str) -> Optional[Experiment]:

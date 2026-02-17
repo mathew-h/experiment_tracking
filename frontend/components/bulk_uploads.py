@@ -17,6 +17,15 @@ from backend.services.bulk_uploads.rock_inventory import RockInventoryService
 from backend.services.bulk_uploads.experiment_status import ExperimentStatusService
 from backend.services.scalar_results_service import ScalarResultsService
 from backend.services.icp_service import ICPService
+from backend.services.bulk_uploads.quick_upload import (
+    generate_quick_template,
+    quick_upload_from_excel,
+)
+from backend.services.bulk_uploads.long_format import (
+    generate_long_format_template,
+    long_format_upload_from_excel,
+)
+from backend.services.bulk_uploads.metric_groups import METRIC_GROUPS
 from sqlalchemy.exc import IntegrityError
 
 EXPERIMENTAL_RESULTS_REQUIRED_COLS = {
@@ -918,11 +927,250 @@ def experiments_additives():
     finally:
         db.close()
 
+def _render_quick_upload(group_key: str):
+    """
+    Render the quick-upload UI for a single metric group.
+    Generates a minimal template, handles upload, and displays per-row feedback.
+    """
+    group = METRIC_GROUPS[group_key]
+    st.subheader(f"Quick Upload: {group['label']}")
+
+    st.markdown(f"""
+    Upload a minimal Excel with only **{group['label']}** fields.
+    - Columns marked with **\\*** are required.
+    - Blank cells will **not** overwrite existing data for other metrics.
+    - Only the fields relevant to {group['label']} are included.
+    """)
+
+    # Template download
+    template_bytes = generate_quick_template(group_key)
+    st.download_button(
+        label=f"Download {group['label']} Template",
+        data=template_bytes,
+        file_name=f"quick_upload_{group_key}_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"quick_template_dl_{group_key}",
+    )
+
+    st.markdown("---")
+
+    dry_run = st.checkbox(
+        "Preview changes only (dry run)",
+        value=False,
+        help="Validate the file and show what would change without saving.",
+        key=f"quick_dry_run_{group_key}",
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload your Excel file",
+        type=["xlsx"],
+        key=f"quick_upload_{group_key}",
+    )
+
+    if uploaded_file:
+        db = SessionLocal()
+        try:
+            created, updated, skipped, errors, feedbacks = quick_upload_from_excel(
+                db,
+                uploaded_file.read(),
+                group_key,
+                dry_run=dry_run,
+            )
+            if errors:
+                if not dry_run:
+                    db.rollback()
+                for error in errors:
+                    st.warning(error)
+                if not dry_run:
+                    st.error("Upload failed due to errors. Please correct the file and try again.")
+            elif dry_run:
+                st.info("Dry run complete -- no changes were saved.")
+            else:
+                db.commit()
+                total = created + updated
+                st.success(f"Successfully processed {total} row(s) ({created} created, {updated} updated).")
+
+            # Display per-row feedback
+            if feedbacks:
+                with st.expander("Row-level details", expanded=bool(errors)):
+                    for fb in feedbacks:
+                        icon = {
+                            "created": "✅",
+                            "updated": "🔄",
+                            "skipped": "⏭️",
+                            "error": "❌",
+                            "dry_run": "👁️",
+                            "pending": "⏳",
+                        }.get(fb["status"], "❓")
+                        label = f"Row {fb['row']}: {fb['experiment_id']}"
+                        if fb["time_post_reaction"] is not None:
+                            label += f" @ Day {fb['time_post_reaction']}"
+                        label += f" — {icon} {fb['status']}"
+                        st.markdown(f"**{label}**")
+                        if fb["fields_updated"]:
+                            st.caption(f"  Fields: {', '.join(fb['fields_updated'])}")
+                        if fb["errors"]:
+                            for e in fb["errors"]:
+                                st.caption(f"  Error: {e}")
+                        if fb["warnings"]:
+                            for w in fb["warnings"]:
+                                st.caption(f"  Warning: {w}")
+        except IntegrityError as e:
+            db.rollback()
+            st.error(f"Database error: {e.orig}")
+        except Exception as e:
+            db.rollback()
+            st.error(f"An unexpected error occurred: {e}")
+        finally:
+            db.close()
+
+
+def _render_long_format_upload():
+    """
+    Render the long-format (row-wise) upload UI.
+    Each row is (experiment_id, time, metric_name, value, unit).
+    Multiple rows for the same experiment/time are pivoted and merged.
+    """
+    from backend.services.bulk_uploads.metric_groups import METRIC_REGISTRY
+
+    st.subheader("Long Format Upload (Advanced)")
+    st.markdown("""
+    Upload results as **one row per metric** instead of one row per timepoint.
+    This is useful for LIMS exports, programmatic workflows, or when metrics
+    arrive individually.
+
+    **Columns:** Experiment ID\\*, Time (days)\\*, Metric\\*, Value\\*, Unit
+
+    Multiple rows for the same experiment + time are merged into a single
+    result entry. Blank/missing units default to the metric's standard unit.
+    """)
+
+    # Show recognised metrics
+    with st.expander("Recognised metric names"):
+        metric_rows = []
+        for name, info in sorted(METRIC_REGISTRY.items()):
+            metric_rows.append({
+                "Metric Name": name,
+                "Label": info["label"],
+                "Default Unit": info["default_unit"],
+                "Allowed Units": ", ".join(info["allowed_units"]) or "—",
+            })
+        st.dataframe(pd.DataFrame(metric_rows), use_container_width=True, hide_index=True)
+
+    template_bytes = generate_long_format_template()
+    st.download_button(
+        label="Download Long Format Template",
+        data=template_bytes,
+        file_name="long_format_upload_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="long_format_template_dl",
+    )
+
+    st.markdown("---")
+
+    dry_run = st.checkbox(
+        "Preview changes only (dry run)",
+        value=False,
+        help="Validate the file and show what would change without saving.",
+        key="long_format_dry_run",
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload your Excel file",
+        type=["xlsx"],
+        key="long_format_uploader",
+    )
+
+    if uploaded_file:
+        db = SessionLocal()
+        try:
+            created, updated, skipped, errors, feedbacks = long_format_upload_from_excel(
+                db,
+                uploaded_file.read(),
+                dry_run=dry_run,
+            )
+            if errors:
+                if not dry_run:
+                    db.rollback()
+                for error in errors:
+                    st.warning(error)
+                if not dry_run:
+                    st.error("Upload failed due to errors. Please correct the file and try again.")
+            elif dry_run:
+                st.info("Dry run complete -- no changes were saved.")
+            else:
+                db.commit()
+                total = created + updated
+                st.success(
+                    f"Successfully processed {total} result group(s) "
+                    f"({created} created, {updated} updated)."
+                )
+
+            if feedbacks:
+                with st.expander("Row-level details", expanded=bool(errors)):
+                    for fb in feedbacks:
+                        icon = {
+                            "created": "✅", "updated": "🔄",
+                            "skipped": "⏭️", "error": "❌",
+                            "dry_run": "👁️", "pending": "⏳",
+                        }.get(fb["status"], "❓")
+                        label = f"Row {fb['row']}: {fb['experiment_id']}"
+                        if fb.get("time_post_reaction") is not None:
+                            label += f" @ Day {fb['time_post_reaction']}"
+                        label += f" — {icon} {fb['status']}"
+                        st.markdown(f"**{label}**")
+                        if fb.get("fields_updated"):
+                            st.caption(f"  Fields: {', '.join(fb['fields_updated'])}")
+                        if fb.get("errors"):
+                            for e in fb["errors"]:
+                                st.caption(f"  Error: {e}")
+                        if fb.get("warnings"):
+                            for w in fb["warnings"]:
+                                st.caption(f"  Warning: {w}")
+        except IntegrityError as e:
+            db.rollback()
+            st.error(f"Database error: {e.orig}")
+        except Exception as e:
+            db.rollback()
+            st.error(f"An unexpected error occurred: {e}")
+        finally:
+            db.close()
+
+
 def handle_solution_chemistry_upload():
     """
     Handles the UI and logic for bulk uploading solution chemistry results (NMR-quantified).
+    Supports full-template bulk upload, metric-specific quick uploads, and long-format uploads.
     """
     st.header("Bulk Upload Solution Chemistry Results")
+
+    # Upload mode selector
+    upload_mode_options = ["Full Template (all metrics)"]
+    quick_group_keys = []
+    for key, grp in METRIC_GROUPS.items():
+        upload_mode_options.append(f"Quick Upload: {grp['label']}")
+        quick_group_keys.append(key)
+    upload_mode_options.append("Long Format (advanced)")
+
+    upload_mode = st.radio(
+        "Upload mode:",
+        upload_mode_options,
+        index=0,
+        help="Choose 'Full Template' to upload all metrics at once, a Quick Upload for a specific metric, or Long Format for row-wise metric/value pairs.",
+    )
+
+    # Dispatch to quick upload
+    if upload_mode.startswith("Quick Upload:"):
+        idx = upload_mode_options.index(upload_mode) - 1
+        _render_quick_upload(quick_group_keys[idx])
+        return
+
+    # Dispatch to long-format upload
+    if upload_mode == "Long Format (advanced)":
+        _render_long_format_upload()
+        return
+
+    # --- Full template flow (existing behaviour) ---
     st.markdown("""
     Upload an Excel file for results such as NMR, Hydrogen, pH, Conductivity, Alkalinity. 
     The file should have the following columns found in the template below.
@@ -930,7 +1178,7 @@ def handle_solution_chemistry_upload():
     ***Instructions:***
     - Columns marked with an asterisk (*) are required.
     - If a field is not applicable, leave it blank.
-    - Experiment ID, Description, and Measurement Date are required.
+    - Experiment ID and Time (days) are required. Description is auto-generated if omitted.
    
     ***Download the template below to get started.***
     """)
@@ -1087,28 +1335,76 @@ def handle_solution_chemistry_upload():
     )
 
     st.markdown("---")
-    
-    # Add overwrite checkbox
-    overwrite_all = st.checkbox(
-        "Overwrite all existing result fields",
-        value=False,
-        help="When checked, replaces ALL fields for existing results. Otherwise, only updates provided fields. Per-row 'overwrite' column takes precedence."
-    )
-    
+
+    col_ow, col_dr = st.columns(2)
+    with col_ow:
+        overwrite_all = st.checkbox(
+            "Overwrite all existing result fields",
+            value=False,
+            help="When checked, replaces ALL fields for existing results. Otherwise, only updates provided fields. Per-row 'overwrite' column takes precedence.",
+        )
+    with col_dr:
+        dry_run = st.checkbox(
+            "Preview changes only (dry run)",
+            value=False,
+            help="Validate the file and show what would change without saving.",
+        )
+
     uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
 
     if uploaded_file:
         db = SessionLocal()
         try:
-            created, updated, skipped, errors = ScalarResultsUploadService.bulk_upsert_from_excel(db, uploaded_file.read(), overwrite_all=overwrite_all)
+            created, updated, skipped, errors, feedbacks = (
+                ScalarResultsUploadService.bulk_upsert_from_excel_ex(
+                    db,
+                    uploaded_file.read(),
+                    overwrite_all=overwrite_all,
+                    dry_run=dry_run,
+                )
+            )
             if errors:
-                db.rollback()
+                if not dry_run:
+                    db.rollback()
                 for error in errors:
                     st.warning(error)
-                st.error("Upload failed due to errors. Please correct the file and try again.")
+                if not dry_run:
+                    st.error("Upload failed due to errors. Please correct the file and try again.")
+            elif dry_run:
+                st.info("Dry run complete -- no changes were saved.")
             else:
                 db.commit()
-                st.success(f"Successfully uploaded {created} solution chemistry results.")
+                total = created + updated
+                st.success(
+                    f"Successfully processed {total} solution chemistry result(s) "
+                    f"({created} created, {updated} updated)."
+                )
+
+            # Row-level feedback
+            if feedbacks:
+                with st.expander("Row-level details", expanded=bool(errors)):
+                    for fb in feedbacks:
+                        icon = {
+                            "created": "✅", "updated": "🔄",
+                            "skipped": "⏭️", "error": "❌",
+                            "dry_run": "👁️", "pending": "⏳",
+                        }.get(fb["status"], "❓")
+                        label = f"Row {fb['row']}: {fb['experiment_id']}"
+                        if fb.get("time_post_reaction") is not None:
+                            label += f" @ Day {fb['time_post_reaction']}"
+                        label += f" — {icon} {fb['status']}"
+                        st.markdown(f"**{label}**")
+                        if fb.get("fields_updated"):
+                            st.caption(f"  Fields updated: {', '.join(fb['fields_updated'])}")
+                        if fb.get("fields_preserved"):
+                            st.caption(f"  Fields preserved: {', '.join(fb['fields_preserved'])}")
+                        if fb.get("errors"):
+                            for e in fb["errors"]:
+                                st.caption(f"  Error: {e}")
+                        if fb.get("warnings"):
+                            for w in fb["warnings"]:
+                                st.caption(f"  Warning: {w}")
+
         except IntegrityError as e:
             db.rollback()
             st.error(f"Database error: {e.orig}")
