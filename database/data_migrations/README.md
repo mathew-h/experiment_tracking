@@ -14,10 +14,23 @@ This directory contains data migration scripts for updating existing data in the
 | `establish_experiment_lineage_006` | Link experiment derivations and treatments | After lineage columns added |
 | `recompute_calculated_fields_005` | Recalculate all derived fields | After formula changes |
 | `calculate_grams_per_ton_yield_004` | Calculate g/ton yield for existing data | After adding yield calculation |
+| `backfill_bucket_days_012` | Fill NULL `time_post_reaction_bucket_days` | After deploying bucket normalization fix |
 
 ---
 
 ## Active Migrations
+
+### backfill_bucket_days_012
+**Fill NULL `time_post_reaction_bucket_days` on experimental results**
+
+Populates `time_post_reaction_bucket_days` for rows created via the UI form path before the bucket normalization fix. Also re-evaluates primary result designations for affected experiments.
+
+**Why needed:** The UI `save_results()` path did not set `time_post_reaction_bucket_days`, leaving it NULL. This prevented scalar data (ammonia, hydrogen) from being plotted against the bucket-aligned time axis in the `v_primary_experiment_results` view, while ICP data always plotted correctly.
+
+```bash
+python database/data_migrations/backfill_bucket_days_012.py         # Preview
+python database/data_migrations/backfill_bucket_days_012.py --apply # Apply
+```
 
 ### normalize_pxrf_reading_numbers_008
 **Fix float formatting in pXRF reading numbers**
