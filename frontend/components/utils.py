@@ -626,6 +626,44 @@ def backfill_calculated_fields(db: Session):
         logger.error(f"Error during ChemicalAdditives backfill: {e}", exc_info=True)
         db.rollback()
 
+    # Backfill time_post_reaction_bucket_days for ExperimentalResults rows
+    # that were created before the bucket normalization was added to the UI save path.
+    try:
+        from backend.services.result_merge_utils import normalize_timepoint, ensure_primary_result_for_timepoint
+        rows_missing_bucket = db.query(ExperimentalResults).filter(
+            ExperimentalResults.time_post_reaction_days.isnot(None),
+            ExperimentalResults.time_post_reaction_bucket_days.is_(None),
+        ).all()
+        logger.info(f"Found {len(rows_missing_bucket)} result rows missing time_post_reaction_bucket_days.")
+        bucket_updated_count = 0
+        for row in rows_missing_bucket:
+            row.time_post_reaction_bucket_days = normalize_timepoint(row.time_post_reaction_days)
+            bucket_updated_count += 1
+        if bucket_updated_count > 0:
+            db.flush()
+            # Re-evaluate primary result designations for affected experiments
+            affected_experiments = {row.experiment_fk for row in rows_missing_bucket}
+            for exp_fk in affected_experiments:
+                exp_results = db.query(ExperimentalResults).filter(
+                    ExperimentalResults.experiment_fk == exp_fk
+                ).all()
+                seen_buckets = set()
+                for r in exp_results:
+                    bucket_key = (r.experiment_fk, r.time_post_reaction_bucket_days)
+                    if bucket_key not in seen_buckets:
+                        seen_buckets.add(bucket_key)
+                        ensure_primary_result_for_timepoint(
+                            db=db,
+                            experiment_fk=r.experiment_fk,
+                            time_post_reaction=r.time_post_reaction_days,
+                        )
+            logger.info(f"Backfilled time_post_reaction_bucket_days for {bucket_updated_count} result rows.")
+        else:
+            logger.info("No result rows required bucket_days backfill.")
+    except Exception as e:
+        logger.error(f"Error during bucket_days backfill: {e}", exc_info=True)
+        db.rollback()
+
     # Backfill for ScalarResults
     try:
         # Eagerly load experiment and conditions to avoid N+1 queries

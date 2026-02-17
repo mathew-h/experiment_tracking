@@ -7,7 +7,11 @@ from database import SessionLocal, Experiment, ExperimentalResults, ResultFiles,
 # Import utilities and config
 from frontend.components.utils import log_modification, save_uploaded_file, delete_file_if_exists
 from frontend.config.variable_config import SCALAR_RESULTS_CONFIG# Import the main config mapping
-from backend.services.result_merge_utils import update_cumulative_times_for_chain
+from backend.services.result_merge_utils import (
+    normalize_timepoint,
+    ensure_primary_result_for_timepoint,
+    update_cumulative_times_for_chain,
+)
 
 # TODO: Define a base class or interface for different result types (e.g., Scalar, pXRF, NMR)
 # class BaseResultHandler:
@@ -156,6 +160,7 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
             result = ExperimentalResults(
                 experiment_fk=parent_experiment.id, # Foreign Key
                 time_post_reaction_days=time_post_reaction,
+                time_post_reaction_bucket_days=normalize_timepoint(time_post_reaction),
                 description=result_description # Set the description
             )
             
@@ -219,6 +224,13 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
                             }
                         )
         
+        # Ensure correct primary result designation for this timepoint
+        ensure_primary_result_for_timepoint(
+            db=db,
+            experiment_fk=result.experiment_fk,
+            time_post_reaction=time_post_reaction,
+        )
+
         # Recalculate cumulative times for the entire lineage chain
         update_cumulative_times_for_chain(db, result.experiment_fk)
 
