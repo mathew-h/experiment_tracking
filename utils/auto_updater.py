@@ -66,7 +66,7 @@ STREAMLIT_PORT = 8501
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _run(cmd: list[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], check: bool = True, log_output: bool = True, **kwargs) -> subprocess.CompletedProcess:
     """Run a subprocess command and log it."""
     logger.info(f"Running: {' '.join(cmd)}")
     result = subprocess.run(
@@ -76,7 +76,7 @@ def _run(cmd: list[str], check: bool = True, **kwargs) -> subprocess.CompletedPr
         cwd=str(PROJECT_ROOT),
         **kwargs,
     )
-    if result.stdout.strip():
+    if log_output and result.stdout.strip():
         logger.info(result.stdout.strip())
     if result.stderr.strip():
         logger.warning(result.stderr.strip())
@@ -187,7 +187,7 @@ def _get_current_commit() -> str:
 def _get_commits_behind() -> int:
     """Return the number of commits the local branch is behind the remote."""
     _run(["git", "fetch", REMOTE, BRANCH])
-    result = _run(["git", "rev-list", f"HEAD...{REMOTE}/{BRANCH}", "--count"])
+    result = _run(["git", "rev-list", f"HEAD...{REMOTE}/{BRANCH}", "--count"], log_output=False)
     return int(result.stdout.strip())
 
 

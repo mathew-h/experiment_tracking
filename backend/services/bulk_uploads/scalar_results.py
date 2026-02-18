@@ -263,23 +263,19 @@ class ScalarResultsUploadService:
                 })
             return 0, 0, 0, errors, dry_feedbacks
 
-        # --- Persist ---
-        try:
-            results, svc_errors, svc_feedbacks = (
-                ScalarResultsService.bulk_create_scalar_results_ex(db, cleaned_records)
-            )
-            errors.extend(svc_errors)
-            for fb in svc_feedbacks:
-                if fb["status"] == "created":
-                    created += 1
-                elif fb["status"] == "updated":
-                    updated += 1
-                elif fb["status"] == "skipped":
-                    skipped += 1
-            all_feedbacks = parse_feedbacks + svc_feedbacks
-        except Exception as e:
-            errors.append(str(e))
-            all_feedbacks = parse_feedbacks
+        # --- Persist (row-level savepoints ensure failures are isolated) ---
+        results, svc_errors, svc_feedbacks = (
+            ScalarResultsService.bulk_create_scalar_results_ex(db, cleaned_records)
+        )
+        errors.extend(svc_errors)
+        for fb in svc_feedbacks:
+            if fb["status"] == "created":
+                created += 1
+            elif fb["status"] == "updated":
+                updated += 1
+            elif fb["status"] in ("skipped", "error"):
+                skipped += 1
+        all_feedbacks = parse_feedbacks + svc_feedbacks
 
         return created, updated, skipped, errors, all_feedbacks
 

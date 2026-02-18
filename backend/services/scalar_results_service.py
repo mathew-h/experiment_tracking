@@ -270,26 +270,41 @@ class ScalarResultsService:
                     else:
                         row_data['description'] = "Analysis results"
 
-                upsert = ScalarResultsService.create_scalar_result_ex(
-                    db=db,
-                    experiment_id=exp_id_raw,
-                    result_data=row_data,
-                )
+                # Use a savepoint so a failed row doesn't poison the session
+                savepoint = db.begin_nested()
+                try:
+                    upsert = ScalarResultsService.create_scalar_result_ex(
+                        db=db,
+                        experiment_id=exp_id_raw,
+                        result_data=row_data,
+                    )
 
-                if upsert and upsert.experimental_result:
-                    results_to_add.append(upsert.experimental_result)
-                    fb["status"] = upsert.action
-                    fb["fields_updated"] = list(upsert.fields_updated)
-                    fb["fields_preserved"] = list(upsert.fields_preserved)
-                    fb["old_values"] = dict(upsert.old_values)
-                    fb["new_values"] = dict(upsert.new_values)
-                else:
-                    fb["status"] = "skipped"
+                    if upsert and upsert.experimental_result:
+                        results_to_add.append(upsert.experimental_result)
+                        fb["status"] = upsert.action
+                        fb["fields_updated"] = list(upsert.fields_updated)
+                        fb["fields_preserved"] = list(upsert.fields_preserved)
+                        fb["old_values"] = dict(upsert.old_values)
+                        fb["new_values"] = dict(upsert.new_values)
+                    else:
+                        fb["status"] = "skipped"
+                        savepoint.rollback()
 
-            except ValueError as e:
-                fb["status"] = "error"
-                fb["errors"].append(str(e))
-                errors.append(f"Row {row_num}: {str(e)}")
+                    # Commit the savepoint on success (no-op if already committed)
+                    if savepoint.is_active:
+                        savepoint.commit()
+
+                except ValueError as e:
+                    savepoint.rollback()
+                    fb["status"] = "error"
+                    fb["errors"].append(str(e))
+                    errors.append(f"Row {row_num}: {str(e)}")
+                except Exception as e:
+                    savepoint.rollback()
+                    fb["status"] = "error"
+                    fb["errors"].append(f"Unexpected error - {str(e)}")
+                    errors.append(f"Row {row_num}: Unexpected error - {str(e)}")
+
             except Exception as e:
                 fb["status"] = "error"
                 fb["errors"].append(f"Unexpected error - {str(e)}")
