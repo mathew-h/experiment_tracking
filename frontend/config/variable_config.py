@@ -291,7 +291,7 @@ FIELD_CONFIG = {
         'required': False,
         'help': "Stir speed in rotations per minute (RPM)."
     },
-    'initial_conductivity': {
+    'initial_conductivity_mS_cm': {
         'label': "Initial Conductivity (mS/cm)",
         'type': 'number',
         'default': None,
