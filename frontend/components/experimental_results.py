@@ -99,6 +99,10 @@ def save_results(experiment_id, time_post_reaction, result_description, scalar_d
     Returns:
         bool: True if save was successful, False otherwise.
     """
+    if time_post_reaction is None:
+        st.error("Time post reaction (days) is required.")
+        return False
+
     db = SessionLocal()
     try:
         # --- Get or Create Main ExperimentalResults Entry ---

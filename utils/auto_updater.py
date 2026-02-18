@@ -213,7 +213,7 @@ def create_pre_update_backup() -> str | None:
         backup_path = create_archived_backup()
         if backup_path:
             logger.info(f"Pre-update backup created: {backup_path}")
-            cleanup_old_backups(keep_last_n=10)  # keep a few extra around updates
+            cleanup_old_backups(keep_last_n=30)
             return backup_path
         else:
             logger.info("No SQLite database to back up (non-SQLite URL) – skipping")

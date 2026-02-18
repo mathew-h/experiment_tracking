@@ -144,6 +144,8 @@ def create_experimental_result_row(
     description: str,
 ) -> ExperimentalResults:
     """Create an ExperimentalResults row with normalized bucket metadata."""
+    if time_post_reaction is None:
+        raise ValueError("time_post_reaction is required to create an experimental result row.")
     normalized = normalize_timepoint(time_post_reaction)
     new_result = ExperimentalResults(
         experiment_fk=experiment.id,

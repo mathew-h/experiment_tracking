@@ -354,6 +354,30 @@ class ScalarResultsService:
                 existing.description = description
             return existing
 
+        # Fallback: match a NULL-time row for the same experiment by description.
+        # This handles re-uploads that restore missing time values.
+        if time_post_reaction is not None and description:
+            from backend.services.result_merge_utils import normalize_timepoint as _norm_tp
+            null_time_match = (
+                db.query(ExperimentalResults)
+                .options(
+                    joinedload(ExperimentalResults.scalar_data),
+                    joinedload(ExperimentalResults.icp_data),
+                )
+                .filter(
+                    ExperimentalResults.experiment_fk == experiment.id,
+                    ExperimentalResults.time_post_reaction_days.is_(None),
+                    ExperimentalResults.description == description,
+                )
+                .first()
+            )
+            if null_time_match:
+                null_time_match.time_post_reaction_days = time_post_reaction
+                null_time_match.time_post_reaction_bucket_days = _norm_tp(time_post_reaction)
+                if description:
+                    null_time_match.description = description
+                return null_time_match
+
         # Create new parent result row when no timepoint candidate exists.
         description_text = description
         if not description_text:

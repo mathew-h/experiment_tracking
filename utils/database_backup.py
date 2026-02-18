@@ -66,7 +66,7 @@ def create_archived_backup(backup_dir: str = None) -> str:
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d")
         backup_filename = f"{source_path.stem}_backup_{timestamp}{source_path.suffix}"
         backup_filepath = backup_path / backup_filename
         
@@ -123,7 +123,7 @@ def update_public_db_copy(public_dir: str = None) -> str:
         return None
 
 
-def cleanup_old_backups(backup_dir: str = None, keep_last_n: int = 5):
+def cleanup_old_backups(backup_dir: str = None, keep_last_n: int = 30):
     """
     Remove old backup files from the archive, keeping only the most recent N backups.
     

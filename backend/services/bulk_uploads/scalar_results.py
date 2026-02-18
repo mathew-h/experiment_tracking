@@ -95,11 +95,62 @@ class ScalarResultsUploadService:
         # Remove asterisks used to mark required columns in templates
         df.columns = [str(c).replace('*', '') for c in df.columns]
 
+        # friendly header -> internal name  (from SCALAR_RESULTS_TEMPLATE_HEADERS)
         header_map = {v: k for k, v in SCALAR_RESULTS_TEMPLATE_HEADERS.items()}
+
+        # Legacy / DB-column-name aliases that older templates may use.
+        # Maps *alternative* spelling -> canonical internal field name.
+        LEGACY_ALIASES = {
+            # time field: DB column, raw key, and common human spellings
+            "time_post_reaction":           "time_post_reaction",
+            "time_post_reaction_days":      "time_post_reaction",
+            "time (days)":                  "time_post_reaction",
+            "time(days)":                   "time_post_reaction",
+            "time days":                    "time_post_reaction",
+            # experiment identifier
+            "experiment_id":                "experiment_id",
+            "experimentid":                 "experiment_id",
+            "experiment id":                "experiment_id",
+            # scalar fields – raw DB names (with units)
+            "gross_ammonium_concentration_mm": "gross_ammonium_concentration_mM",
+            "background_ammonium_concentration_mm": "background_ammonium_concentration_mM",
+            "h2_concentration":             "h2_concentration",
+            "gas_sampling_volume_ml":       "gas_sampling_volume_ml",
+            "gas_sampling_pressure_mpa":    "gas_sampling_pressure_MPa",
+            "final_ph":                     "final_ph",
+            "final_nitrate_concentration_mm": "final_nitrate_concentration_mM",
+            "final_dissolved_oxygen_mg_l":  "final_dissolved_oxygen_mg_L",
+            "co2_partial_pressure_mpa":     "co2_partial_pressure_MPa",
+            "final_conductivity_ms_cm":     "final_conductivity_mS_cm",
+            "final_alkalinity_mg_l":        "final_alkalinity_mg_L",
+            "sampling_volume_ml":           "sampling_volume_mL",
+            "ferrous_iron_yield":           "ferrous_iron_yield",
+            "measurement_date":             "measurement_date",
+            "description":                  "description",
+            "overwrite":                    "overwrite",
+            # legacy names without trailing units
+            "gross_ammonium_concentration":      "gross_ammonium_concentration_mM",
+            "background_ammonium_concentration": "background_ammonium_concentration_mM",
+            "gas_sampling_volume":               "gas_sampling_volume_ml",
+            "gas_sampling_pressure":             "gas_sampling_pressure_MPa",
+            "final_nitrate_concentration":       "final_nitrate_concentration_mM",
+            "final_dissolved_oxygen":            "final_dissolved_oxygen_mg_L",
+            "co2_partial_pressure":              "co2_partial_pressure_MPa",
+            "final_conductivity":                "final_conductivity_mS_cm",
+            "final_alkalinity":                  "final_alkalinity_mg_L",
+            "sampling_volume":                   "sampling_volume_mL",
+        }
+        header_map.update(LEGACY_ALIASES)
+
+        # Build a case-insensitive lookup so "Time_Post_Reaction_Days" still
+        # resolves even if the alias table only contains the lowercase form.
+        ci_header_map = {k.lower(): v for k, v in header_map.items()}
+
         new_columns = []
         for col in df.columns:
             col_str = str(col).strip()
-            new_columns.append(header_map.get(col_str, col_str))
+            mapped = header_map.get(col_str) or ci_header_map.get(col_str.lower())
+            new_columns.append(mapped if mapped else col_str)
         df.columns = new_columns
 
         records: List[Dict[str, Any]] = df.to_dict('records')
@@ -117,6 +168,9 @@ class ScalarResultsUploadService:
                 if isinstance(v, str) and v.strip() == '':
                     continue
                 clean[k] = v
+
+            if not clean:
+                continue
 
             if "measurement_date" in clean:
                 parsed_date = ScalarResultsUploadService._parse_measurement_date(

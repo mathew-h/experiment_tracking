@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 scheduler = None
 
 def setup_backup_scheduler(
-    backup_interval_hours=48,
-    cleanup_interval_days=5,
+    backup_interval_hours=24,
+    cleanup_interval_days=1,
     public_copy_interval_hours=12,
-    keep_backups=5
+    keep_backups=30
 ):
     """
     Set up periodic database backups.

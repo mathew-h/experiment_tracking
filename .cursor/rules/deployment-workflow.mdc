@@ -25,7 +25,7 @@ alwaysApply: true
 - All database changes must go through migrations
 
 ## Backup Strategy
-- Lab PC runs automated backups every 48 hours
+- Lab PC runs automated backups every 24 hours, 30-day retention
 - Public database copies are created every 12 hours
 - Backup location is configured via BACKUP_DIRECTORY environment variable
 - Public copy location is configured via PUBLIC_DATABASE environment variable

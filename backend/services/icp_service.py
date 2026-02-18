@@ -446,6 +446,11 @@ class ICPService:
         Raises:
             ValueError: If experiment not found
         """
+        if result_data.get('time_post_reaction') is None:
+            raise ValueError(
+                f"time_post_reaction is required for ICP results (experiment '{experiment_id}')."
+            )
+
         # Find experiment with normalization
         experiment = ICPService._find_experiment(db, experiment_id)
         if not experiment:

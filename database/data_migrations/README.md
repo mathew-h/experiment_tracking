@@ -14,23 +14,27 @@ This directory contains data migration scripts for updating existing data in the
 | `establish_experiment_lineage_006` | Link experiment derivations and treatments | After lineage columns added |
 | `recompute_calculated_fields_005` | Recalculate all derived fields | After formula changes |
 | `calculate_grams_per_ton_yield_004` | Calculate g/ton yield for existing data | After adding yield calculation |
-| `backfill_bucket_days_012` | Fill NULL `time_post_reaction_bucket_days` | After deploying bucket normalization fix |
+---
+
+## Recovery: Re-Upload for NULL `time_post_reaction` Rows
+
+Historical scalar results rows had `time_post_reaction_days` stored as NULL because the original upload paths never enforced non-null time. These are recovered by **re-uploading the original bulk upload `.xlsx` templates** through the Streamlit bulk upload UI.
+
+**What was changed to support this:**
+- Legacy column aliases added to the bulk upload parser (both old raw column names and current friendly headers are accepted)
+- Null-time fallback matching: when re-uploading, the system finds existing NULL-time rows by experiment + description and updates them in-place instead of creating duplicates
+- Guardrails added to `save_results()`, `create_experimental_result_row()`, and ICP service to prevent future NULL-time rows
+
+**Procedure:**
+1. Back up the production database
+2. Deploy the code changes and restart Streamlit
+3. Upload each historical `.xlsx` through the Streamlit bulk upload UI using **Partial Update** mode (overwrite unchecked)
+4. Verify: `sqlite3 experiments.db "SELECT COUNT(*), SUM(CASE WHEN time_post_reaction_days IS NULL THEN 1 ELSE 0 END) FROM experimental_results;"`
+5. Refresh Power BI and confirm time-series plots
 
 ---
 
 ## Active Migrations
-
-### backfill_bucket_days_012
-**Fill NULL `time_post_reaction_bucket_days` on experimental results**
-
-Populates `time_post_reaction_bucket_days` for rows created via the UI form path before the bucket normalization fix. Also re-evaluates primary result designations for affected experiments.
-
-**Why needed:** The UI `save_results()` path did not set `time_post_reaction_bucket_days`, leaving it NULL. This prevented scalar data (ammonia, hydrogen) from being plotted against the bucket-aligned time axis in the `v_primary_experiment_results` view, while ICP data always plotted correctly.
-
-```bash
-python database/data_migrations/backfill_bucket_days_012.py         # Preview
-python database/data_migrations/backfill_bucket_days_012.py --apply # Apply
-```
 
 ### normalize_pxrf_reading_numbers_008
 **Fix float formatting in pXRF reading numbers**
