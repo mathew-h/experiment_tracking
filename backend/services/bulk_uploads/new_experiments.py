@@ -503,6 +503,9 @@ class NewExperimentsUploadService:
                     col.name for col in ExperimentalConditions.__table__.columns
                     if col.name not in reserved and col.name not in blacklist
                 }
+                # Map lowercased column names to actual model column names
+                # (Excel headers are normalized to lowercase, but model columns may have mixed case like water_volume_mL)
+                lower_to_actual = {name.lower(): name for name in updatable_attrs}
                 for idx, row in df_cond.iterrows():
                     try:
                         exp_id = str(row.get('experiment_id') or '').strip()
@@ -561,17 +564,17 @@ class NewExperimentsUploadService:
                         # Then override with user-provided values from Excel row (requirement 2a)
                         updated_fields = []
                         for col_name, val in row.items():
-                            if col_name in updatable_attrs:
+                            actual_attr = lower_to_actual.get(col_name)
+                            if actual_attr:
                                 # Convert empty strings to None
                                 if isinstance(val, str) and val.strip() == '':
-                                    setattr(conditions, col_name, None)
+                                    setattr(conditions, actual_attr, None)
                                 elif not pd.isna(val):  # Only override if value is not NaN/blank
                                     try:
-                                        setattr(conditions, col_name, val)
-                                        updated_fields.append(f"{col_name}={val}")
+                                        setattr(conditions, actual_attr, val)
+                                        updated_fields.append(f"{actual_attr}={val}")
                                     except Exception as set_error:
-                                        # Log the error for debugging
-                                        warnings.append(f"[conditions] Row {idx+2}: Failed to set {col_name}={val}: {set_error}")
+                                        warnings.append(f"[conditions] Row {idx+2}: Failed to set {actual_attr}={val}: {set_error}")
                         # Persist updated fields so later phases see the changed values
                         if updated_fields:
                             db.flush()
