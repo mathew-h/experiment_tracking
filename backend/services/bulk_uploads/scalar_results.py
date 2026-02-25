@@ -118,11 +118,8 @@ class ScalarResultsUploadService:
             "gas_sampling_volume_ml":       "gas_sampling_volume_ml",
             "gas_sampling_pressure_mpa":    "gas_sampling_pressure_MPa",
             "final_ph":                     "final_ph",
-            "final_nitrate_concentration_mm": "final_nitrate_concentration_mM",
             "final_dissolved_oxygen_mg_l":  "final_dissolved_oxygen_mg_L",
-            "co2_partial_pressure_mpa":     "co2_partial_pressure_MPa",
             "final_conductivity_ms_cm":     "final_conductivity_mS_cm",
-            "final_alkalinity_mg_l":        "final_alkalinity_mg_L",
             "sampling_volume_ml":           "sampling_volume_mL",
             "ferrous_iron_yield":           "ferrous_iron_yield",
             "measurement_date":             "measurement_date",
@@ -133,11 +130,8 @@ class ScalarResultsUploadService:
             "background_ammonium_concentration": "background_ammonium_concentration_mM",
             "gas_sampling_volume":               "gas_sampling_volume_ml",
             "gas_sampling_pressure":             "gas_sampling_pressure_MPa",
-            "final_nitrate_concentration":       "final_nitrate_concentration_mM",
             "final_dissolved_oxygen":            "final_dissolved_oxygen_mg_L",
-            "co2_partial_pressure":              "co2_partial_pressure_MPa",
             "final_conductivity":                "final_conductivity_mS_cm",
-            "final_alkalinity":                  "final_alkalinity_mg_L",
             "sampling_volume":                   "sampling_volume_mL",
         }
         header_map.update(LEGACY_ALIASES)

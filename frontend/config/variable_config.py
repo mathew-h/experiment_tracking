@@ -730,13 +730,6 @@ ICP_RESULTS_CONFIG = {
         'required': False,
         'help': "Name of the ICP instrument used for analysis."
     },
-    'analysis_date': {
-        'label': "Analysis Date",
-        'type': 'date',
-        'default': datetime.date.today(),
-        'required': False,
-        'help': "Date when the ICP analysis was performed."
-    },
     'raw_label': {
         'label': "Raw Sample Label",
         'type': 'text',
@@ -860,10 +853,7 @@ SCALAR_RESULTS_TEMPLATE_HEADERS = {
     "gas_sampling_pressure_MPa": "Gas Pressure (MPa)",
     "final_ph": "Final pH",
     "ferrous_iron_yield": "Fe2+ Yield (%)",
-    "final_nitrate_concentration_mM": "Final Nitrate (mM)",
     "final_dissolved_oxygen_mg_L": "Final DO (mg/L)",
-    "co2_partial_pressure_MPa": "CO2 Pressure (MPa)",
     "final_conductivity_mS_cm": "Conductivity (mS/cm)",
-    "final_alkalinity_mg_L": "Alkalinity (mg/L)",
     "overwrite": "Overwrite"
 }

@@ -19,7 +19,7 @@ class ICPService:
     """Service for handling ICP elemental analysis data operations."""
     NON_ELEMENT_FIELDS = {
         'experiment_id', 'time_post_reaction', 'dilution_factor', 'raw_label',
-        'analysis_date', 'instrument_used', 'detection_limits', 'measurement_date', 'sample_date'
+        'instrument_used', 'detection_limits', 'measurement_date', 'sample_date'
     }
 
     @staticmethod
@@ -503,8 +503,6 @@ class ICPService:
             icp_data.all_elements = existing if existing else None
             icp_data.dilution_factor = result_data.get('dilution_factor')
             icp_data.raw_label = result_data.get('raw_label')
-            if 'analysis_date' in result_data:
-                icp_data.analysis_date = result_data.get('analysis_date')
             if 'instrument_used' in result_data:
                 icp_data.instrument_used = result_data.get('instrument_used')
             if 'detection_limits' in result_data:
@@ -572,7 +570,6 @@ class ICPService:
                 # ICP metadata
                 dilution_factor=result_data.get('dilution_factor'),
                 raw_label=result_data.get('raw_label'),
-                analysis_date=result_data.get('analysis_date'),
                 instrument_used=result_data.get('instrument_used'),
                 detection_limits=result_data.get('detection_limits'),
                 measurement_date=result_data.get('measurement_date'),
@@ -704,7 +701,6 @@ class ICPService:
         # Update metadata fields
         metadata_fields = [
             'dilution_factor',
-            'analysis_date',
             'instrument_used',
             'detection_limits',
             'raw_label',

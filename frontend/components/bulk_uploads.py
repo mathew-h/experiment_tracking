@@ -44,7 +44,7 @@ def render_bulk_uploads_page():
         (
             "Select data type",
             "New Experiments",
-            "Solution Chemistry (NMR / Hydrogen / pH / Conductivity / Alkalinity)",
+            "Solution Chemistry (NMR / Hydrogen / pH / Conductivity)",
             "ICP-OES",
             # For EDS Later "Elemental Composition (Titration/ICP)",
             "ActLabs XRD",
@@ -59,7 +59,7 @@ def render_bulk_uploads_page():
 
     if upload_option == "New Experiments":
         handle_new_experiments_upload()
-    elif upload_option == "Solution Chemistry (NMR / Hydrogen / pH / Conductivity / Alkalinity)":
+    elif upload_option == "Solution Chemistry (NMR / Hydrogen / pH / Conductivity)":
         handle_solution_chemistry_upload()
     elif upload_option == "ICP-OES":
         handle_icp_upload()
@@ -1172,7 +1172,7 @@ def handle_solution_chemistry_upload():
 
     # --- Full template flow (existing behaviour) ---
     st.markdown("""
-    Upload an Excel file for results such as NMR, Hydrogen, pH, Conductivity, Alkalinity. 
+    Upload an Excel file for results such as NMR, Hydrogen, pH, Conductivity. 
     The file should have the following columns found in the template below.
 
     ***Instructions:***
@@ -1200,11 +1200,8 @@ def handle_solution_chemistry_upload():
         SCALAR_RESULTS_TEMPLATE_HEADERS["gas_sampling_pressure_MPa"]: [0.1013],
         SCALAR_RESULTS_TEMPLATE_HEADERS["final_ph"]: [7.2],
         SCALAR_RESULTS_TEMPLATE_HEADERS["ferrous_iron_yield"]: [0.0],
-        SCALAR_RESULTS_TEMPLATE_HEADERS["final_nitrate_concentration_mM"]: [0],
         SCALAR_RESULTS_TEMPLATE_HEADERS["final_dissolved_oxygen_mg_L"]: [0],
-        SCALAR_RESULTS_TEMPLATE_HEADERS["co2_partial_pressure_MPa"]: [0],
         SCALAR_RESULTS_TEMPLATE_HEADERS["final_conductivity_mS_cm"]: [1500.0],
-        SCALAR_RESULTS_TEMPLATE_HEADERS["final_alkalinity_mg_L"]: [120.0],
         SCALAR_RESULTS_TEMPLATE_HEADERS["overwrite"]: [False],
 
     }

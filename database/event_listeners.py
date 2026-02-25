@@ -188,7 +188,6 @@ try:
                 icp.id AS icp_result_id,
                 icp.dilution_factor AS icp_dilution_factor,
                 icp.raw_label AS icp_raw_label,
-                icp.analysis_date AS icp_analysis_date,
                 icp.measurement_date AS icp_measurement_date,
                 icp.sample_date AS icp_sample_date,
                 icp.instrument_used AS icp_instrument_used,

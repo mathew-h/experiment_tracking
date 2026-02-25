@@ -164,9 +164,9 @@ def display_single_result(result, experiment_db_id):
                 # Add metadata first
                 if icp_data.dilution_factor:
                     icp_summary["Dilution Factor"] = f"{icp_data.dilution_factor:.1f}x"
-                if icp_data.analysis_date:
-                    date_str = icp_data.analysis_date.strftime("%m/%d/%Y")
-                    icp_summary["Analysis Date"] = date_str
+                if icp_data.measurement_date:
+                    date_str = icp_data.measurement_date.strftime("%m/%d/%Y")
+                    icp_summary["Measurement Date"] = date_str
                 if icp_data.instrument_used:
                     icp_summary["Instrument"] = icp_data.instrument_used
                 

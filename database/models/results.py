@@ -254,9 +254,9 @@ class ICPResults(Base):
     ni = Column(Float, nullable=True)   # Nickel
     cu = Column(Float, nullable=True)   # Copper
     mo = Column(Float, nullable=True)   # Molybdenum
+    ca = Column(Float, nullable=True)   # Calcium
     zn = Column(Float, nullable=True)   # Zinc
     mn = Column(Float, nullable=True)   # Manganese
-    ca = Column(Float, nullable=True)   # Calcium
     cr = Column(Float, nullable=True)   # Chromium
     co = Column(Float, nullable=True)   # Cobalt
     mg = Column(Float, nullable=True)   # Magnesium
@@ -282,7 +282,6 @@ class ICPResults(Base):
     
     # ICP-specific metadata
     dilution_factor = Column(Float, nullable=True)
-    analysis_date = Column(DateTime(timezone=True), nullable=True)
     measurement_date = Column(DateTime(timezone=True), nullable=True)
     sample_date = Column(DateTime(timezone=True), nullable=True)
     instrument_used = Column(String, nullable=True)
