@@ -57,16 +57,23 @@ class XRDPhase(Base):
     sample_id = Column(
         String,
         ForeignKey("sample_info.sample_id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
-    # Optional link to the parent ExternalAnalysis; allows associating normalized rows to a specific analysis
     external_analysis_id = Column(
         Integer,
         ForeignKey("external_analyses.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
+
+    # Experiment-linked XRD (Aeris time-series tracking)
+    experiment_fk = Column(Integer, ForeignKey("experiments.id", ondelete="SET NULL"), nullable=True, index=True)
+    experiment_id = Column(String, nullable=True, index=True)
+    time_post_reaction_days = Column(Integer, nullable=True)
+    measurement_date = Column(DateTime(timezone=True), nullable=True)
+    rwp = Column(Float, nullable=True)
+
     mineral_name = Column(String, index=True, nullable=False)
     amount = Column(Float, nullable=True)
 
@@ -75,8 +82,9 @@ class XRDPhase(Base):
 
     __table_args__ = (
         UniqueConstraint("sample_id", "mineral_name", name="uq_xrd_phase_sample_mineral"),
+        UniqueConstraint("experiment_id", "time_post_reaction_days", "mineral_name", name="uq_xrd_phase_experiment_time_mineral"),
     )
 
-    # Relationships (one-way; no back_populates added to avoid widening changes)
     external_analysis = relationship("ExternalAnalysis")
+    experiment = relationship("Experiment", back_populates="xrd_phases", foreign_keys=[experiment_fk])
 

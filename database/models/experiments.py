@@ -34,6 +34,9 @@ class Experiment(Base):
     # Background experiment relationship (for scalar results that reference this experiment as background)
     scalar_data = relationship("ScalarResults", back_populates="background_experiment", foreign_keys="[ScalarResults.background_experiment_fk]")
     
+    # XRD phase data linked to this experiment (Aeris time-series)
+    xrd_phases = relationship("XRDPhase", back_populates="experiment", foreign_keys="[XRDPhase.experiment_fk]")
+    
     @property
     def description(self):
         """

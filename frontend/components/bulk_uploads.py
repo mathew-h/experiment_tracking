@@ -7,6 +7,7 @@ from frontend.config.variable_config import SCALAR_RESULTS_TEMPLATE_HEADERS
 from backend.services.bulk_uploads.chemical_inventory import ChemicalInventoryService
 from backend.services.bulk_uploads.experiment_additives import ExperimentAdditivesService
 from backend.services.bulk_uploads.actlabs_xrd_report import XRDUploadService
+from backend.services.bulk_uploads.aeris_xrd import AerisXRDUploadService
 from backend.services.bulk_uploads.scalar_results import ScalarResultsUploadService
 from backend.services.bulk_uploads.actlabs_titration_data import (
     ElementalCompositionService,
@@ -46,6 +47,7 @@ def render_bulk_uploads_page():
             "New Experiments",
             "Solution Chemistry (NMR / Hydrogen / pH / Conductivity)",
             "ICP-OES",
+            "Aeris XRD",
             # For EDS Later "Elemental Composition (Titration/ICP)",
             "ActLabs XRD",
             "ActLabs Rock Titration",
@@ -65,6 +67,8 @@ def render_bulk_uploads_page():
         handle_icp_upload()
     elif upload_option == "ActLabs XRD":
         handle_xrd_upload()
+    elif upload_option == "Aeris XRD":
+        handle_aeris_xrd_upload()
     # elif upload_option == "Elemental Composition (Titration/ICP)":
     #     handle_elemental_composition_upload()
     elif upload_option == "ActLabs Rock Titration":
@@ -146,6 +150,71 @@ def handle_xrd_upload():
     except Exception as e:
         db.rollback()
         st.error(f"Unexpected error during XRD upload: {e}")
+    finally:
+        db.close()
+
+
+def handle_aeris_xrd_upload():
+    """
+    Bulk upload of Aeris XRD time-series mineral-phase data linked to experiments.
+    Excel format: Scan Number, Sample ID (DATE_ExperimentID-dDAYS_SCAN), Rwp,
+    then one column per mineral phase with percentage values.
+    """
+    st.header("Bulk Upload Aeris XRD (Post-Reaction Mineralogy)")
+    st.markdown(
+        """
+        Upload an Excel file from the Aeris XRD instrument to track
+        post-reaction rock mineral-phase transformations over time.
+
+        **Expected columns:**
+        - `Scan Number` (informational, not stored)
+        - `Sample ID` — formatted as `DATE_ExperimentID-dDAYS_SCAN`
+          (e.g. `20260218_HPHT070-d19_02`)
+        - `Rwp` — Rietveld refinement quality metric
+        - One column per mineral phase with percentage values
+          (e.g. `Magnetite [%]`, `Fayalite [%]`)
+
+        **Sample ID breakdown:**
+        | Part | Example | Meaning |
+        |------|---------|---------|
+        | DATE | 20260218 | Measurement date (YYYYMMDD) |
+        | ExperimentID | HPHT_001 | Experiment identifier (delimiters optional) |
+        | dDAYS | d30 | 30 days post-reaction |
+        | SCAN | 01 | Instrument scan number (ignored) |
+
+        The experiment must already exist in the database. The experiment's
+        sample/rock will be linked automatically.
+        """
+    )
+
+    uploaded = st.file_uploader(
+        "Upload Aeris XRD data (xlsx)", type=["xlsx"], key="aeris_xrd_upload"
+    )
+
+    if not uploaded:
+        return
+
+    db = SessionLocal()
+    try:
+        created, updated, skipped, errors = (
+            AerisXRDUploadService.bulk_upsert_from_excel(db, uploaded.read())
+        )
+        if errors:
+            db.rollback()
+            st.error("Upload failed; no changes were applied.")
+            for msg in errors[:50]:
+                st.error(msg)
+            if len(errors) > 50:
+                st.info(f"...and {len(errors) - 50} more errors")
+            return
+        db.commit()
+        st.success(
+            f"Aeris XRD phases created: {created}, updated: {updated}, "
+            f"skipped rows: {skipped}."
+        )
+    except Exception as e:
+        db.rollback()
+        st.error(f"Unexpected error during Aeris XRD upload: {e}")
     finally:
         db.close()
 
