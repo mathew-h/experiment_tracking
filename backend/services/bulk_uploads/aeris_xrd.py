@@ -156,7 +156,6 @@ class AerisXRDUploadService:
 
             exp_id_db = experiment.experiment_id
             exp_fk = experiment.id
-            sample_id = experiment.sample_id  # may be None
 
             # Parse Rwp
             rwp_val: Optional[float] = None
@@ -198,14 +197,12 @@ class AerisXRDUploadService:
                     phase.amount = amount_val
                     phase.rwp = rwp_val
                     phase.measurement_date = measurement_date
-                    phase.sample_id = sample_id
                     phase.experiment_fk = exp_fk
                     updated += 1
                 else:
                     phase = XRDPhase(
                         experiment_fk=exp_fk,
                         experiment_id=exp_id_db,
-                        sample_id=sample_id,
                         time_post_reaction_days=days,
                         measurement_date=measurement_date,
                         rwp=rwp_val,

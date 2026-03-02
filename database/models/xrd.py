@@ -81,7 +81,6 @@ class XRDPhase(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("sample_id", "mineral_name", name="uq_xrd_phase_sample_mineral"),
         UniqueConstraint("experiment_id", "time_post_reaction_days", "mineral_name", name="uq_xrd_phase_experiment_time_mineral"),
     )
 
