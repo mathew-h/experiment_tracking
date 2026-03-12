@@ -1,0 +1,22 @@
+---
+description: Firebase authentication — follow docs and avoid breaking domain restriction, approval flow, or token handling
+globs:
+  - "auth/**/*.py"
+  - "frontend/components/auth_components.py"
+  - "scripts/manage_users.py"
+  - "app.py"
+alwaysApply: false
+---
+
+# Firebase Authentication
+
+When changing authentication or user management code, **read and follow [docs/AUTH.md](docs/AUTH.md)**. That document is the source of truth for:
+
+- Domain restriction to `@addisenergy.com` (do not remove or relax).
+- Approval flow: registration creates a Firestore pending request; only approved users (custom claim `approved`) can log in.
+- Where credentials come from (Streamlit secrets vs env vars); do not hardcode keys.
+- Single Firebase Admin SDK initialization; use the existing `auth` module.
+- Token handling: ID token in session, verified via `auth.firebase_config.verify_token()` on protected routes.
+- Firestore `pending_users` collection schema and approval/reject behavior.
+
+**Key paths:** `auth/firebase_config.py`, `auth/user_management.py`, `frontend/components/auth_components.py`, `scripts/manage_users.py`.

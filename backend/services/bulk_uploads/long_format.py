@@ -246,10 +246,9 @@ def long_format_upload_from_excel(
         groups[key][db_field] = float(value)
         group_source_rows[key].append(row_num)
 
-        # For h2_concentration, also set unit
+        # H2 concentration is always stored in ppm
         if db_field == "h2_concentration":
-            resolved_unit = unit if unit else info.get("default_unit", "ppm")
-            groups[key]["h2_concentration_unit"] = resolved_unit
+            groups[key]["h2_concentration_unit"] = "ppm"
 
     # If we have parse-level errors and no valid groups, return early
     if errors and not groups:

@@ -21,7 +21,6 @@ METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "label": "Hydrogen (H2)",
         "required_fields": {"experiment_id", "time_post_reaction", "h2_concentration"},
         "optional_fields": {
-            "h2_concentration_unit",
             "gas_sampling_volume_ml",
             "gas_sampling_pressure_MPa",
             "measurement_date",
@@ -31,7 +30,6 @@ METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
             ("experiment_id", "Experiment ID*"),
             ("time_post_reaction", "Time (days)*"),
             ("h2_concentration", "H2 Conc (ppm)*"),
-            ("h2_concentration_unit", "H2 Unit"),
             ("gas_sampling_volume_ml", "Gas Sample Vol (mL)"),
             ("gas_sampling_pressure_MPa", "Gas Pressure (MPa)"),
             ("measurement_date", "Date"),
@@ -40,7 +38,6 @@ METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "defaults": {"h2_concentration_unit": "ppm"},
         "validations": {
             "h2_concentration": {"min": 0, "type": "numeric"},
-            "h2_concentration_unit": {"allowed": ["ppm", "%"]},
             "gas_sampling_volume_ml": {"min": 0, "type": "numeric"},
             "gas_sampling_pressure_MPa": {"min": 0, "type": "numeric"},
         },
@@ -112,7 +109,7 @@ METRIC_REGISTRY: Dict[str, Dict[str, Any]] = {
         "db_field": "h2_concentration",
         "label": "H2 Concentration",
         "default_unit": "ppm",
-        "allowed_units": ["ppm", "%"],
+        "allowed_units": ["ppm"],
         "type": "numeric",
         "min": 0,
     },

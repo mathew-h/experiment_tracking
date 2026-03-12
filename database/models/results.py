@@ -72,8 +72,8 @@ class ScalarResults(Base):
     measurement_date = Column(DateTime(timezone=True), nullable=True)
 
     # Hydrogen tracking inputs
-    h2_concentration = Column(Float, nullable=True)  # % (vol) or ppm
-    h2_concentration_unit = Column(String, nullable=True)  # '%' or 'ppm'
+    h2_concentration = Column(Float, nullable=True)  # ppm (vol/vol)
+    h2_concentration_unit = Column(String, nullable=True)  # always 'ppm'
     gas_sampling_volume_ml = Column(Float, nullable=True)  # mL at sampling conditions
     gas_sampling_pressure_MPa = Column(Float, nullable=True)  # MPa at sampling conditions
 
@@ -170,77 +170,52 @@ class ScalarResults(Base):
     def validate_h2_unit(self, key, value):
         if value is None:
             return value
-        allowed = ['%', 'ppm']
-        if value not in allowed:
-            raise ValueError(f"h2_concentration_unit must be one of {allowed}")
+        if value != 'ppm':
+            raise ValueError("h2_concentration_unit must be 'ppm'")
         return value
 
     def calculate_hydrogen(self):
         """
-        Calculate hydrogen amount from gas concentration and sample volume using PV = nRT.
+        Calculate hydrogen amount from gas-phase ppm concentration using PV = nRT.
+
         Assumptions:
-        - Temperature fixed at 25°C (298.15 K)
-        - Pressure must be provided by user in MPa; converted to atm
-        - Volume provided in mL; converted to L
+        - Temperature fixed at 20 °C (293.15 K)
+        - Concentration always in ppm (vol/vol)
+        - Pressure provided in MPa; converted to atm internally
+        - Volume provided in mL; converted to L internally
+
         Stores:
-        - h2_micromoles as micromoles (μmol)
-        - h2_mass_ug as micrograms (μg)
+        - h2_micromoles  (μmol)
+        - h2_mass_ug     (μg)
         """
-        # Validate required inputs
         if (
-            self.h2_concentration is None or
-            self.h2_concentration_unit is None or
-            self.gas_sampling_volume_ml is None or self.gas_sampling_volume_ml <= 0 or
-            self.gas_sampling_pressure_MPa is None or self.gas_sampling_pressure_MPa <= 0
+            self.h2_concentration is None
+            or self.gas_sampling_volume_ml is None or self.gas_sampling_volume_ml <= 0
+            or self.gas_sampling_pressure_MPa is None or self.gas_sampling_pressure_MPa <= 0
         ):
             self.h2_micromoles = None
             self.h2_mass_ug = None
             return
 
-        # Constants
-        R = 0.082057  # L·atm/(mol·K)
-        T_K = 298.15  # 25°C fixed
-        P_atm = self.gas_sampling_pressure_MPa * 9.86923  # MPa -> atm
+        R = 0.082057          # L·atm/(mol·K)
+        T_K = 293.15          # 20 °C
+        H2_MOLAR_MASS = 2.01588  # g/mol
 
-        if P_atm <= 0:
-            self.h2_micromoles = None
-            self.h2_mass_ug = None
-            return
+        P_atm = self.gas_sampling_pressure_MPa * 9.86923  # MPa → atm
+        V_L = self.gas_sampling_volume_ml / 1000.0         # mL → L
 
-        V_L = self.gas_sampling_volume_ml / 1000.0
+        total_moles = (P_atm * V_L) / (R * T_K)
+        fraction = self.h2_concentration / 1_000_000.0     # ppm → mole fraction
 
-        # Total moles of gas in the sample
-        try:
-            total_moles = (P_atm * V_L) / (R * T_K)
-        except ZeroDivisionError:
-            self.h2_micromoles = None
-            self.h2_mass_ug = None
-            return
-
-        # Convert concentration to fraction
-        unit = (self.h2_concentration_unit or '').lower()
-        if unit == '%':
-            fraction = self.h2_concentration / 100.0
-        elif unit == 'ppm':
-            fraction = self.h2_concentration / 1_000_000.0
-        else:
-            self.h2_micromoles = None
-            self.h2_mass_ug = None
-            return
-
-        if fraction is None or fraction < 0:
+        if fraction < 0:
             self.h2_micromoles = None
             self.h2_mass_ug = None
             return
 
         h2_moles = total_moles * fraction
 
-        # Store in microunits per requirements
-        h2_micromoles = h2_moles * 1_000_000.0
-        h2_micrograms = h2_moles * 2.01588 * 1_000_000.0  # g/mol * mol -> g, then g to μg
-
-        self.h2_micromoles = h2_micromoles
-        self.h2_mass_ug = h2_micrograms
+        self.h2_micromoles = h2_moles * 1_000_000.0
+        self.h2_mass_ug = h2_moles * H2_MOLAR_MASS * 1_000_000.0
 
 class ICPResults(Base):
     __tablename__ = "icp_results"

@@ -6,10 +6,10 @@ from database.models import Experiment, ExperimentalConditions, ExperimentStatus
 
 def render_reactor_dashboard():
     """
-    Render the reactor dashboard showing all 7 reactors with their currently assigned ONGOING experiments.
+    Render the reactor dashboard showing all 9 reactors with their currently assigned ONGOING experiments.
     
     Displays a table with columns:
-    - Reactor Number (1-7)
+    - Reactor Number (1-9)
     - Experiment ID
     - Sample ID
     - Description
@@ -58,9 +58,9 @@ def render_reactor_dashboard():
                     'date': exp.date.strftime('%Y-%m-%d') if exp.date else ''
                 }
         
-        # Build DataFrame with all 7 reactors
+        # Build DataFrame with all 9 reactors
         reactor_data = []
-        for reactor_num in range(1, 8):  # Reactors 1-7
+        for reactor_num in range(1, 10):  # Reactors 1-9
             if reactor_num in reactor_map:
                 # Reactor has an assigned ONGOING experiment
                 exp_data = reactor_map[reactor_num]
@@ -206,7 +206,7 @@ def render_reactor_dashboard():
         
         # Display summary information
         assigned_count = sum(1 for r in reactor_data if r['Exp ID'])
-        st.markdown(f"**{assigned_count} of 7 reactors currently assigned**")
+        st.markdown(f"**{assigned_count} of 9 reactors currently assigned**")
         
     except Exception as e:
         st.error(f"Error loading reactor dashboard: {e}")

@@ -163,13 +163,13 @@ def handle_aeris_xrd_upload():
     st.header("Bulk Upload Aeris XRD (Post-Reaction Mineralogy)")
     st.markdown(
         """
-        Upload an Excel file from the Aeris XRD instrument to track
+        Upload an Excel file from the refined XRD data to track
         post-reaction rock mineral-phase transformations over time.
 
         **Expected columns:**
         - `Scan Number` (informational, not stored)
         - `Sample ID` — formatted as `DATE_ExperimentID-dDAYS_SCAN`
-          (e.g. `20260218_HPHT070-d19_02`)
+          (e.g. `20260218_HPHT_001-d30_01`)
         - `Rwp` — Rietveld refinement quality metric
         - One column per mineral phase with percentage values
           (e.g. `Magnetite [%]`, `Fayalite [%]`)
@@ -188,7 +188,7 @@ def handle_aeris_xrd_upload():
     )
 
     uploaded = st.file_uploader(
-        "Upload Aeris XRD data (xlsx)", type=["xlsx"], key="aeris_xrd_upload"
+        "Upload refined Aeris XRD data (xlsx)", type=["xlsx"], key="aeris_xrd_upload"
     )
 
     if not uploaded:

@@ -350,6 +350,9 @@ class ICPService:
                         element = element_label.split()[0]  # Get first part before space
                         concentration = row['Corrected_Concentration']
                         concentration_val = float(concentration) if pd.notna(concentration) else 0.0
+                        # If concentration is less than 0, set it to 0
+                        if concentration_val < 0:
+                            concentration_val = 0.0
                         element_key = ICPService._standardize_element_name(element)
                         elemental_data[element_key] = concentration_val
                     
