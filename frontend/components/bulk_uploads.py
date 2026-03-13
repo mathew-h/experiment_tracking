@@ -187,6 +187,17 @@ def handle_aeris_xrd_upload():
         """
     )
 
+    overwrite_existing = st.checkbox(
+        "Overwrite existing Aeris XRD entries",
+        value=True,
+        help=(
+            "When checked, existing XRDPhase entries for the same experiment, day, "
+            "and mineral will be updated with the new values. When unchecked, "
+            "existing entries are left unchanged and counted as skipped."
+        ),
+        key="aeris_xrd_overwrite_existing",
+    )
+
     uploaded = st.file_uploader(
         "Upload refined Aeris XRD data (xlsx)", type=["xlsx"], key="aeris_xrd_upload"
     )
@@ -197,7 +208,11 @@ def handle_aeris_xrd_upload():
     db = SessionLocal()
     try:
         created, updated, skipped, errors = (
-            AerisXRDUploadService.bulk_upsert_from_excel(db, uploaded.read())
+            AerisXRDUploadService.bulk_upsert_from_excel(
+                db,
+                uploaded.read(),
+                overwrite_existing=overwrite_existing,
+            )
         )
         if errors:
             db.rollback()

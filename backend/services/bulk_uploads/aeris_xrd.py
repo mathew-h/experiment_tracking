@@ -78,13 +78,20 @@ class AerisXRDUploadService:
 
     @staticmethod
     def bulk_upsert_from_excel(
-        db: Session, file_bytes: bytes
+        db: Session,
+        file_bytes: bytes,
+        overwrite_existing: bool = True,
     ) -> Tuple[int, int, int, List[str]]:
         """
         Parse an Aeris XRD Excel file and upsert ``XRDPhase`` rows keyed by
         (experiment_id, time_post_reaction_days, mineral_name).
 
         Returns (created, updated, skipped, errors).
+
+        ``overwrite_existing`` controls behaviour when a matching phase already
+        exists for (experiment_id, days, mineral_name):
+        - If True (default): the existing row is updated in place.
+        - If False: the existing row is left unchanged and counted as skipped.
         """
         created = updated = skipped = 0
         errors: List[str] = []
@@ -194,6 +201,9 @@ class AerisXRDUploadService:
                 )
 
                 if phase:
+                    if not overwrite_existing:
+                        skipped += 1
+                        continue
                     phase.amount = amount_val
                     phase.rwp = rwp_val
                     phase.measurement_date = measurement_date
