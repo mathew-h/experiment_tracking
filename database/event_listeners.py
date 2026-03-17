@@ -1,6 +1,6 @@
 from sqlalchemy import event, text
 from sqlalchemy.orm import Session, attributes
-from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive, ElementalAnalysis, Experiment
+from .models import ExternalAnalysis, SampleInfo, ChemicalAdditive, ElementalAnalysis, Experiment, ExperimentalConditions
 from .database import engine
 from .lineage_utils import update_experiment_lineage, update_orphaned_derivations
 
@@ -301,4 +301,25 @@ def update_experiment_lineage_on_flush(session, flush_context, instances):
     # After processing new experiments, update any orphaned derivations
     # This handles the case where a derivation was created before its base
     for base_exp_id in new_base_experiments:
-        update_orphaned_derivations(session, base_exp_id) 
+        update_orphaned_derivations(session, base_exp_id)
+
+
+@event.listens_for(ExperimentalConditions, 'before_insert')
+@event.listens_for(ExperimentalConditions, 'before_update')
+def auto_assign_experiment_type(mapper, connection, target):
+    """
+    Automatically infer and set experiment_type from the experiment_id prefix
+    when a condition row is inserted or when the experiment_id has changed.
+
+    Only overwrites experiment_type when it is not yet populated or when
+    the experiment_id changes (making the stored value stale).
+    """
+    from backend.services.experiment_type_service import infer_experiment_type_value
+
+    if not target.experiment_id:
+        return
+
+    id_changed = attributes.get_history(target, 'experiment_id').has_changes()
+
+    if target.experiment_type is None or id_changed:
+        target.experiment_type = infer_experiment_type_value(target.experiment_id)
