@@ -36,6 +36,22 @@ Historical scalar results rows had `time_post_reaction_days` stored as NULL beca
 
 ## Active Migrations
 
+### backfill_cumulative_times_012
+**Fix cumulative_time_post_reaction_days across all lineage chains**
+
+Two bugs left historical experiments with incorrect cumulative times:
+1. `parent_experiment_fk` was NULL on some derivations (e.g. `SERUM_JW_051-3`), causing `get_ancestor_time_offset` to return 0 and cumulative time to equal raw time.
+2. Root experiments with `base_experiment_id = NULL` were silently skipped by `update_cumulative_times_for_chain`.
+
+This script does a two-pass fix for the entire database:
+- **Pass 1:** Re-verifies `base_experiment_id` and `parent_experiment_fk` for every experiment using `update_experiment_lineage`.
+- **Pass 2:** Recomputes `cumulative_time_post_reaction_days` for every result row using the corrected lineage.
+
+```bash
+python database/data_migrations/backfill_cumulative_times_012.py         # Dry run (preview)
+python database/data_migrations/backfill_cumulative_times_012.py --apply # Apply
+```
+
 ### normalize_pxrf_reading_numbers_008
 **Fix float formatting in pXRF reading numbers**
 
