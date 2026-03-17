@@ -857,3 +857,28 @@ SCALAR_RESULTS_TEMPLATE_HEADERS = {
     "final_conductivity_mS_cm": "Conductivity (mS/cm)",
     "overwrite": "Overwrite"
 }
+
+# ---------------------------------------------------------------------------
+# Timepoint Brine Modifications bulk upload
+# ---------------------------------------------------------------------------
+# Required columns that must be present in every uploaded file.
+TIMEPOINT_MODIFICATIONS_REQUIRED_COLUMNS = [
+    "experiment_id",
+    "time_point",
+    "experiment_modification",
+]
+
+# Optional columns that, when present, adjust matching or write behaviour.
+TIMEPOINT_MODIFICATIONS_OPTIONAL_COLUMNS = [
+    "timepoint_type",       # "actual_day" | "bucket_day" (default: bucket_day tolerant match)
+    "overwrite_existing",   # "true" | "false" — per-row overwrite control
+]
+
+# Human-readable header labels used when generating the Excel template.
+TIMEPOINT_MODIFICATIONS_TEMPLATE_HEADERS = {
+    "experiment_id":          "Experiment ID *",
+    "time_point":             "Time Point (days) *",
+    "experiment_modification": "Experiment Modification *",
+    "timepoint_type":         "Timepoint Type (actual_day / bucket_day)",
+    "overwrite_existing":     "Overwrite Existing (true / false)",
+}

@@ -107,6 +107,7 @@ try:
             """
         ))
         conn.execute(text("DROP VIEW IF EXISTS v_primary_experiment_results;"))
+        conn.execute(text("DROP VIEW IF EXISTS v_experimental_results_with_modifications;"))
         conn.execute(text(
             """
             CREATE VIEW v_primary_experiment_results AS
@@ -119,6 +120,8 @@ try:
                     er.time_post_reaction_bucket_days,
                     er.cumulative_time_post_reaction_days,
                     er.description,
+                    er.brine_modification_description,
+                    er.has_brine_modification,
                     er.created_at,
                     er.is_primary_timepoint_result
                 FROM experimental_results er
@@ -156,6 +159,8 @@ try:
                 b.time_post_reaction_bucket_days AS time_post_reaction_bucket_days,
                 b.cumulative_time_post_reaction_days AS cumulative_time_post_reaction_days,
                 b.description AS result_description,
+                b.brine_modification_description AS brine_modification_description,
+                b.has_brine_modification AS has_brine_modification,
                 b.created_at AS result_created_at,
 
                 -- Scalar Results (resolved by experiment + time bucket)
@@ -183,6 +188,7 @@ try:
                 sr.h2_micromoles AS h2_micromoles,
                 sr.h2_mass_ug AS h2_mass_ug,
                 sr.h2_grams_per_ton_yield AS h2_grams_per_ton_yield,
+                CASE WHEN sr.h2_concentration IS NOT NULL THEN 1 ELSE 0 END AS has_h2_measurement,
 
                 -- ICP Results (resolved by experiment + time bucket)
                 icp.id AS icp_result_id,
@@ -231,6 +237,23 @@ try:
                 ON icp.experiment_fk = b.experiment_fk
                AND icp.bucket_key = b.bucket_key
                AND icp.rn = 1;
+            """
+        ))
+        conn.execute(text(
+            """
+            CREATE VIEW v_experimental_results_with_modifications AS
+            SELECT
+                e.experiment_id                        AS experiment_id,
+                er.id                                  AS result_id,
+                er.experiment_fk                       AS experiment_fk,
+                er.time_post_reaction_days             AS time_post_reaction_days,
+                er.time_post_reaction_bucket_days      AS time_post_reaction_bucket_days,
+                er.has_brine_modification              AS has_brine_modification,
+                er.brine_modification_description      AS brine_modification_description,
+                er.created_at                          AS result_created_at,
+                er.updated_at                          AS result_updated_at
+            FROM experimental_results er
+            JOIN experiments e ON e.id = er.experiment_fk;
             """
         ))
         conn.commit()

@@ -24,9 +24,20 @@ class ExperimentalResults(Base):
     time_post_reaction_bucket_days = Column(Float, nullable=True, index=True) # Normalized bucket for tolerant matching
     cumulative_time_post_reaction_days = Column(Float, nullable=True, index=True) # Cumulative time across lineage chain (days)
     is_primary_timepoint_result = Column(Boolean, nullable=False, default=True, server_default=text("1"), index=True)
-    description = Column(Text, nullable=False) 
+    description = Column(Text, nullable=False)
+
+    # Brine modification tracking — operational metadata about what happened at this timepoint
+    brine_modification_description = Column(Text, nullable=True)
+    has_brine_modification = Column(Boolean, nullable=False, default=False, server_default=text("0"), index=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    @validates('brine_modification_description')
+    def sync_brine_flag(self, key, value):
+        """Auto-sync has_brine_modification whenever brine_modification_description is set."""
+        self.has_brine_modification = bool(value and str(value).strip())
+        return value
 
     # Relationship
     experiment = relationship("Experiment", back_populates="results", foreign_keys=[experiment_fk])
@@ -173,6 +184,11 @@ class ScalarResults(Base):
         if value != 'ppm':
             raise ValueError("h2_concentration_unit must be 'ppm'")
         return value
+
+    @property
+    def has_h2_measurement(self) -> bool:
+        """True when a primary H2 concentration value has been recorded for this result."""
+        return self.h2_concentration is not None
 
     def calculate_hydrogen(self):
         """

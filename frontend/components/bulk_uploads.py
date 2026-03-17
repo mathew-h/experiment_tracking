@@ -16,6 +16,7 @@ from backend.services.bulk_uploads.actlabs_titration_data import (
 from backend.services.bulk_uploads.pxrf_data import PXRFUploadService
 from backend.services.bulk_uploads.rock_inventory import RockInventoryService
 from backend.services.bulk_uploads.experiment_status import ExperimentStatusService
+from backend.services.bulk_uploads.timepoint_modifications import TimepointModificationsUploadService
 from backend.services.scalar_results_service import ScalarResultsService
 from backend.services.icp_service import ICPService
 from backend.services.bulk_uploads.quick_upload import (
@@ -55,7 +56,8 @@ def render_bulk_uploads_page():
             "pXRF Readings",
             "Chemical Inventory (Compounds)",
             "Experiment Additives (Compounds per Experiment)",
-            "Update Experiment Status (ONGOING/COMPLETED)"
+            "Update Experiment Status (ONGOING/COMPLETED)",
+            "Timepoint Brine Modifications",
         )
     )
 
@@ -83,6 +85,8 @@ def render_bulk_uploads_page():
         experiments_additives()
     elif upload_option == "Update Experiment Status (ONGOING/COMPLETED)":
         handle_experiment_status_update()
+    elif upload_option == "Timepoint Brine Modifications":
+        handle_timepoint_modifications_upload()
 
 
 def handle_xrd_upload():
@@ -1863,3 +1867,207 @@ def handle_experiment_status_update():
         st.error(f"An unexpected error occurred: {e}")
     finally:
         db.close()
+
+
+def handle_timepoint_modifications_upload():
+    """
+    Bulk-populate brine_modification_description on existing experimental_results rows.
+
+    Expected columns in the uploaded CSV / Excel file:
+        experiment_id, time_point, experiment_modification
+    Optional columns:
+        timepoint_type (actual_day | bucket_day), overwrite_existing (true | false)
+
+    Workflow:
+        1. Upload file → dry-run preview
+        2. Review matched / unmatched / would-overwrite rows
+        3. Confirm to commit
+    """
+    st.subheader("Timepoint Brine Modifications")
+    st.markdown(
+        "Upload a CSV or Excel file to populate the **brine modification description** "
+        "for existing timepoint rows. Modifications describe operational interventions "
+        "at a timepoint (e.g. adding water, acid, catalyst, gas-related liquid)."
+    )
+
+    # --- Template download ---
+    col_dl, _ = st.columns([2, 5])
+    with col_dl:
+        try:
+            tmpl_bytes = TimepointModificationsUploadService.generate_template_bytes()
+            st.download_button(
+                label="Download Template (.xlsx)",
+                data=tmpl_bytes,
+                file_name="timepoint_modifications_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except Exception as exc:
+            st.warning(f"Could not generate template: {exc}")
+
+    st.markdown("---")
+
+    # --- Global overwrite toggle ---
+    overwrite_all = st.checkbox(
+        "Overwrite existing modification descriptions (global)",
+        value=False,
+        help=(
+            "When enabled, existing brine_modification_description values are replaced. "
+            "Can also be set per-row using the 'overwrite_existing' column."
+        ),
+    )
+
+    # --- File uploader ---
+    uploaded_file = st.file_uploader(
+        "Upload CSV or Excel file",
+        type=["csv", "xlsx"],
+        key="timepoint_mod_upload",
+    )
+
+    if uploaded_file is None:
+        st.info(
+            "Upload a file to begin. Required columns: "
+            "`experiment_id`, `time_point`, `experiment_modification`."
+        )
+        return
+
+    file_bytes = uploaded_file.read()
+    filename = uploaded_file.name
+
+    # --- Dry-run preview ---
+    st.markdown("### Preview (dry run)")
+
+    db = SessionLocal()
+    try:
+        updated_dry, skipped_dry, dry_errors, dry_feedbacks = (
+            TimepointModificationsUploadService.bulk_upsert_from_file(
+                db=db,
+                file_bytes=file_bytes,
+                filename=filename,
+                overwrite_all=overwrite_all,
+                dry_run=True,
+                modified_by="preview",
+            )
+        )
+    except Exception as exc:
+        st.error(f"Failed to parse file: {exc}")
+        db.close()
+        return
+    finally:
+        db.close()
+
+    # Show global parse errors immediately
+    if dry_errors:
+        for err in dry_errors:
+            st.error(err)
+
+    # Build preview table
+    if dry_feedbacks:
+        preview_rows = []
+        for fb in dry_feedbacks:
+            preview_rows.append({
+                "Row": fb["row"],
+                "Experiment ID": fb["experiment_id"],
+                "Time Point": fb["time_point"],
+                "Status": fb["status"],
+                "Result ID": fb.get("result_id"),
+                "Old Value": fb.get("old_value") or "",
+                "New Value": fb.get("new_value") or "",
+                "Warnings": " | ".join(fb.get("warnings", [])),
+                "Errors": " | ".join(fb.get("errors", [])),
+            })
+
+        preview_df = pd.DataFrame(preview_rows)
+
+        # Colour-code status counts
+        status_counts = preview_df["Status"].value_counts().to_dict()
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Match (would update)", status_counts.get("dry_run_match", 0))
+        col2.metric("Would overwrite existing", status_counts.get("would_overwrite", 0))
+        col3.metric("Skip (blank + no overwrite)", status_counts.get("skip", 0))
+        col4.metric("Unmatched / errors", status_counts.get("error", 0))
+        col5.metric("Total rows", len(preview_df))
+
+        st.dataframe(preview_df, use_container_width=True, height=350)
+    else:
+        st.warning("No processable rows found in the file.")
+        return
+
+    # Abort if there are hard errors (unmatched experiments, bad structure, duplicates)
+    hard_errors = [fb for fb in dry_feedbacks if fb["status"] == "error"]
+    if hard_errors:
+        st.error(
+            f"{len(hard_errors)} row(s) have errors (see Errors column above). "
+            "Fix the file and re-upload before committing."
+        )
+        return
+
+    match_count = status_counts.get("dry_run_match", 0)
+    overwrite_count = status_counts.get("would_overwrite", 0)
+
+    if match_count == 0 and overwrite_count == 0:
+        st.warning("No rows would be updated. Check that experiment IDs and time points match existing data.")
+        return
+
+    # --- Confirmation and commit ---
+    st.markdown("---")
+    st.markdown("### Commit")
+
+    if overwrite_count > 0 and not overwrite_all:
+        st.warning(
+            f"{overwrite_count} row(s) already have a modification description. "
+            "Enable **Overwrite existing** above to replace them."
+        )
+
+    confirm = st.checkbox(
+        f"I have reviewed the preview and want to update {match_count + (overwrite_count if overwrite_all else 0)} row(s).",
+        key="timepoint_mod_confirm",
+    )
+
+    if not confirm:
+        return
+
+    if st.button("Apply Modifications", type="primary", key="timepoint_mod_apply"):
+        modified_by = st.session_state.get("user", {}).get("email", "unknown")
+
+        db = SessionLocal()
+        try:
+            updated, skipped, commit_errors, commit_feedbacks = (
+                TimepointModificationsUploadService.bulk_upsert_from_file(
+                    db=db,
+                    file_bytes=file_bytes,
+                    filename=filename,
+                    overwrite_all=overwrite_all,
+                    dry_run=False,
+                    modified_by=modified_by,
+                )
+            )
+        except Exception as exc:
+            db.rollback()
+            st.error(f"Commit failed: {exc}")
+            return
+        finally:
+            db.close()
+
+        # Result summary
+        st.success(f"Done! **{updated}** row(s) updated, **{skipped}** skipped.")
+
+        if commit_errors:
+            st.warning(f"{len(commit_errors)} error(s) during commit:")
+            for err in commit_errors:
+                st.error(err)
+
+        # Detailed result table
+        if commit_feedbacks:
+            result_rows = []
+            for fb in commit_feedbacks:
+                result_rows.append({
+                    "Row": fb["row"],
+                    "Experiment ID": fb["experiment_id"],
+                    "Time Point": fb["time_point"],
+                    "Status": fb["status"],
+                    "Result ID": fb.get("result_id"),
+                    "Old Value": fb.get("old_value") or "",
+                    "New Value": fb.get("new_value") or "",
+                    "Warnings": " | ".join(fb.get("warnings", [])),
+                })
+            st.dataframe(pd.DataFrame(result_rows), use_container_width=True)
