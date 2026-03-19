@@ -30,6 +30,8 @@ from backend.services.bulk_uploads.long_format import (
 from backend.services.bulk_uploads.metric_groups import METRIC_GROUPS
 from sqlalchemy.exc import IntegrityError
 
+from backend.services.bulk_uploads.master_bulk_upload import MasterBulkUploadService
+
 EXPERIMENTAL_RESULTS_REQUIRED_COLS = {
     "experiment_id", "description", "time_post_reaction"
 }
@@ -45,6 +47,7 @@ def render_bulk_uploads_page():
         "Select data type to upload:",
         (
             "Select data type",
+            "Master Bulk Upload (Solution Chemistry)",
             "New Experiments",
             "Solution Chemistry (NMR / Hydrogen / pH / Conductivity)",
             "ICP-OES",
@@ -61,7 +64,9 @@ def render_bulk_uploads_page():
         )
     )
 
-    if upload_option == "New Experiments":
+    if upload_option == "Master Bulk Upload (Solution Chemistry)":
+        handle_master_bulk_upload()
+    elif upload_option == "New Experiments":
         handle_new_experiments_upload()
     elif upload_option == "Solution Chemistry (NMR / Hydrogen / pH / Conductivity)":
         handle_solution_chemistry_upload()
@@ -237,6 +242,120 @@ def handle_aeris_xrd_upload():
     finally:
         db.close()
 
+
+def handle_master_bulk_upload():
+    """
+    Handles the UI and logic for Master Bulk Upload.
+    """
+    st.header("Master Bulk Upload (Solution Chemistry)")
+    st.markdown("""
+    Upload a CSV or Excel file matching the new master format. 
+    This will streamline result entry for solution chemistry, dates, gas, and modifications.
+    
+    **Instructions:**
+    - `Experiment ID` and `Duration (Days)` are required.
+    - If `Experiment ID` does not exist in the database, the row will be skipped.
+    - An existing result with the same experiment ID and time point will NOT be overwritten unless `Overwrite` is `TRUE`.
+    """)
+    
+    # Template Generation
+    template_cols = [
+        "Experiment ID", "Description", "Sample Date", "Duration (Days)",
+        "NH4 (mM)", "H2 (ppm)", "Gas Volume (mL)", "Gas Pressure (psi)",
+        "Sample pH", "Sample Conductivity (mS/cm)", "Modification",
+        "NMR Run Date", "ICP Run Date", "GC Run Date", "Overwrite"
+    ]
+    template_df = pd.DataFrame([
+        {col: "" for col in template_cols}
+    ])
+    
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        template_df.to_excel(writer, index=False, sheet_name='Dashboard')
+        try:
+            from frontend.components.utils import autosize_excel_columns
+            autosize_excel_columns(writer, 'Dashboard')
+        except Exception:
+            pass
+    buf.seek(0)
+    
+    st.download_button(
+        label="Download Master Template",
+        data=buf,
+        file_name="master_bulk_upload_template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    st.markdown("---")
+    
+    dry_run = st.checkbox(
+        "Preview changes only (dry run)",
+        value=False,
+        help="Validate the file and show what would change without saving.",
+        key="master_dry_run",
+    )
+    
+    uploaded_file = st.file_uploader("Upload your data file (CSV or Excel)", type=["csv", "xlsx", "xls"], key="master_upload")
+    
+    if uploaded_file:
+        db = SessionLocal()
+        try:
+            created, updated, skipped, errors, feedbacks = MasterBulkUploadService.bulk_upsert(
+                db,
+                uploaded_file.read(),
+                dry_run=dry_run
+            )
+            
+            if errors:
+                if not dry_run:
+                    db.rollback()
+                for error in errors:
+                    st.warning(error)
+                if not dry_run:
+                    st.error("Upload failed due to errors. Please correct the file and try again.")
+            elif dry_run:
+                st.info("Dry run complete -- no changes were saved.")
+            else:
+                db.commit()
+                total = created + updated
+                st.success(
+                    f"Successfully processed {total} result(s) "
+                    f"({created} created, {updated} updated, {skipped} skipped)."
+                )
+
+            # Row-level feedback
+            if feedbacks:
+                with st.expander("Row-level details", expanded=bool(errors)):
+                    for fb in feedbacks:
+                        icon = {
+                            "created": "✅", "updated": "🔄",
+                            "skipped": "⏭️", "error": "❌",
+                            "dry_run": "👁️", "pending": "⏳",
+                        }.get(fb["status"], "❓")
+                        label = f"Row {fb['row']}: {fb['experiment_id']}"
+                        if fb.get("time_post_reaction") is not None:
+                            label += f" @ Day {fb['time_post_reaction']}"
+                        label += f" — {icon} {fb['status']}"
+                        st.markdown(f"**{label}**")
+                        if fb.get("fields_updated"):
+                            st.caption(f"  Fields updated: {', '.join(fb['fields_updated'])}")
+                        if fb.get("fields_preserved"):
+                            st.caption(f"  Fields preserved: {', '.join(fb['fields_preserved'])}")
+                        if fb.get("errors"):
+                            for e in fb["errors"]:
+                                st.caption(f"  Error: {e}")
+                        if fb.get("warnings"):
+                            for w in fb["warnings"]:
+                                st.caption(f"  Warning: {w}")
+
+        except IntegrityError as e:
+            db.rollback()
+            st.error(f"Database error: {e.orig}")
+        except Exception as e:
+            db.rollback()
+            st.error(f"An unexpected error occurred: {e}")
+        finally:
+            db.close()
 
 def handle_new_experiments_upload():
     """

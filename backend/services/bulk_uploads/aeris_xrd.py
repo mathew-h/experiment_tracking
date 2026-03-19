@@ -190,24 +190,37 @@ class AerisXRDUploadService:
 
                 mineral_name = _clean_mineral_name(mcol)
 
-                phase = (
+                # Fetch ALL matching rows rather than just the first.
+                # With autoflush=False the session won't auto-flush before
+                # this query, so multi-scan Excel files (multiple rows that
+                # share the same experiment_id / days but differ only in scan
+                # number) could previously produce silent duplicate inserts.
+                # Using .all() also lets us remove any duplicates that were
+                # created by earlier uploads before the UniqueConstraint was
+                # enforced in the live database.
+                phases = (
                     db.query(XRDPhase)
                     .filter(
                         XRDPhase.experiment_id == exp_id_db,
                         XRDPhase.time_post_reaction_days == days,
                         XRDPhase.mineral_name == mineral_name,
                     )
-                    .first()
+                    .all()
                 )
 
-                if phase:
+                if phases:
                     if not overwrite_existing:
                         skipped += 1
                         continue
+                    phase = phases[0]
                     phase.amount = amount_val
                     phase.rwp = rwp_val
                     phase.measurement_date = measurement_date
                     phase.experiment_fk = exp_fk
+                    # Delete any duplicate rows introduced by prior multi-scan
+                    # uploads so the UniqueConstraint is satisfied after commit.
+                    for dup in phases[1:]:
+                        db.delete(dup)
                     updated += 1
                 else:
                     phase = XRDPhase(
@@ -221,5 +234,11 @@ class AerisXRDUploadService:
                     )
                     db.add(phase)
                     created += 1
+
+            # Flush after every row so that records added in this row are
+            # visible to queries in subsequent rows (autoflush=False).  This
+            # prevents a second scan of the same mineral/timepoint from missing
+            # the pending insert and attempting a duplicate create.
+            db.flush()
 
         return created, updated, skipped, errors
