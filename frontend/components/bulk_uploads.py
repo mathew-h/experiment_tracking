@@ -247,11 +247,9 @@ def handle_master_bulk_upload():
     """
     Handles the UI and logic for Master Bulk Upload.
     """
-    st.header("Master Bulk Upload (Solution Chemistry)")
+    st.header("Master Results Bulk Upload")
     st.markdown("""
-    Upload a CSV or Excel file matching the new master format. 
-    This will streamline result entry for solution chemistry, dates, gas, and modifications.
-    
+
     **Instructions:**
     - `Experiment ID` and `Duration (Days)` are required.
     - If `Experiment ID` does not exist in the database, the row will be skipped.

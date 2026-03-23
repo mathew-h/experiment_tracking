@@ -169,6 +169,29 @@ def format_value(value, config):
         # Handle non-numeric types or numbers without specific format
         return str(value)
 
+
+def coerce_to_bool(value, default=False):
+    """
+    Normalize values from forms, text fields, or drivers into a real bool for Boolean columns.
+
+    Handles None, bool, numbers, and common string forms ('True'/'False', '1'/'0').
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("true", "1", "yes", "t", "y"):
+            return True
+        if s in ("false", "0", "no", "f", "n", ""):
+            return False
+        return default
+    return bool(value)
+
+
 # --- New Form Generation Utility ---
 def generate_form_fields(config, current_values, field_names, key_prefix=""):
     """
@@ -257,6 +280,14 @@ def generate_form_fields(config, current_values, field_names, key_prefix=""):
                     label=field_config['label'],
                     value=date_value,
                     key=widget_key
+                )
+            elif field_type == 'checkbox':
+                chk_default = bool(field_config.get('default', False))
+                new_values[name] = st.checkbox(
+                    label=field_config['label'],
+                    value=coerce_to_bool(current_value, chk_default),
+                    help=field_config.get('help', ''),
+                    key=widget_key,
                 )
             else:
                 # Handle other field types as before

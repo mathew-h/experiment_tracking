@@ -1,6 +1,6 @@
 import streamlit as st
 from database import SessionLocal, ExternalAnalysis, SampleInfo, AnalysisFiles, SamplePhotos
-from .utils import log_modification, delete_file_if_exists, save_uploaded_file
+from .utils import log_modification, delete_file_if_exists, save_uploaded_file, coerce_to_bool
 import json
 import datetime
 from sqlalchemy.orm import selectinload
@@ -442,9 +442,13 @@ def update_sample_info(sample_id, form_values):
             for field in ROCK_SAMPLE_CONFIG.keys()
         }
         
-        # Update fields
+        # Update fields (checkbox/boolean fields must be real bools for SQLAlchemy)
         for field, value in form_values.items():
             if field in ROCK_SAMPLE_CONFIG:
+                fc = ROCK_SAMPLE_CONFIG[field]
+                if fc.get('type') == 'checkbox':
+                    value = coerce_to_bool(value, bool(fc.get('default', False)))
+                    form_values[field] = value  # keep modification log aligned with DB
                 setattr(sample, field, value)
         
         # Log the modification
