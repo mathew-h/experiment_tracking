@@ -58,6 +58,7 @@ def test_actlabs_import_creates_analytes_and_results(test_db):
 
     # Act: run import
     created, updated, skipped, errors = ActlabsRockTitrationService.import_excel(test_db, payload)
+    test_db.commit()
 
     # Assert: no critical errors
     assert errors == [] or all(isinstance(e, str) for e in errors)
@@ -85,5 +86,42 @@ def test_actlabs_import_creates_analytes_and_results(test_db):
     assert by_key[("Rock_1", sio2_id)].analyte_composition == 45.0
     assert by_key[("Rock_2", feo_id)].analyte_composition == 8.0
     assert by_key[("Rock_2", sio2_id)].analyte_composition == 50.0
+
+
+def test_actlabs_import_skips_unknown_sample_ids(test_db):
+    """Rows with no matching SampleInfo are skipped; known samples still import."""
+    test_db.add(SampleInfo(sample_id="Rock_1"))
+    test_db.commit()
+
+    header_symbols = ["Sample ID", "FeO", "SiO2"]
+    header_units = ["", "%", "%"]
+    detection_limit = ["Detection Limit", "0.01", "0.01"]
+    analysis_method = ["Analysis Method: titration", "", ""]
+    data_rows = [
+        ["Rock_1", 1.0, 2.0],
+        ["No_Such_Sample", 9.0, 9.0],
+    ]
+    rows = [
+        ["Report Number", "", ""],
+        ["Report Date", "", ""],
+        header_symbols,
+        header_units,
+        detection_limit,
+        analysis_method,
+        *data_rows,
+    ]
+    buf = io.BytesIO()
+    pd.DataFrame(rows).to_csv(buf, header=False, index=False)
+    buf.seek(0)
+    payload = buf.getvalue()
+
+    created, updated, skipped, errors = ActlabsRockTitrationService.import_excel(test_db, payload)
+    test_db.commit()
+
+    assert errors == []
+    assert skipped == 1
+    assert created >= 2
+    results = test_db.query(ElementalAnalysis).filter_by(sample_id="Rock_1").all()
+    assert len(results) >= 2
 
 

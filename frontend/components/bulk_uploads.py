@@ -883,6 +883,8 @@ def handle_actlabs_titration_upload():
             else:
                 db.commit()
                 st.success(f"Imported ActLabs titration results — created: {created}, updated: {updated}, skipped rows: {skipped}")
+                if skipped:
+                    st.info("Skipped rows include blank sample IDs and sample IDs not found in the inventory (matching rows were still saved).")
         except Exception as e:
             db.rollback()
             st.error(f"Unexpected error during ACTLABS upload: {e}")
@@ -951,6 +953,8 @@ def handle_elemental_composition_upload():
         else:
             db.commit()
             st.success(f"Compositions created: {created}, updated: {updated}, skipped rows: {skipped}")
+            if skipped:
+                st.info("Skipped rows include blank sample IDs and sample IDs not found in the inventory (matching rows were still saved).")
     except Exception as e:
         db.rollback()
         st.error(f"Unexpected error during composition upload: {e}")

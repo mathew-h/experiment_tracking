@@ -7,7 +7,60 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from database import Analyte, ElementalAnalysis, SampleInfo
+from database import Analyte, AnalysisType, ElementalAnalysis, ExternalAnalysis, SampleInfo
+
+
+def _normalize_sample_id_for_match(s: str) -> str:
+    """Lowercase and strip underscores/spaces for fuzzy sample_id matching."""
+    t = str(s).strip().lower().replace("_", "")
+    return t
+
+
+def _build_fuzzy_sample_id_lookup(db: Session) -> Dict[str, str]:
+    """
+    Map normalized sample key -> canonical SampleInfo.sample_id as stored in the DB.
+    First occurrence wins if two IDs normalize to the same key.
+    """
+    lookup: Dict[str, str] = {}
+    for (sid,) in db.query(SampleInfo.sample_id).all():
+        key = _normalize_sample_id_for_match(sid)
+        if key not in lookup:
+            lookup[key] = sid
+    return lookup
+
+
+def _get_or_create_bulk_external_analysis(
+    db: Session,
+    sample_id: str,
+    *,
+    analysis_type: str,
+    laboratory: Optional[str],
+    description: str,
+) -> ExternalAnalysis:
+    """
+    One ExternalAnalysis per (sample, type, laboratory) for bulk elemental imports so
+    ElementalAnalysis rows always have a valid external_analysis_id.
+    """
+    q = db.query(ExternalAnalysis).filter(
+        ExternalAnalysis.sample_id == sample_id,
+        ExternalAnalysis.analysis_type == analysis_type,
+    )
+    if laboratory is None:
+        q = q.filter(ExternalAnalysis.laboratory.is_(None))
+    else:
+        q = q.filter(ExternalAnalysis.laboratory == laboratory)
+    found = q.first()
+    if found:
+        return found
+    row = ExternalAnalysis(
+        sample_id=sample_id,
+        analysis_type=analysis_type,
+        laboratory=laboratory,
+        description=description,
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 class AnalyteService:
@@ -60,6 +113,7 @@ class ElementalCompositionService:
           - Remaining columns: analyte symbols
           - Cells: numeric composition
         Returns (created, updated, skipped_rows, errors).
+        Rows whose sample_id does not match any SampleInfo (after fuzzy match) increment skipped_rows and are not errors.
         """
         errors: List[str] = []
         created = updated = skipped = 0
@@ -84,19 +138,30 @@ class ElementalCompositionService:
 
         all_analytes = db.query(Analyte).all()
         symbol_to_analyte = {a.analyte_symbol.lower(): a for a in all_analytes}
+        sample_id_lookup = _build_fuzzy_sample_id_lookup(db)
+        ext_by_sample: Dict[str, ExternalAnalysis] = {}
 
         for idx, row in df.iterrows():
             try:
-                sample_id = str(row.get(sample_col) or '').strip()
-                if not sample_id:
+                sample_id_raw = str(row.get(sample_col) or '').strip()
+                if not sample_id_raw:
                     skipped += 1
                     continue
 
-                # Ensure sample exists
-                sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
-                if not sample:
-                    errors.append(f"Row {idx+2}: sample_id '{sample_id}' not found")
+                canonical_id = sample_id_lookup.get(_normalize_sample_id_for_match(sample_id_raw))
+                if not canonical_id:
+                    skipped += 1
                     continue
+
+                if canonical_id not in ext_by_sample:
+                    ext_by_sample[canonical_id] = _get_or_create_bulk_external_analysis(
+                        db,
+                        canonical_id,
+                        analysis_type=AnalysisType.ELEMENTAL.value,
+                        laboratory="Bulk composition",
+                        description="Elemental composition (wide template upload)",
+                    )
+                ext_parent = ext_by_sample[canonical_id]
 
                 for symbol in analyte_headers:
                     analyte = symbol_to_analyte.get(str(symbol).lower())
@@ -113,14 +178,25 @@ class ElementalCompositionService:
 
                     existing = (
                         db.query(ElementalAnalysis)
-                        .filter(ElementalAnalysis.sample_id == sample_id, ElementalAnalysis.analyte_id == analyte.id)
+                        .filter(
+                            ElementalAnalysis.external_analysis_id == ext_parent.id,
+                            ElementalAnalysis.analyte_id == analyte.id,
+                        )
                         .first()
                     )
                     if existing:
                         existing.analyte_composition = fval
+                        existing.sample_id = canonical_id
                         updated += 1
                     else:
-                        db.add(ElementalAnalysis(sample_id=sample_id, analyte_id=analyte.id, analyte_composition=fval))
+                        db.add(
+                            ElementalAnalysis(
+                                external_analysis_id=ext_parent.id,
+                                sample_id=canonical_id,
+                                analyte_id=analyte.id,
+                                analyte_composition=fval,
+                            )
+                        )
                         created += 1
             except Exception as e:
                 errors.append(f"Row {idx+2}: {e}")
@@ -340,7 +416,8 @@ class ActlabsRockTitrationService:
         Import ActLabs Excel to normalized tables.
         - Upserts analytes (last header wins for units)
         - Upserts results per (sample_id, analyte_id)
-        Returns (results_created, results_updated, skipped_rows, errors)
+        Returns (results_created, results_updated, skipped_rows, errors).
+        Data rows with no matching SampleInfo (after fuzzy match) are skipped; matching rows are still imported.
         """
         errors: List[str] = []
         results_created = results_updated = skipped = 0
@@ -371,23 +448,37 @@ class ActlabsRockTitrationService:
             else:
                 db.add(Analyte(analyte_symbol=sym, unit=unit or "ppm"))
 
+        # Flush so new Analyte rows are visible when autoflush is disabled (e.g. test sessions)
+        db.flush()
+
         # Preload analyte ids
         all_analytes = db.query(Analyte).all()
         symbol_to_analyte = {a.analyte_symbol.lower(): a for a in all_analytes}
+        sample_id_lookup = _build_fuzzy_sample_id_lookup(db)
+        ext_by_sample: Dict[str, ExternalAnalysis] = {}
 
         # Iterate rows
         for i in range(len(data)):
             sid_raw = data.iat[i, sample_id_col]
             if pd.isna(sid_raw):
                 continue
-            sample_id = str(sid_raw).strip()
-            if not sample_id:
+            sample_id_raw = str(sid_raw).strip()
+            if not sample_id_raw:
                 continue
-            # ensure sample exists
-            sample = db.query(SampleInfo).filter(SampleInfo.sample_id == sample_id).first()
-            if not sample:
-                errors.append(f"Row {i+5}: sample_id '{sample_id}' not found")
+            canonical_id = sample_id_lookup.get(_normalize_sample_id_for_match(sample_id_raw))
+            if not canonical_id:
+                skipped += 1
                 continue
+
+            if canonical_id not in ext_by_sample:
+                ext_by_sample[canonical_id] = _get_or_create_bulk_external_analysis(
+                    db,
+                    canonical_id,
+                    analysis_type=AnalysisType.TITRATION.value,
+                    laboratory="ActLabs",
+                    description="Rock titration (ActLabs bulk import)",
+                )
+            ext_parent = ext_by_sample[canonical_id]
 
             for sym, (col_idx, _unit) in symbol_to_col_unit.items():
                 if col_idx >= data.shape[1]:
@@ -402,14 +493,25 @@ class ActlabsRockTitrationService:
                     continue
                 existing = (
                     db.query(ElementalAnalysis)
-                    .filter(ElementalAnalysis.sample_id == sample_id, ElementalAnalysis.analyte_id == analyte.id)
+                    .filter(
+                        ElementalAnalysis.external_analysis_id == ext_parent.id,
+                        ElementalAnalysis.analyte_id == analyte.id,
+                    )
                     .first()
                 )
                 if existing:
                     existing.analyte_composition = vnum
+                    existing.sample_id = canonical_id
                     results_updated += 1
                 else:
-                    db.add(ElementalAnalysis(sample_id=sample_id, analyte_id=analyte.id, analyte_composition=vnum))
+                    db.add(
+                        ElementalAnalysis(
+                            external_analysis_id=ext_parent.id,
+                            sample_id=canonical_id,
+                            analyte_id=analyte.id,
+                            analyte_composition=vnum,
+                        )
+                    )
                     results_created += 1
 
         return results_created, results_updated, skipped, errors
